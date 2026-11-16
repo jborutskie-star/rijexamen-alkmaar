@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Het Rijexamen</title>
+<meta name="description" content="Alkmaar. One driving exam. What could go wrong?">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=Lilita+One&family=Rubik:wght@400;600&display=swap" rel="stylesheet">
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
+<style>
+  :root { --orange: #ff6a13; --navy: #14213d; --cream: #fff8e8; --blue: #1f5fd0; --red: #e0202a; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; overflow: hidden; background: #8fd0ff; font-family: Rubik, system-ui, sans-serif; color: var(--navy); -webkit-user-select: none; user-select: none; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .display { font-family: "Lilita One", "Arial Black", sans-serif; font-weight: 400; line-height: 1; }
+  [hidden] { display: none !important; }
+
+  .screen { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; }
+  .screen > div { max-width: 760px; }
+  h1 { font-size: clamp(54px, 13vw, 150px); color: var(--cream); text-shadow: 0 6px 0 var(--navy), 0 0 0 var(--navy); -webkit-text-stroke: 3px var(--navy); paint-order: stroke fill; letter-spacing: 0.01em; }
+  h1 b { color: var(--orange); font-weight: 400; }
+  .sub { margin-top: 18px; font-size: clamp(17px, 2.6vw, 24px); font-weight: 600; color: var(--cream); text-shadow: 0 2px 0 var(--navy), 0 0 12px rgba(20, 33, 61, .8); }
+  button { margin-top: 30px; font: inherit; font-family: "Lilita One", "Arial Black", sans-serif; font-size: clamp(22px, 3.4vw, 32px); color: var(--cream); background: var(--orange); border: 4px solid var(--navy); border-radius: 14px; padding: 14px 30px 16px; box-shadow: 0 7px 0 var(--navy); cursor: pointer; transition: transform .12s ease-out, box-shadow .12s ease-out; }
+  button:active { transform: translateY(5px); box-shadow: 0 2px 0 var(--navy); }
+  button:disabled { background: #9aa3b5; cursor: progress; }
+  button:focus-visible { outline: 4px solid var(--cream); outline-offset: 4px; }
+  .hint { margin-top: 20px; font-size: 15px; font-weight: 600; color: var(--cream); text-shadow: 0 1px 0 var(--navy), 0 0 10px rgba(20, 33, 61, .9); }
+
+  #street { position: fixed; top: max(14px, env(safe-area-inset-top)); left: max(14px, env(safe-area-inset-left)); background: var(--blue); color: #fff; border: 3px solid #fff; outline: 2px solid var(--blue); border-radius: 6px; padding: 6px 14px 7px; font-weight: 600; font-size: clamp(15px, 2.2vw, 20px); letter-spacing: .02em; }
+  #speed { position: fixed; left: max(14px, env(safe-area-inset-left)); bottom: max(14px, env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 12px; color: var(--cream); text-shadow: 0 3px 0 var(--navy); -webkit-text-stroke: 2px var(--navy); paint-order: stroke fill; }
+  #speed .n { font-size: clamp(44px, 8vw, 84px); min-width: 2.1ch; text-align: right; font-variant-numeric: tabular-nums; }
+  #speed .u { font-size: clamp(16px, 2.4vw, 24px); }
+  #speed.over .n { color: #ffd23c; }
+  .limit { width: clamp(46px, 7vw, 66px); aspect-ratio: 1; border-radius: 50%; background: #fff; border: clamp(6px, 1vw, 9px) solid var(--red); display: grid; place-items: center; font-size: clamp(20px, 3vw, 30px); color: #111; -webkit-text-stroke: 0; text-shadow: none; box-shadow: 0 3px 0 var(--navy); }
+
+  #form { position: fixed; top: max(14px, env(safe-area-inset-top)); right: max(14px, env(safe-area-inset-right)); width: min(250px, 46vw); background: #fffdf4; border: 3px solid var(--navy); border-radius: 6px; box-shadow: 5px 6px 0 rgba(20, 33, 61, .85); padding: 12px 14px 12px; transform: rotate(1.6deg); text-align: left; }
+  #form h2 { font-size: 20px; letter-spacing: .04em; }
+  #form p { font-size: 12px; margin: 3px 0 8px; padding-bottom: 7px; border-bottom: 2px solid var(--navy); }
+  #form ul { list-style: none; padding: 0; display: grid; gap: 5px; }
+  #form li { display: grid; grid-template-columns: 18px 1fr; column-gap: 8px; align-items: center; font-size: 13px; font-weight: 600; }
+  #form li i { width: 16px; height: 16px; border: 2px solid var(--navy); border-radius: 3px; position: relative; }
+  #form li.done i::after { content: ""; position: absolute; left: 3px; top: -5px; width: 7px; height: 15px; border: solid var(--red); border-width: 0 4px 4px 0; transform: rotate(40deg); }
+  #form li em { grid-column: 2; font: 700 17px/1 Caveat, cursive; color: var(--red); height: 0; opacity: 0; transform: rotate(-2deg); transition: height .2s ease-out, opacity .2s ease-out; }
+  #form li.done em { height: 16px; opacity: 1; }
+  #stamp { position: absolute; left: 50%; top: 52%; translate: -50% -50%; rotate: -14deg; font-size: 30px; color: var(--red); border: 5px solid var(--red); border-radius: 6px; padding: 5px 10px 7px; background: rgba(255, 253, 244, .85); scale: 2.4; opacity: 0; transition: scale .16s cubic-bezier(.3, 1.5, .5, 1), opacity .1s linear; }
+  #stamp.on { scale: 1; opacity: 1; }
+
+  #cap { position: fixed; left: 0; right: 0; margin: 0 auto; width: fit-content; bottom: max(26px, calc(env(safe-area-inset-bottom) + 14px)); max-width: min(760px, 92vw); padding: 9px 18px 11px; border-radius: 8px; background: rgba(20, 33, 61, .82); color: #fff; font-weight: 600; font-size: clamp(16px, 2.5vw, 23px); line-height: 1.3; text-align: center; opacity: 0; transition: opacity .18s linear; pointer-events: none; }
+  #cap.on { opacity: 1; }
+
+  #title { background: rgba(20, 33, 61, .3); }
+  #end { background: rgba(20, 33, 61, .35); opacity: 0; transition: opacity .6s linear; }
+  #end.on { opacity: 1; }
+  #end h1 { color: var(--orange); -webkit-text-stroke-color: var(--cream); text-shadow: 0 7px 0 var(--navy); font-size: clamp(60px, 15vw, 170px); }
+  #end .msg { margin-top: 22px; font-size: clamp(24px, 4.4vw, 44px); color: var(--cream); text-shadow: 0 4px 0 var(--navy); -webkit-text-stroke: 2px var(--navy); paint-order: stroke fill; line-height: 1.12; }
+  #credits { position: fixed; left: 0; right: 0; bottom: max(10px, env(safe-area-inset-bottom)); padding: 0 16px; font-size: 12px; color: #fff; text-shadow: 0 1px 2px var(--navy), 0 0 8px var(--navy); text-align: center; }
+  #credits a { color: inherit; }
+
+  @media (max-width: 640px) {
+    #form { width: 172px; padding: 8px 10px; } #form h2 { font-size: 15px; } #form p { font-size: 10px; margin-bottom: 6px; padding-bottom: 5px; } #form li { font-size: 11px; grid-template-columns: 14px 1fr; column-gap: 6px; } #form li i { width: 13px; height: 13px; }
+    #form li.done em { height: 13px; } #form li em { font-size: 14px; } #stamp { font-size: 22px; } #form small { display: none; } #form ul { gap: 3px; }
+  }
+  @media (max-width: 1320px) { #cap { bottom: max(112px, calc(env(safe-area-inset-bottom) + 112px)); } }
+  @media (max-width: 640px) { #cap { bottom: max(86px, calc(env(safe-area-inset-bottom) + 86px)); } }
+  @media (prefers-reduced-motion: reduce) { button, #stamp, #form li em { transition: none; } }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<div id="street" hidden></div>
+<div id="speed" class="display" hidden><span class="n">0</span><span class="u">km/u</span><span class="limit">30</span></div>
+<aside id="form" hidden>
+  <h2 class="display">RIJEXAMEN</h2>
+  <p>Kandidaat: <b id="who">???</b> &nbsp; Alkmaar</p>
+  <ul id="checks"></ul>
+  <div id="stamp" class="display">GESLAAGD</div>
+</aside>
+<div id="cap" role="status"><span></span><span style="visibility: hidden"></span></div>
+
+<section id="title" class="screen">
+  <div>
+    <h1 class="display">Het <b>Rijexamen</b></h1>
+    <p class="sub">Alkmaar. One driving exam. Wie zit er achter het stuur?</p>
+    <button id="go" disabled>Alkmaar wordt gebouwd...</button>
+    <p class="hint">Geluid aan. Sound on.</p>
+  </div>
+</section>
+
+<section id="end" class="screen" hidden>
+  <div>
+    <h1 class="display">GESLAAGD!</h1>
+    <p class="msg display">Hey Nikki, congratulations on passing your driving exam!</p>
+    <button id="again">Nog een keer</button>
+  </div>
+  <p id="credits">Map data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>. Music: "Tea Bag Rag", "Codename Dougwood" and "The Victory of Heroes" by Shane Ivers (<a href="https://www.silvermansound.com">silvermansound.com</a>), licensed <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. No cyclists, cheeses or examiners were harmed.</p>
+</section>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

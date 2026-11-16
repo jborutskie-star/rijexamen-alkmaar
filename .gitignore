@@ -1,0 +1,6 @@
+.claude/
+debug/
+.DS_Store
+tools/raw-osm.json
+src/nikki-source.png
+graphify-out/
