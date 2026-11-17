@@ -325,7 +325,10 @@ export function molen() {
 }
 
 // ---- boats: origin at the waterline amidships, bow towards +x ----
-// a hull from stations [x, half beam, keel y, sheer y]: topsides, bilge, bottom, a rim, the inside and a floor or deck
+// How far world.js lets a boat bob (m) and roll (radians). The water is one flat plane, so whatever floor you can see into must stay above it at the worst of both (tools/check-boats.mjs).
+export const SWAY = { bob: 0.035, roll: 0.022 };
+// a hull from stations [x, half beam, keel y, sheer y]: topsides, bilge, bottom, a rim, the inside and a floor or deck.
+// The water is a flat opaque plane, so an open boat's floor sits above the waterline (bottom boards), or the canal shows inside the hull.
 function hull(B, st, { col, inner, rimCol, floor, rim = 0.09, floorY = 0, strake }) {
   const n = st.length, pt = st.map(([x, hb, yb, ys], i) => {
     const hi = max(0.012, hb - rim), xi = i === 0 ? x + rim : i === n - 1 ? x - rim * 1.5 : x, fy = typeof floorY === 'function' ? floorY(ys) : floorY, yc = yb + (ys - yb) * 0.35, xs = strake && i === 0 ? x - strake.out : x;
@@ -358,7 +361,7 @@ const pot = (K, x, y, z, c, r = 0.16) => K.add(Cyl(r, r * 0.75, r * 1.7, 5), '#c
 export function rondvaartboot() {
   const B = new Skin(), K = new Kit();
   hull(B, stations(9, 9, (t) => [1.2 * (t < 0.2 ? 0.8 + t : t < 0.62 ? 1 : sqrt(max(0.0012, 1 - ((t - 0.62) / 0.38) ** 2))), -0.3 + (0.22 * max(0, t - 0.7)) / 0.3, 0.42 + 0.14 * t ** 4]),
-    { col: '#1f5a3c', inner: '#e8dcc0', rimCol: WHITE, floor: WOOD, floorY: -0.02, rim: 0.1, strake: { col: RED, y0: 0.2, y1: 0.08, out: 0.035 } });
+    { col: '#1f5a3c', inner: '#e8dcc0', rimCol: WHITE, floor: WOOD, floorY: 0.08, rim: 0.1, strake: { col: RED, y0: 0.2, y1: 0.08, out: 0.035 } });
   let i = 0;
   for (const x of [-2.6, -1.5, -0.4, 0.7, 1.8]) { K.box(0.34, 0.29, 1.96, WOOD2, x, 0.125, 0); for (const z of [-0.5, 0.5]) { sitter(K, x, 0.27, z, i); if (i % 3 === 0) K.box(0.1, 0.07, 0.06, '#222222', x + 0.2, 0.72, z); i++; } }
   K.box(0.5, 0.29, 1.6, WOOD2, -3.75, 0.125, 0); sitter(K, -3.75, 0.27, 0, 3, '#ffffff'); K.box(0.2, 0.03, 0.2, '#1d2f55', -3.62, 0.83, 0); // the skipper and the peak of his cap
@@ -371,7 +374,7 @@ export function rondvaartboot() {
 export function sloep() {
   const B = new Skin(), K = new Kit();
   hull(B, stations(5.5, 8, (t) => [0.96 * (t < 0.25 ? 0.78 + 0.88 * t : t < 0.55 ? 1 : sqrt(max(0.0015, 1 - ((t - 0.55) / 0.45) ** 2))), -0.3 + (0.2 * max(0, t - 0.65)) / 0.35, 0.5 + 0.2 * t ** 3]),
-    { col: '#1d3a66', inner: WOOD, rimCol: '#e8dcc0', floor: '#a97c4a', floorY: -0.02, rim: 0.13, strake: { col: '#e8dcc0', y0: 0.17, y1: 0.06, out: 0.04 } });
+    { col: '#1d3a66', inner: WOOD, rimCol: '#e8dcc0', floor: '#a97c4a', floorY: 0.08, rim: 0.13, strake: { col: '#e8dcc0', y0: 0.17, y1: 0.06, out: 0.04 } });
   K.box(0.45, 0.26, 1.2, WOOD2, -2.3, 0.17, 0).box(0.3, 0.26, 1.5, WOOD2, 0.3, 0.17, 0); sitter(K, -2.3, 0.3, -0.35, 1, '#f2c230'); sitter(K, -2.3, 0.3, 0.35, 6);
   K.box(0.3, 0.6, 0.5, WHITE, -1.2, 0.28, 0.3).add(Tor(0.17, 0.025, 4, 10).rotateY(PI / 2), WOOD2, -1.38, 0.66, 0.3).box(0.12, 0.04, 0.04, WOOD2, -1.3, 0.66, 0.3);
   K.box(0.26, 0.36, 0.3, '#22262d', -2.86, 0.68, 0).box(0.08, 0.8, 0.08, '#22262d', -2.86, 0.15, 0); // outboard
@@ -385,10 +388,10 @@ export function sloep() {
 export function roeiboot() {
   const B = new Skin(), K = new Kit();
   hull(B, stations(3.6, 7, (t) => [0.65 * (t < 0.3 ? 0.7 + t : t < 0.5 ? 1 : sqrt(max(0.002, 1 - ((t - 0.5) / 0.5) ** 2))), -0.22 + (0.15 * max(0, t - 0.6)) / 0.4, 0.32 + 0.12 * t ** 3]),
-    { col: WHITE, inner: '#d9a765', rimCol: '#a86e38', floor: WOOD, floorY: -0.05, rim: 0.07, strake: { col: RED, y0: 0.13, y1: 0.05, out: 0.025 } });
+    { col: WHITE, inner: '#d9a765', rimCol: '#a86e38', floor: WOOD, floorY: 0.08, rim: 0.07, strake: { col: RED, y0: 0.13, y1: 0.05, out: 0.025 } });
   for (const [x, w] of [[-1.25, 1.02], [-0.1, 1.08], [0.85, 0.74]]) K.box(0.22, 0.04, w, WOOD2, x, 0.2, 0);
   for (const o of [-1, 1]) K.bar([0.4, 0.5, o * 0.25], [-1.75, 0.2, o * 0.98], 0.045, '#d9a765').bar([-1.72, 0.2, o * 0.97], [-2.24, 0.13, o * 1.14], 0.03, RED, 0.17).box(0.07, 0.08, 0.07, '#2b2f36', -0.78, 0.33, o * 0.64);
-  K.add(Cyl(0.13, 0.1, 0.22, 6), '#e9503a', 1.05, 0.06, 0).add(Tor(0.14, 0.035, 4, 10).rotateX(PI / 2), '#e8dcc0', -0.65, -0.02, 0.1);
+  K.add(Cyl(0.13, 0.1, 0.22, 6), '#e9503a', 1.2, 0.16, 0).add(Tor(0.14, 0.035, 4, 10).rotateX(PI / 2), '#e8dcc0', -0.65, 0.11, 0.1);
   return boat(B, K);
 }
 // A moored tjalk: black bluff-bowed barge, 11.8 m over the rudder, 3.5 m across the leeboards, mast top 10.3 m above the water; sail furled brown on the boom

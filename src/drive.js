@@ -147,6 +147,7 @@ export function makeDrive(route, water = []) {
   const asRamp = (j) => ({ s0: j.r0, s1: j.r1, angle: j.a, tipY: j.tipY, land: j.land, ...place(j.r0, 0) });
   const post = (s, off, r, h, kind) => ({ ...place(s, off), r, h, kind }); // something standing in the street: r metres round, h metres tall
   const boom = { ...post(boomS, 4.6, 1.25, 2.6, 'stall'), s: boomS };
+  const wegwijzer = { ...post(m.annabrug + 20, 3.6, 0.35, 3.2, 'wegwijzer'), s: m.annabrug + 20 }; // the fork after the Sint Annabrug: Centrum to the left, the A9 straight on. r is its pole: the board is 2.1 m up and 1 m each side, well clear of the car
   const works = [ // the roadworks under the hop: all of it lower than the car flies
     ...[-1.8, -0.9, 0, 0.9, 1.8].flatMap((o) => [post(hop.r1 + 1.6, o, 0.3, 1.05, 'fence'), post(hop.r1 + 11.4, o, 0.3, 1.05, 'fence')]),
     ...[3, 5, 7, 9].flatMap((d) => [post(hop.r1 + d, -2.3, 0.25, 0.6, 'cone'), post(hop.r1 + d, 2.3, 0.25, 0.6, 'cone')]),
@@ -179,7 +180,7 @@ export function makeDrive(route, water = []) {
     boat: { ...BOAT, at: boatAt, tTip },
     ducks: { s: duckS, halt, n: 6, at: duckAt, t0: tDuck, tHalt, tGo },
     clear, cyclists, cyclistAt, parked, park, rev, boom, works, humps, deckY, roadY: height, // roadY: how high the road is under the car
-    solids: [...works, boom],
+    solids: [...works, boom, wegwijzer], wegwijzer,
     barrier: { ...place(m.bridgeN - 9, 0), from: 0.35, to: 2.9 }, // right-hand half barrier, metres right of centre
     ramp: asRamp(bridge), hop: asRamp(hop),
     donut: route.donut,

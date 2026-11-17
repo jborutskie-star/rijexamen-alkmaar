@@ -197,9 +197,9 @@ export function buildWorld(scene, map, drive) {
     coping.ribbon([...p, p[0], p[1]], 1.0, Y0, C('#c9c2b4'));
   }
   const seaMesh = sea.mesh(new THREE.MeshStandardMaterial({ vertexColors: true, map: ripple, normalMap: rippleN, normalScale: new THREE.Vector2(0.32, 0.32), envMap: skyEnv, envMapIntensity: 1.25, roughness: 0.1, metalness: 0.5 }));
-  // multiplied over the water (same plane, pulled forward by the polygon offset), drawn after everything solid so boats and bridges still cover it
+  // multiplied over the water (same plane, pulled forward by the polygon offset); everything solid is drawn after it, so boats and bridges still cover it
   const shadeMesh = shade.mesh(new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, fog: false, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.DstColorFactor, blendDst: THREE.ZeroFactor, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8 }));
-  shadeMesh.renderOrder = 1; shadeMesh.receiveShadow = false; scene.add(shadeMesh);
+  seaMesh.renderOrder = -29; shadeMesh.renderOrder = -28; shadeMesh.receiveShadow = false; scene.add(shadeMesh); // straight after the sea, before the ground and all that stands on the water: the offset that lifts the shade off the sea also lifted it onto hulls and posts, and far off onto whole facades
   // the hole itself: marks every pixel of canal, so the ground and the street layers skip it
   const mask = hole.mesh(new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, depthTest: false, stencilWrite: true, stencilRef: 1, stencilFunc: THREE.AlwaysStencilFunc, stencilZPass: THREE.ReplaceStencilOp }));
   mask.renderOrder = -30; mask.receiveShadow = false;
@@ -296,33 +296,51 @@ export function buildWorld(scene, map, drive) {
   }
 
 
-  // --- bridges: real decks over the water. Humpbacked wherever the car has room, with a stone strip and a low parapet each side ---
-  const decks = new Soup(), stone = C('#bdb6a8'), cap = C('#d6cfc0'), UP = [0, 1, 0];
-  const span = (P, w, col, rail) => { // P: [x, top, z] down the middle; w: width of the roadway; rail: parapet height (0 = none)
-    const W = w + 1.4, n = P.length;
+  // --- bridges: real decks over the water. Humpbacked wherever the car has room ---
+  // Dressed as Alkmaar's own canal bridges are: brick spandrels and parapets on a stone band course, a ring of dressed stone round each arch with a keystone,
+  // a stone coping and stone end posts, klinkers between granite kerbs. The narrow ones (no lamps on them) have a dark green iron railing on a stone kerb instead.
+  const brickPic = (g, bump) => { // eight courses of two bricks in half bond; the mortar is the low line
+    g.fillStyle = bump ? '#3c3c3c' : '#b9ab9f'; g.fillRect(0, 0, 128, 128);
+    for (let y = 0; y < 8; y++) for (let x = -1; x < 2; x++) { const v = hash(y * 5 + ((x + 2) % 2) * 3 + 17); g.fillStyle = grey(bump ? 200 + v * 55 : 222 + v * 33); g.fillRect(x * 64 + (y % 2) * 32 + 2, y * 16 + 2, 60, 13); }
+  };
+  const railPic = (g) => { g.fillStyle = '#fff'; g.fillRect(0, 0, 256, 11); g.fillRect(0, 98, 256, 9); g.fillRect(0, 0, 10, 128); for (let x = 16; x < 256; x += 16) g.fillRect(x - 2, 0, 5, 107); }; // 2 m of railing: handrail, bottom rail, one post, a bar every 12.5 cm
+  const decks = new Soup(), brickS = new Soup(), pave = new Soup(K), ironS = new Soup(), UP = [0, 1, 0], DOWN = [0, -1, 0], pillars = [[], []];
+  const BC = { cap: C('#e6e0d2'), band: C('#d6cfc0'), kerb: C('#b3afa7'), walk: C('#cfc6b6'), brick: C('#a5513a'), ring: [C('#e3dccb'), C('#c4bba8')], key: C('#f4efe3'), iron: C('#1f5a3c') };
+  const bq = (a, b, c, d, want, col) => { const l = hypot(want[0], want[2]) || 1, ux = want[2] / l, uz = -want[0] / l; brickS.quad(a, b, c, d, want, col, [a, b, c, d].map((p) => [(p[0] * ux + p[2] * uz) / 1.28, p[1] / 1.28])); }; // brick, courses level; the picture is 1.28 m square
+  const span = (P, w, col, rail, fence) => { // P: [x, top, z] down the middle; w: width of the roadway; rail: height of the parapet (0 = none); fence: an iron railing on a kerb instead of a parapet
+    const W = w + 1.4, n = P.length, KB = 0.16, CT = 0.1, dist = [0]; // KB: the kerb under a railing; CT: the coping
+    for (let i = 1; i < n; i++) dist.push(dist[i - 1] + hypot(P[i][0] - P[i - 1][0], P[i][2] - P[i - 1][2]));
     const X = (i, o, dy = 0) => { const a = P[max(0, i - 1)], b = P[min(n - 1, i + 1)], l = hypot(b[0] - a[0], b[2] - a[2]) || 1; return [P[i][0] - ((b[2] - a[2]) / l) * o, P[i][1] + dy, P[i][2] + ((b[0] - a[0]) / l) * o]; };
     for (let i = 0; i + 1 < n; i++) {
-      const j = i + 1; decks.quad(X(i, -w / 2), X(j, -w / 2), X(j, w / 2), X(i, w / 2), UP, col);
+      const j = i + 1; pave.quad(X(i, -w / 2), X(j, -w / 2), X(j, w / 2), X(i, w / 2), UP, col);
       for (const sg of [-1, 1]) {
-        const e = sg * W / 2, k = sg * (W / 2 - (rail ? 0.24 : 0)), o = X(i, e), out = [o[0] - P[i][0], 0, o[2] - P[i][2]], inn = [-out[0], 0, -out[2]];
-        decks.quad(X(i, sg * w / 2), X(j, sg * w / 2), X(j, k), X(i, k), UP, stone);
-        decks.quad(X(i, e, -0.5), X(j, e, -0.5), X(j, e, rail), X(i, e, rail), out, stone);
-        if (rail) { decks.quad(X(i, k), X(j, k), X(j, k, rail), X(i, k, rail), inn, stone); decks.quad(X(i, k, rail), X(j, k, rail), X(j, e, rail), X(i, e, rail), UP, cap); }
-        if (rail && (i === 0 || j === n - 1)) { const q = i === 0 ? 0 : j, d = i === 0 ? -1 : 1, along = [(P[j][0] - P[i][0]) * d, 0, (P[j][2] - P[i][2]) * d]; decks.quad(X(q, k), X(q, e), X(q, e, rail), X(q, k, rail), along, stone); }
+        const e = sg * W / 2, k = sg * (W / 2 - (rail ? 0.24 : 0)), kc = sg * (w / 2 + 0.16), cp = sg * (W / 2 + 0.04), bt = rail ? 0.1 : 0;
+        const o = X(i, e), out = [o[0] - P[i][0], 0, o[2] - P[i][2]], inn = [-out[0], 0, -out[2]];
+        const face = (o, y0, y1, want, col, br) => (br ? bq : (...q) => decks.quad(...q))(X(i, o, y0), X(j, o, y0), X(j, o, y1), X(i, o, y1), want, col); // upright, o off the middle
+        const flat = (o0, o1, y, want, col) => decks.quad(X(i, o0, y), X(j, o0, y), X(j, o1, y), X(i, o1, y), want, col);
+        flat(sg * w / 2, kc, 0, UP, BC.kerb); pave.quad(X(i, kc), X(j, kc), X(j, k), X(i, k), UP, BC.walk);
+        face(e, -0.5, -0.12, out, BC.brick, true); flat(sg * (W / 2 - 0.07), e, -0.5, DOWN, BC.band); face(e, -0.12, bt, out, BC.band); // brick up to a stone band course along the deck
+        if (rail && !fence) { face(e, bt, rail - CT, out, BC.brick, true); face(k, 0, rail - CT, inn, BC.brick, true); face(cp, rail - CT, rail, out, BC.band); face(k, rail - CT, rail, inn, BC.band); flat(e, cp, rail - CT, DOWN, BC.band); flat(k, cp, rail, UP, BC.cap); }
+        if (rail && fence) { face(k, 0, KB, inn, BC.band); face(e, bt, KB, out, BC.band); flat(k, e, KB, UP, BC.cap); const m = (k + e) / 2; ironS.quad(X(i, m, KB), X(j, m, KB), X(j, m, rail), X(i, m, rail), out, BC.iron, [[dist[i] / 2, 0], [dist[j] / 2, 0], [dist[j] / 2, 1], [dist[i] / 2, 1]]); }
+        if (rail && (i === 0 || j === n - 1)) { // the end, closed off, with a stone post on it: 2 cm past the end, 3 cm back from the inner face, so it comes no nearer the road
+          const q = i === 0 ? 0 : j, d = i === 0 ? -1 : 1, along = [(P[j][0] - P[i][0]) * d, 0, (P[j][2] - P[i][2]) * d], l = hypot(along[0], along[2]) || 1, c = X(q, sg * (W / 2 - 0.08));
+          decks.quad(X(q, k), X(q, e), X(q, e, fence ? KB : rail), X(q, k, fence ? KB : rail), along, BC.band);
+          pillars[fence ? 1 : 0].push({ x: c[0] - (along[0] / l) * 0.19, y: c[1], z: c[2] - (along[2] / l) * 0.19, a: atan2(along[2], along[0]) });
+        }
       }
     }
-    // What holds it up. Wherever the deck is over water there is a stone wall under each edge with an arch through it (two or three on a long bridge),
-    // a pale ring of voussoirs round each arch, a vault between the two sides, and a pier with a buttress where arches meet and at each bank.
+    // What holds it up. Wherever the deck is over water there is a brick wall under each edge with an arch through it (two or three on a long bridge),
+    // a ring of stones round each arch with a keystone at the crown, a vault between the two sides, and a pier with a buttress where arches meet and at each bank.
     // All of it is below the deck and set back behind the deck's edge, so nothing lies in the plane of the deck side.
-    const step = hypot(P[1][0] - P[0][0], P[1][2] - P[0][2]) || 1, last = n - 1 - 1e-6, before = decks.p.length;
+    const step = hypot(P[1][0] - P[0][0], P[1][2] - P[0][2]) || 1, last = n - 1 - 1e-6;
     const Pm = (f, o, y) => { f = max(0, min(last, f)); const i = floor(f), u = f - i, a = X(i, o), b = X(i + 1, o); return [lerp(a[0], b[0], u), y ?? lerp(a[1], b[1], u), lerp(a[2], b[2], u)]; }; // f samples along, o metres off the middle
     const runs = []; let from = null;
     for (let f = 0; f <= n - 1 + 0.2; f += 0.2) { const q = Pm(f, 0), w = f <= n - 1 && wet(q[0], q[2]); if (w && from === null) from = f; if (!w && from !== null) { runs.push([max(0, from - 0.1), min(n - 1, f - 0.1)]); from = null; } }
-    const dark = C('#8f897c'), under = C('#6f6a60'), BOT = -1.32;
+    const under = C('#6f6a60'), BOT = -1.32;
     const butt = (f, sg) => { // a buttress 0.7 m wide, proud of the wall, stopping short of the deck's edge
       const hw = 0.35 / step, top = Pm(f, 0)[1] - 0.6, o0 = sg * (W / 2 - 0.07), o1 = sg * (W / 2 + 0.16), c = Pm(f, 0), e = Pm(f, o1), out = [e[0] - c[0], 0, e[2] - c[2]], a = Pm(f - hw, 0), b = Pm(f + hw, 0), fwd = [b[0] - a[0], 0, b[2] - a[2]];
-      decks.quad(Pm(f - hw, o1, BOT), Pm(f + hw, o1, BOT), Pm(f + hw, o1, top), Pm(f - hw, o1, top), out, stone); decks.quad(Pm(f - hw, o0, top), Pm(f + hw, o0, top), Pm(f + hw, o1, top), Pm(f - hw, o1, top), UP, cap);
-      for (const d of [-1, 1]) decks.quad(Pm(f + d * hw, o0, BOT), Pm(f + d * hw, o1, BOT), Pm(f + d * hw, o1, top), Pm(f + d * hw, o0, top), fwd.map((v) => v * d), stone);
+      bq(Pm(f - hw, o1, BOT), Pm(f + hw, o1, BOT), Pm(f + hw, o1, top), Pm(f - hw, o1, top), out, BC.brick); decks.quad(Pm(f - hw, o0, top), Pm(f + hw, o0, top), Pm(f + hw, o1, top), Pm(f - hw, o1, top), UP, BC.cap);
+      for (const d of [-1, 1]) bq(Pm(f + d * hw, o0, BOT), Pm(f + d * hw, o1, BOT), Pm(f + d * hw, o1, top), Pm(f + d * hw, o0, top), fwd.map((v) => v * d), BC.brick);
     };
     for (const [f0, f1] of runs) {
       const len = (f1 - f0) * step; if (len < 2.2) continue;
@@ -335,17 +353,21 @@ export function buildWorld(scene, map, drive) {
           decks.quad(v0, v1, v2, v3, [mid[0] - (v0[0] + v2[0]) / 2, BOT - 0.5 - (p.y + q.y) / 2, mid[2] - (v0[2] + v2[2]) / 2], under); // the vault
           for (const sg of [-1, 1]) {
             const c = Pm(p.f, 0), e = Pm(p.f, sg), out = [e[0] - c[0], 0, e[2] - c[2]], o1 = sg * (W / 2 - 0.03), o2 = sg * (W / 2 - 0.07);
-            decks.quad(Pm(p.f, o2, p.y), Pm(q.f, o2, q.y), Pm(q.f, o2, q.top), Pm(p.f, o2, p.top), out, dark);
-            decks.quad(Pm(p.f, o1, p.y), Pm(q.f, o1, q.y), Pm(q.f, o1, min(q.y + 0.17, q.top)), Pm(p.f, o1, min(p.y + 0.17, p.top)), out, cap);
+            bq(Pm(p.f, o2, p.y), Pm(q.f, o2, q.y), Pm(q.f, o2, q.top), Pm(p.f, o2, p.top), out, BC.brick);
+            decks.quad(Pm(p.f, o1, p.y), Pm(q.f, o1, q.y), Pm(q.f, o1, min(q.y + 0.3, q.top)), Pm(p.f, o1, min(p.y + 0.3, p.top)), out, BC.ring[k % 2]); // the ring, its stones light and dark by turns
           }
         }
+        for (const sg of [-1, 1]) { // the keystone: 3 cm proud of the ring, hanging a little below it, its top 2 cm under the band course
+          const fm = (g0 + g1) / 2, hw = 0.13 / step, tw = 0.17 / step, y0 = crown - 0.06, y1 = Pm(fm, 0)[1] - 0.52, oi = sg * (W / 2 - 0.03), oo = sg * W / 2, c = Pm(fm, 0), e = Pm(fm, sg), a = Pm(fm - hw, 0), b = Pm(fm + hw, 0), fwd = [b[0] - a[0], 0, b[2] - a[2]];
+          decks.quad(Pm(fm - hw, oo, y0), Pm(fm + hw, oo, y0), Pm(fm + tw, oo, y1), Pm(fm - tw, oo, y1), [e[0] - c[0], 0, e[2] - c[2]], BC.key); decks.quad(Pm(fm - hw, oi, y0), Pm(fm + hw, oi, y0), Pm(fm + hw, oo, y0), Pm(fm - hw, oo, y0), DOWN, BC.key); decks.quad(Pm(fm - tw, oi, y1), Pm(fm + tw, oi, y1), Pm(fm + tw, oo, y1), Pm(fm - tw, oo, y1), UP, BC.key);
+          for (const d of [-1, 1]) decks.quad(Pm(fm + d * hw, oi, y0), Pm(fm + d * hw, oo, y0), Pm(fm + d * tw, oo, y1), Pm(fm + d * tw, oi, y1), fwd.map((v) => v * d), BC.key);
+        }
         for (const sg of [-1, 1]) { // the solid wall of the pier between this arch and the next, and the buttresses
-          if (a < m - 1) { const fa = g1, fb = g1 + 2 * pier, c = Pm(fa, 0), e = Pm(fa, sg), o2 = sg * (W / 2 - 0.07); decks.quad(Pm(fa, o2, BOT), Pm(fb, o2, BOT), Pm(fb, o2, Pm(fb, 0)[1] - 0.46), Pm(fa, o2, Pm(fa, 0)[1] - 0.46), [e[0] - c[0], 0, e[2] - c[2]], dark); butt(g1 + pier, sg); }
+          if (a < m - 1) { const fa = g1, fb = g1 + 2 * pier, c = Pm(fa, 0), e = Pm(fa, sg), o2 = sg * (W / 2 - 0.07); bq(Pm(fa, o2, BOT), Pm(fb, o2, BOT), Pm(fb, o2, Pm(fb, 0)[1] - 0.46), Pm(fa, o2, Pm(fa, 0)[1] - 0.46), [e[0] - c[0], 0, e[2] - c[2]], BC.brick); butt(g1 + pier, sg); }
           if (a === 0 && f0 > 0.5) butt(f0 + 0.2 / step, sg); if (a === m - 1 && f1 < n - 1.5) butt(f1 - 0.2 / step, sg);
         }
       }
     }
-    tally('bridge arches and piers', 1, (decks.p.length - before) / 9);
   };
   const lampSpots = []; // where a lamp could stand on the end of an arch bridge's parapet; chosen further down, once everything else is in
   for (const b of plan) {
@@ -354,13 +376,19 @@ export function buildWorld(scene, map, drive) {
       const p = b.pts[i], q = b.pts[i + (i === 1 ? 1 : -1)], l = hypot(q[0] - p[0], q[1] - p[1]) || 1, o = sg * ((b.r.w + 1.4) / 2 - 0.12);
       lampSpots.push({ x: p[0] - ((q[1] - p[1]) / l) * o, y: Y0 + 0.01 + b.h * sin(PI * p[2]) ** 2 + 0.62, z: p[1] + ((q[0] - p[0]) / l) * o, a: atan2(q[1] - p[1], q[0] - p[0]) + PI / 2, s: 0.85 });
     }
-    span(b.pts.map(([x, z, u]) => [x, Y0 + 0.01 + b.h * sin(PI * u) ** 2, z]), b.r.w, C(KIND[b.r.k] || '#6a6d7c'), b.mode === 'arch' ? 0.62 : 0);
+    span(b.pts.map(([x, z, u]) => [x, Y0 + 0.01 + b.h * sin(PI * u) ** 2, z]), b.r.w, C(KIND[b.r.k] || '#6a6d7c'), b.mode !== 'arch' ? 0 : b.r.w > 4.5 ? 0.62 : 1, b.mode === 'arch' && b.r.w <= 4.5);
   }
   for (const b of layout.humps) { // the bridges the exam car crosses follow the road height it actually drives on
     const P = []; for (let s = b.s0 - 1.6; s <= b.s1 + 1.61; s += 0.4) { const c = drive.centre(s); P.push([c.x, Y0 + 0.01 + layout.roadY(s), c.z]); }
     span(P, b.w - 1.4, C('#6a6d7c'), 0.62);
   }
-  scene.add(decks.mesh(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 }), 'cast'));
+  {
+    const bm = (o) => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, ...o }), rp = canvasTex(256, 128, railPic);
+    scene.add(decks.mesh(bm(), 'cast'), brickS.mesh(bm({ map: canvasTex(128, 128, (g) => brickPic(g, false)), normalMap: reliefTex(128, 128, (g) => brickPic(g, true), 1.6) }), 'cast'), pave.mesh(bm({ roughness: 0.8, map: klinker, normalMap: klinkerN }), 'cast'), ironS.mesh(bm({ roughness: 0.6, map: rp, alphaTest: 0.5, side: THREE.DoubleSide }), 'cast'));
+    tally('bridges (all fixed ones)', 1, [decks, brickS, pave, ironS].reduce((t, s) => t + s.p.length / 9, 0));
+    const post = (H) => fuse([Box(0.42, H + 0.06, 0.26), '#d6cfc0', 0, (H - 0.06) / 2, 0], [Box(0.48, 0.07, 0.32), '#e6e0d2', 0, H + 0.035, 0]); // H: from the deck to under the cap
+    if (pillars[0].length) mine('bridge end posts', post(0.76), pillars[0]); if (pillars[1].length) mine('footbridge end posts', post(1.1), pillars[1]);
+  }
 
   // --- buildings, split into tiles so only what is on screen is drawn ---
   const bricks = (g, bump, w, h) => { // brick courses, faint enough that the colour of the wall shows through
@@ -738,6 +766,10 @@ export function buildWorld(scene, map, drive) {
     lf.add(box(len - 3, 0.3, 5.8, '#8a5a3a', (len - 3) / 2, -0.15, 0));
     for (let k = 0; k < 6; k++) lf.add(box(0.5, 0.3, 5.8, k % 2 ? '#e9503a' : '#f6f1e4', len - 0.25 - k * 0.5, -0.15, 0)); // warning stripes: their own planks, end to end
     for (const z of [-2.7, 2.7]) { lf.add(box(len, 0.17, 0.3, '#f6f1e4', len / 2, 0.045, z), box(len, 0.1, 0.1, '#f6f1e4', len / 2, 0.95, z)); for (let k = 0; k <= 4; k++) lf.add(box(0.1, 0.84, 0.1, '#f6f1e4', 0.05 + ((len - 0.1) * k) / 4, 0.5, z)); }
+    // white wooden railings with a St Andrew's cross in every panel, as on the drawbridges over the Alkmaar canals; one bar of each cross 4 cm deeper, so no two faces share a plane
+    const crosses = (x0, x1, n, y0, y1, z) => { const P = [], d = (x1 - x0) / n; for (let k = 0; k < n; k++) { const a = x0 + d * k + 0.05, b = a + d - 0.1, l = hypot(b - a, y1 - y0), t = atan2(y1 - y0, b - a); P.push([Box(l, 0.06, 0.05), '#f6f1e4', (a + b) / 2, (y0 + y1) / 2, z, t], [Box(l, 0.06, 0.09), '#f6f1e4', (a + b) / 2, (y0 + y1) / 2, z, -t]); } return P; };
+    const solid = (geo) => { const me = new THREE.Mesh(geo, tinted); me.castShadow = me.receiveShadow = true; return me; };
+    lf.add(solid(fuse(...crosses(0.05, len - 0.05, 4, 0.13, 0.9, -2.7), ...crosses(0.05, len - 0.05, 4, 0.13, 0.9, 2.7))));
     g.add(lf);
     const top = 7.2, arm = 0.62, tip = [cos(r.angle) * len, sin(r.angle) * len];
     for (const z of [-3.3, 3.3]) {
@@ -747,22 +779,30 @@ export function buildWorld(scene, map, drive) {
       g.add(box(1.6, 1.1, 0.9, '#3f4656', back[0], back[1], z));
     }
     g.add(box(0.4, 0.4, 6.15, '#f6f1e4', -0.8, top - 0.03, 0));
-    { // a stone abutment under the deck at each bank, slid out until all of it stands in the water
+    { // the balance: a cross beam and a pair of braces in each bay between the arms, all well above anything the car does; tarred feet on the portal posts
+      const A = (t) => [-0.8 + cos(arm) * (12.2 * t - 4), top + sin(arm) * (12.2 * t - 4)], P = [], bar = (a, b, th) => { const u = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]), l = u.length(); return [Box(l, th, th).applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), u.normalize())), '#f6f1e4', (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]; };
+      for (const [t0, t1] of [[4 / 12.2, 0.66], [0.66, 1]]) { P.push([Box(0.22, 0.22, 6.6), '#f6f1e4', ...A(t1), 0], bar([...A(t0), -3.3], [...A(t1), 3.3], 0.14), bar([...A(t0), 3.3], [...A(t1), -3.3], 0.1)); }
+      for (const z of [-3.3, 3.3]) P.push([Box(0.62, 0.9, 0.62), '#26282d', -0.8, 0.45, z]);
+      g.add(solid(fuse(...P)));
+    }
+    { // a brick abutment with a stone cap at each bank: the near one slid out until all of it stands in the water; the far one just under the fixed half,
+      // no wider than its deck and short of where the tour boat sails (tools/check.mjs keeps the boat clear of the fixed half, and so of this)
       const ab = []; let was = null;
       for (let q = mk.bridgeN - 8; q <= mk.bridgeS + 10; q += 0.25) {
         const c = drive.centre(q), w = wet(c.x, c.z);
         if (was !== null && w !== was) for (let d = 0.2; d < 2.4; d += 0.1) {
           const o = drive.place(q + (w ? d : -0.25 - d), 0), ca = cos(o.h), sa = sin(o.h);
-          if ([[-0.5, -3.4], [-0.5, 3.4], [0.5, -3.4], [0.5, 3.4], [-0.5, 0], [0.5, 0]].every(([f, l]) => wet(o.x + ca * f - sa * l, o.z + sa * f + ca * l))) { ab.push({ x: o.x, y: -0.925, z: o.z, a: o.h }); break; }
+          if (!w) { const f = drive.place(r.s1 + 2.6, 0); ab.push({ x: f.x, y: GROUND - 0.49, z: f.z, a: f.h, sz: 0.87 }); break; }
+          if ([[-0.5, -3.4], [-0.5, 3.4], [0.5, -3.4], [0.5, 3.4], [-0.5, 0], [0.5, 0]].every(([f, l]) => wet(o.x + ca * f - sa * l, o.z + sa * f + ca * l))) { ab.push({ x: o.x, y: GROUND - 0.35, z: o.z, a: o.h }); break; }
         }
         was = w;
       }
-      mine('drawbridge abutments', fuse([Box(0.9, 0.85, 6.7), '#a9a294'], [Box(1.0, 0.12, 6.8), '#c9c2b4', 0, 0.36, 0]), ab);
+      mine('drawbridge abutments', fuse([Box(0.9, 1.0, 6.7), '#a5513a', 0, -0.6, 0], [Box(1.0, 0.14, 6.8), '#d6cfc0', 0, -0.07, 0]), ab); // origin on top of the cap
     }
     // fixed far half of the bridge
     const far = mk.bridgeS - mk.bridgeN - 1.5, fx0 = r.s1 - r.s0 + 2.2;
     g.add(box(far - fx0 + 1.5, 0.5, 5.8, '#8b8f9c', (fx0 + far + 1.5) / 2, -0.26, 0));
-    for (const z of [-2.78, 2.78]) g.add(box(far - fx0 + 1.5, 0.9, 0.14, '#f6f1e4', (fx0 + far + 1.5) / 2, 0.44, z));
+    for (const z of [-2.7, 2.7]) { const L = far - fx0 + 1.5, cx = (fx0 + far + 1.5) / 2, P = [[Box(L, 0.17, 0.3), '#f6f1e4', cx, 0.045, z], [Box(L, 0.1, 0.1), '#f6f1e4', cx, 0.84, z]]; for (let k = 0; k <= 5; k++) P.push([Box(0.1, 0.74, 0.1), '#f6f1e4', fx0 + 0.05 + ((L - 0.1) * k) / 5, 0.47, z]); g.add(solid(fuse(...P, ...crosses(fx0 + 0.05, fx0 + L - 0.05, 5, 0.13, 0.79, z)))); } // the same railing, no higher than the boards it replaces
     scene.add(g);
     // half barriers with flashing lights
     const lamps = [];
@@ -945,7 +985,7 @@ export function buildWorld(scene, map, drive) {
     const lit = lampSpots.filter((o, i) => routeGap(o.x, o.z) < (i % 4 < 2 ? 120 : 45) && carGap(o.x, o.z) > 3 && !hitB(o.x, o.z) && props.every((p) => hypot(p.x - o.x, p.z - o.z) > 1) && (() => { for (let j = 0; j < trees.length; j += 2) if (hypot(trees[j] - o.x, trees[j + 1] - o.z) < 3.6) return false; return true; })());
     mine('bridge lamps', LM.bridgeLampGeo(), lit.sort((a, b) => routeGap(a.x, a.z) - routeGap(b.x, b.z)).filter((o, i, A) => A.slice(0, i).every((q) => hypot(q.x - o.x, q.z - o.z) > 4.5)).slice(0, 18));
 
-    // ducks and swans paddle slow circles; lilies lie by the quay; reeds stand along the green banks
+    // ducks and swans paddle slow circles; lilies lie by the quay (pads just awash, tops 2 cm up); reeds stand along the green banks
     const spare = cand.filter((o) => o.g < 70 && bank(o)).sort((a, b) => (a.h >>> 5) - (b.h >>> 5)), ducks = [], swans = [], lilies = [], reeds = [];
     const still = (x, z, r) => ring(x, z, r + 0.5).every(([i, j]) => inWater(i, j)) && bridgeGap(x, z) > r + 2.2 && duckGap(x, z) > r + 3.2 && jumpGap(x, z) > 45 && offBoats(x, z, r + 0.8) && offLanes(x, z, r + 2.2);
     for (const o of spare) {
@@ -957,15 +997,15 @@ export function buildWorld(scene, map, drive) {
     const offPaddlers = (x, z, d) => paddlers.every((p) => hypot(p.x - x, p.z - z) > p.r + d);
     for (const o of spare) for (let k = 0; k < 2 && lilies.length < 22; k++) {
       const x = o.qx + o.ux * k * 1.25 + o.nx * (0.85 + k * 0.35), z = o.qz + o.uz * k * 1.25 + o.nz * (0.85 + k * 0.35);
-      if ((o.h >>> 15) % 4 === 0 && ring(x, z, 0.7, 6).every(([i, j]) => inWater(i, j)) && bridgeGap(x, z) > 1.2 && duckGap(x, z) > 3.2 && offBoats(x, z, 1) && offLanes(x, z, 2.2) && offPaddlers(x, z, 1) && posts.every((p) => hypot(p.x - x, p.z - z) > 0.9)) lilies.push({ x, y: WATER + 0.004, z, a: frac(o.h, 7 + k) * 6, s: 0.85 + frac(o.h, 9 + k) * 0.4 });
+      if ((o.h >>> 15) % 4 === 0 && ring(x, z, 0.7, 6).every(([i, j]) => inWater(i, j)) && bridgeGap(x, z) > 1.2 && duckGap(x, z) > 3.2 && offBoats(x, z, 1) && offLanes(x, z, 2.2) && offPaddlers(x, z, 1) && posts.every((p) => hypot(p.x - x, p.z - z) > 0.9)) lilies.push({ x, y: WATER - 0.016, z, a: frac(o.h, 7 + k) * 6, s: 0.85 + frac(o.h, 9 + k) * 0.4 });
     }
     waters.forEach(({ p }, wi) => {
       for (let i = 0, j = p.length - 2, e = 0; i < p.length && reeds.length < 56; j = i, i += 2, e++) {
         const ax = p[j], az = p[j + 1], l = hypot(p[i] - ax, p[i + 1] - az), ux = (p[i] - ax) / l, uz = (p[i + 1] - az) / l; if (l < 3 || routeGap(ax, az) > 170) continue;
         let nx = -uz, nz = ux; if (!wet(ax + ux * l / 2 + nx * 0.6, az + uz * l / 2 + nz * 0.6)) { nx = -nx; nz = -nz; }
         for (let u = 0.6 + frac(wi * 71 + e, 4), k = 0; u < l - 0.6 && reeds.length < 56; u += 0.5 + frac(wi * 71 + e, 20 + k) * 1.1, k++) {
-          if (floor(u / 7) % 2) continue; // in beds, not a hedge
-          const x = ax + ux * u + nx * (0.3 + frac(wi + e, 60 + k) * 0.35), z = az + uz * u + nz * (0.3 + frac(wi + e, 60 + k) * 0.35);
+          if (floor(u / 7) % 2) continue; // in beds, not a hedge; 0.55 m out at least, as far as a clump's leaves reach at the height of the quay, so none go into the wall
+          const x = ax + ux * u + nx * (0.55 + frac(wi + e, 60 + k) * 0.35), z = az + uz * u + nz * (0.55 + frac(wi + e, 60 + k) * 0.35);
           if (onGreen(ax + ux * u - nx * 0.8, az + uz * u - nz * 0.8) && ring(x, z, 0.22, 5).every(([i, j]) => inWater(i, j)) && bridgeGap(x, z) > 1.5 && duckGap(x, z) > 2.8 && carGap(x, z) > 2.9 && offBoats(x, z, 0.7) && offLanes(x, z, 2) && offPaddlers(x, z, 0.8) && posts.every((q) => hypot(q.x - x, q.z - z) > 0.7) && lilies.every((q) => hypot(q.x - x, q.z - z) > 0.9)) reeds.push({ x, y: WATER, z, a: frac(wi + e, 90 + k) * 6, s: 0.8 + frac(wi + e, 120 + k) * 0.35 });
         }
       }
@@ -995,10 +1035,10 @@ export function buildWorld(scene, map, drive) {
   audit.where = { lanes: cruisers.map((l) => [l.ax, l.az, l.ax + l.ux * l.len, l.az + l.uz * l.len].map(round)), paddlers: paddlers.map((p) => [round(p.x), round(p.z), p.set.im === undefined ? '' : p.n]), gulls: gulls.map((g) => [round(g.x), round(g.y), round(g.z)]) };
   const setAt = (im, i, x, y, z, a, rx, s = 1) => im.setMatrixAt(i, M.compose(V.set(x, y, z), Q.setFromEuler(E.set(rx, -a, 0, 'YXZ')), S.set(s, s, s)));
   const life = (t) => {
-    for (const { im, list } of afloat) { list.forEach((o, i) => setAt(im, i, o.x, o.y + sin(t * 1.3 + i * 1.7) * 0.035, o.z, o.a, sin(t * 0.9 + i * 2) * 0.022)); im.instanceMatrix.needsUpdate = true; }
+    for (const { im, list } of afloat) { list.forEach((o, i) => setAt(im, i, o.x, o.y + sin(t * 1.3 + i * 1.7) * LM.SWAY.bob, o.z, o.a, sin(t * 0.9 + i * 2) * LM.SWAY.roll)); im.instanceMatrix.needsUpdate = true; }
     cruisers.forEach((l, i) => { // out along the lane, round at the end while it has all but stopped, and back
       const q = t * 0.62 / l.len / (PI / 2) + i * 0.7 + 0.2, k = floor(q + 0.5), f = min(1, max(0, (q - k) / 0.24 + 0.5)), u = 0.5 - 0.5 * cos(q * PI);
-      setAt(cruisers.im, i, l.ax + l.ux * l.len * u, -1.2 + sin(t * 1.1 + i) * 0.03, l.az + l.uz * l.len * u, l.a + PI * (k - 1 + f * f * (3 - 2 * f)), sin(t * 0.8 + i) * 0.02);
+      setAt(cruisers.im, i, l.ax + l.ux * l.len * u, -1.2 + sin(t * 1.1 + i) * LM.SWAY.bob, l.az + l.uz * l.len * u, l.a + PI * (k - 1 + f * f * (3 - 2 * f)), sin(t * 0.8 + i) * LM.SWAY.roll);
     });
     if (cruisers.im) cruisers.im.instanceMatrix.needsUpdate = true;
     for (const p of paddlers) for (let i = 0; i < p.n; i++) { const w = p.ph + p.dir * (t * 0.3 / p.r) - p.dir * i * 0.9 / p.r, x = p.x + cos(w) * p.r, z = p.z + sin(w) * p.r; setAt(p.set.im, p.first + i, x, -1.2 + sin(t * 2 + i) * 0.012, z, atan2(cos(w) * p.dir, -sin(w) * p.dir), 0); }

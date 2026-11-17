@@ -45,7 +45,10 @@ export function buildPolder(scene, { rect = [-1090, -730, 860, 760] } = {}) {
       cells.push({ x0, z0, x1: a, z1: b, kind, near: nearX });
       if (slot) quad(wet, a, z0, x1, b, '#4f93d6', (px, pz) => [0, 0]);
     }
-    if (ditch) quad(wet, DUNE, z1 - ditch, EXT, z1, '#4f93d6', () => [0, 0]);
+    if (ditch) { // a ditch stops at the edge of the town and runs under the polder roads, never across them
+      const holes = (inTown ? [[RX0, RX1]] : []).concat(roads.filter(([, a, b]) => z0 >= a && z1 <= b).map(([x]) => [x - 4, x + 4])).sort((p, q) => p[0] - q[0]);
+      let x = DUNE; for (const [h0, h1] of [...holes, [EXT, EXT]]) { if (h0 > x) quad(wet, x, z1 - ditch, h0, z1, '#4f93d6', () => [0, 0]); x = Math.max(x, h1); }
+    }
   }
   quad(land, SEA, -EXT, DUNE, EXT, '#ecdcab', (px, pz) => [px / 64, pz / 64]); quad(wet, -EXT, -EXT, SEA, EXT, '#3f7fc4', () => [0, 0]);
   const fieldTex = canvasTex(256, 256, (g, w, h) => { g.fillStyle = '#f6f6f2'; g.fillRect(0, 0, w, h); const r = rnd(5); for (let y = 0; y < h; y += 16) { g.fillStyle = `rgba(0,40,0,${(y / 16) % 2 ? 0.07 : 0.02})`; g.fillRect(0, y, w, 16); g.fillStyle = 'rgba(0,30,0,.1)'; g.fillRect(0, y, w, 1.5); } for (let i = 0; i < 2600; i++) { g.fillStyle = r() < 0.5 ? `rgba(0,50,0,${0.03 + r() * 0.08})` : `rgba(255,255,210,${0.04 + r() * 0.1})`; g.fillRect(r() * w, r() * h, 2 + r() * 4, 1 + r() * 3); } });

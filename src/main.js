@@ -31,6 +31,16 @@ const sun = new THREE.DirectionalLight('#ffedc4', 3.1); sun.castShadow = true; s
 Object.assign(sun.shadow.camera, { left: -80, right: 80, top: 80, bottom: -80, near: 10, far: 460 }); scene.add(sun, sun.target);
 const cam = new THREE.PerspectiveCamera(55, 1, 0.45, 7000);
 const world = buildWorld(scene, map, drive), cast = buildCast(scene, world, drive), stunts = buildStunts(scene, world, drive), snel = buildSnelweg(scene), polder = buildPolder(scene, { rect: world.city });
+{ // the signpost at the fork after the Sint Annabrug. She reads it her own way
+  const w = layout.wegwijzer, arrow = (g, x, y, a) => { g.save(); g.translate(x, y); g.rotate(a); g.beginPath(); for (const [px, py] of [[28, 0], [-2, -26], [-2, -11], [-28, -11], [-28, 11], [-2, 11], [-2, 26]]) g.lineTo(px, py); g.fill(); g.restore(); };
+  const face = canvasTex(600, 300, (g) => {
+    g.fillStyle = '#0a4f9e'; g.fillRect(0, 0, 600, 300); g.strokeStyle = '#ffffff'; g.lineWidth = 8; g.strokeRect(12, 12, 576, 276); g.fillRect(12, 148, 576, 5);
+    g.fillStyle = '#ffffff'; g.textBaseline = 'middle'; g.font = '600 66px Rubik'; arrow(g, 66, 82, PI); g.lineWidth = 8; g.beginPath(); g.arc(150, 82, 24, 0, 7); g.stroke(); g.beginPath(); g.arc(150, 82, 8, 0, 7); g.fill(); g.fillText('Centrum', 196, 84);
+    g.fillStyle = '#d42a26'; g.fillRect(34, 186, 118, 76); g.fillStyle = '#ffffff'; g.font = '600 58px Rubik'; g.fillText('A9', 52, 226); g.fillText('Amsterdam', 172, 226); arrow(g, 548, 224, -PI / 2);
+  }, false), edge = new THREE.MeshStandardMaterial({ color: '#9aa1a8', roughness: 0.6 }), board = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 0.05), [edge, edge, edge, edge, new THREE.MeshStandardMaterial({ map: face, roughness: 0.5 }), edge]);
+  const g = new THREE.Group(), pole = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 3.2, 10), edge); board.position.y = 2.6; pole.position.set(0, 1.6, -0.09);
+  g.add(board, pole); g.position.set(w.x, GROUND, w.z); const hd = drive.place(w.s, 0).h; g.rotation.y = Math.atan2(-cos(hd), -sin(hd)); board.castShadow = pole.castShadow = true; scene.add(g); // it faces the traffic coming off the bridge
+}
 
 // ---- camera work ----
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -114,8 +124,8 @@ const SHOTS = [ // [from this many metres along the route, camera]
   [RV.a1 + 28, closeup()],
   [RV.a1 + 54, (st) => ({ eye: P(st.s + 3, canalSide, 1.5), look: carPt(st, 0, 0.8, 0), fov: 50, rate: 6 })],
   [m.annabrug - 52, corner(m.annabrug, m.annabrug - 52, m.annabrug + 9)],
-  [m.annabrug + 9, chase(8, 2.8)],
-  [m.anna + 34, hood()],
+  [m.annabrug + 9, fixed(P(layout.wegwijzer.s - 7, 4.6, 2), 50, P(layout.wegwijzer.s + 4, 1.2, 1.6))] /* on the quay by the signpost: she shoots past it, straight on to the A9 */,
+  [A9.s, hood()] /* the flight back dives down in front of the car and ends on his face, just as he sees the bridge is open */,
   [m.bridgeN - 38, chase(9, 2.3, 0, 60, 10)],
   [R.s1 - 3, (st) => ({ eye: canalCam2, look: carPt(st, 0, 0.1, 0), fov: 42, rate: 0, lock: true })] /* from over the canal: the tour boat below, the car above */,
   [R.s1 + 12, chase(5, 15, 0, 62, 2)], // from above the rooftops: the car rolling over the street
@@ -149,6 +159,24 @@ function outroShot(T, st) {
 }
 
 const eye = V(0, 60, 0), look = V(0, 0, 0); let shotKey = null, fovNow = 55, shake = 0; world.eye = eye; // bystanders step out of the lens
+// The flight between the town and the A9, which really are 2 km apart in this world: up over the roofs, across the polder, down onto the next shot.
+// Halfway, high up where the car is a speck, the story switches over to the other place
+const FLY = 5.4, MID = 2.7; let fly = null;
+const takeOff = (out) => { fly = { t: 0, out, e0: eye.clone(), l0: look.clone(), f0: fovNow }; if (!out) A9.simT = simT; audio.fx.whoosh(); };
+function flyShot(dt, to, watch) { // to: the shot to land on; watch: what to keep looking at until halfway
+  fly.t += dt; const u = Math.min(1, fly.t / FLY), h = u * u * u * (u * (6 * u - 15) + 10), k = sin(PI * u) ** 2; if (watch && fly.t < MID) fly.l0.lerp(watch, Math.min(1, fly.t / 0.4));
+  const e = fly.e0.clone().lerp(to.eye, h), back = V(to.eye.x - to.look.x, 0, to.eye.z - to.look.z).normalize();
+  e.y += Math.min(250, Math.hypot(to.eye.x - fly.e0.x, to.eye.z - fly.e0.z) * 0.15) * smooth(u / 0.22) * smooth((1 - u) / 0.3) ** 2; // a steep climb out of the street, 250 m up between the low clouds over town and the high ones, a dive at the end
+  e.addScaledVector(back, 40 * smooth(u / 0.3) * smooth((1 - u) / 0.35)); // the dive levels out and comes in along the landing shot's own line of sight, so the last tilt is gentle
+  return { eye: e, look: fly.l0.clone().lerp(to.look, smooth((u - 0.06) * 1.35)), fov: lerp(fly.f0, to.fov, smooth(u)) + 6 * k, lock: true }; // the look runs ahead of the eye, so it never points straight down
+}
+const a9Gate = (() => { const s = snel.shot(0); return { eye: s.eye.clone(), look: s.look.clone(), fov: s.fov }; })(); // where the flight lands on the A9: the first motorway shot
+const townShot = (s) => { let i = 0; while (i + 1 < SHOTS.length && SHOTS[i + 1][0] <= s.s) i++; const o = SHOTS[i][1](s); o.key ??= i; if (!o.lock) { o.eye = clearView(o.eye.clone(), o.look); o.lock = true; } return o; }; // cleared here, so film() need not do it again
+// The speed camera's photo: the motorway stands still for a moment, in black and white, with the evidence burnt in
+const PIC = 1.9; let pic = 0, flashed = false;
+const flitsEnd = (() => { const s = snel.timeline.find((x) => x.key === 'flits'); return s ? s.until : snel.T.flash + 0.3; })(); // the photo comes once the flash shot has played out
+const photo = (on) => { $('view').classList.toggle('flits', on); $('flits').hidden = !on; hud(!on); if (on) { capUntil = now; $('flitsV').textContent = Math.round(st.v * 3.6); $('flitsD').textContent = new Date().toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' }); } };
+const photoShot = () => ({ eye: carPt(st, 5.2, 1.55, 1.1), look: carPt(st, 0, 1.3, 0.2), fov: lerp(31, 25, smooth(1 - pic / PIC)), lock: true }); // through the windscreen, slowly closer: his face, her helmet. From the side his arms hid his face
 function film(key, shot, dt) {
   const want = shot.lock ? shot.eye : clearView(shot.eye.clone(), shot.look);
   if (key !== shotKey || !shot.rate) { eye.copy(want); look.copy(shot.look); fovNow = shot.fov; shotKey = key; }
@@ -184,8 +212,9 @@ const LINES = [ // [metres along the route, caption, seconds]
   [RV.a1 + 2, '"Keren, zei ik. In drie keer. That was ONE."', 2.6],
   [RV.a1 + 40, '"Why can I see where we have BEEN?!"', 2.6],
   [RV.b1 + 4, '"Achteruitrijden: voldoende. Now FORWARDS. Like a car."', 2.4],
-  [A9.s - 34, '"Zelfstandig rijden: volg de borden. Centrum."', 2.2],
-  [m.anna + 30, '"De brug staat open. Hallo? HALLO?! DE BRUG!"', 3.6],
+  [A9.s - 54, '"Zelfstandig rijden. Volg de borden naar het centrum."', 2.4],
+  [A9.s - 22, '"Centrum is LINKS. Links! Dat bord zegt A9!"', 2.6],
+  [m.anna + 42, '"De brug staat open. Hallo? HALLO?! DE BRUG!"', 3.4],
   [R.s1 - 2, 'Gids: "And on your left, a typical Dutch... oh."', 2.4],
   [R.s1 + 12, '"aaaaaaaaaaaaaaaaaaaaaaaa"', 2.6],
   [R.land + 4, '"Hellingproef... all four wheels landed. Technically a pass."', 2.8],
@@ -247,14 +276,14 @@ const events = {
 function begin() {
   const q = new URLSearchParams(location.search); // ?at=600 jumps to that many metres, for trying things out
   $('title').hidden = true; $('end').hidden = true; $('end').classList.remove('on'); $('stamp').classList.remove('on');
-  for (const li of $('checks').children) li.classList.remove('done', 'fresh'); fresh.length = 0; A9.t = 0;
+  for (const li of $('checks').children) li.classList.remove('done', 'fresh'); fresh.length = 0; A9.t = 0; fly = null; pic = 0; flashed = false; photo(false);
   cast.reset(); stunts.reset(+q.get('at') || 0); $('who').textContent = '???'; document.title = 'Het Rijexamen'; audio.stop('calm', 0.3); audio.stop('chase', 0.3); audio.stop('win', 0.3); T = prevT = 0; lastS = -1; shotKey = null; st = drive.stateAt(0);
   if (q.has('at')) { phase = 'drive'; simT = drive.tOf(+q.get('at')); lastS = +q.get('at') - 0.01; hud(true); audio.music('chase', 0.46, 0.05); CHECKS.forEach((c, i) => c[2] < lastS && tick(i)); }
   else { phase = 'intro'; simT = 0; hud(false); audio.music('calm', 0.4, 0.8); }
 }
 
 function step(dt) {
-  now += dt; prevT = T; T += dt; world.update(now); polder.update(now); type();
+  now += dt; prevT = T; T += dt; const wnow = pic ? A9.picNow : now; world.update(wnow); polder.update(wnow); type(); // in the photo the mills and the clouds hold still too
   if (now > capUntil) cap.classList.remove('on');
   if (phase === 'title') {
     cast.frame(still(st), 0, dt, now); const a = now * 0.04 + 2.4;
@@ -276,29 +305,37 @@ function step(dt) {
     CHECKS.forEach((c, i) => { if (!c[4] && lastS < c[2] && st.s >= c[2]) tick(i); });
     if (lastS < R.s1 && st.s >= R.s1) audio.fx.scream(3.6);
     if (lastS < R.land && st.s >= R.land) { audio.fx.thud(); shake = 1; }
-    if (st.s > m.bridgeN - 110 && st.s < R.s1 && now > nextDing) { audio.fx.ding(); nextDing = now + 0.45; }
+    if (st.s > m.bridgeN - 110 && st.s < R.s1 && now > nextDing && !(fly && !fly.out)) { /* not while we climb away to the A9: she drives this stretch again on the way back */ audio.fx.ding(); nextDing = now + 0.45; }
     if (lastS < H.s1 && st.s >= H.s1) audio.fx.whoosh();
     if (lastS < H.land && st.s >= H.land) { audio.fx.thud(); shake = 0.8; }
     if (at(DK.t0 + 1.5) || at(DK.tHalt + 1.9)) audio.fx.quack(3);
     if (at(DK.tHalt + 0.9)) { audio.fx.thud(); shake = 0.6; } // the tail comes back down
     if (at(DK.tHalt + 1.2)) { say('"...Een noodstop. Voor eendjes. Dat was eigenlijk perfect."', 2.8); tick('Noodstop'); }
-    audio.engine(st.v, st.slide, st.air, ts); audio.rate('chase', Math.max(0.5, ts));
-    let i = 0; while (i + 1 < SHOTS.length && SHOTS[i + 1][0] <= st.s) i++;
-    const shot = SHOTS[i][1](st); film(shot.key ?? i, shot, dt);
+    audio.engine(fly ? 0 : st.v, st.slide, st.air, ts); audio.rate('chase', Math.max(0.5, ts));
+    if (!fly && A9.t === 0 && lastS < A9.s && st.s >= A9.s) takeOff(false); // she goes straight on, past the sign: the camera goes up
+    if (fly) { film('fly', flyShot(dt, fly.out ? townShot(st) : a9Gate, fly.out ? null : carPt(st, 0, 0.9, 0)), dt); if (fly.out && fly.t >= FLY) fly = null; }
+    else { const shot = townShot(st); film(shot.key, shot, dt); }
     speedo(st.v, 30);
     const name = streetAt(st.s); if (name !== shownStreet) { shownStreet = name; $('street').textContent = name; $('street').hidden = !name; }
-    if (lastS < A9.s && st.s >= A9.s) { phase = 'snelweg'; A9.t = 0; shownStreet = 'A9'; $('street').textContent = 'A9'; $('street').hidden = false; } // smash cut to the motorway
+    if (fly && !fly.out && fly.t >= MID) { phase = 'snelweg'; A9.t = MID - FLY; shownStreet = 'A9'; $('street').textContent = 'A9'; $('street').hidden = false; } // high over the polder: from here on it is the motorway's clock
     lastS = st.s;
     if (simT >= drive.duration) { phase = 'outro'; T = prevT = 0; st = drive.stateAt(L); cast.frame(still(st), simT, 0, now); audio.quiet(); audio.stop('chase', 1.4); $('speed').firstElementChild.textContent = 0; $('speed').classList.remove('over'); }
   } else if (phase === 'snelweg') { // the A9: the town's own clock (simT) stands still while this one runs
-    const was = A9.t, ts = snel.timeScale(was), hit = (t) => was < t && A9.t >= t; A9.t = Math.min(snel.duration, was + dt * ts); st = snel.state(A9.t, hw); st.s = A9.s;
-    snel.frame(A9.t, now); cast.frame(st, simT, dt * ts, now); stunts.frame(null, dt * ts, now, events);
+    let was = A9.t; const ts = snel.timeScale(Math.max(0, was)), hit = (t) => was < t && A9.t >= t;
+    if (pic > 0) { pic -= dt; if (pic <= 0) { pic = 0; photo(false); A9.t = was = A9.hold; audio.fx.whoosh(); } } // back to where the film was, on to the next shot
+    else { A9.t = Math.min(snel.duration, was + dt * ts); if (!flashed && A9.t >= flitsEnd) { flashed = true; A9.hold = A9.t; A9.t = was = snel.T.flash - 1e-4; pic = PIC; A9.picNow = now; photo(true); } } // the photo shows the instant of the flash, just before its glow
+    st = snel.state(Math.max(0, A9.t), hw); st.s = A9.s;
+    const fnow = pic ? A9.picNow : now, fdt = pic ? 0 : dt * ts; // a photo is a photo: his arms and the smoke stop too
+    snel.frame(A9.t, fnow); cast.frame(st, simT, fdt, fnow); stunts.frame(null, fdt, fnow, events);
     for (const [t, name] of snel.events) if (hit(t)) { audio.fx[name](name === 'heli' ? 14 : undefined); if (name === 'thud' || name === 'boom') shake = name === 'boom' ? 1.2 : 0.6; }
     for (const [t, text, secs] of snel.lines) if (hit(t)) say(`"${text}"`, secs);
     for (const [t, nl] of snel.checks) if (hit(t)) tick(nl);
-    audio.engine(st.v, st.slide, st.air, ts); audio.rate('chase', Math.max(0.5, ts)); speedo(st.v, 100);
-    const shot = snel.shot(A9.t); film('a9 ' + shot.key, { eye: shot.eye, look: shot.look, fov: shot.fov, lock: true }, dt);
-    if (A9.t >= snel.duration) { phase = 'drive'; st = drive.state(simT); shownStreet = null; tick('Zelfstandig rijden'); say('"...We never speak of the A9 again. Nooit."', 2.8); } // and back, as if nothing happened
+    audio.engine(fly || pic ? 0 : st.v, st.slide, st.air, ts); audio.rate('chase', Math.max(0.5, ts)); speedo(st.v, 100);
+    if (!fly && A9.t >= snel.duration - MID) takeOff(true); // off the slip road and up: back to town the way she came
+    if (pic) film('a9 photo', photoShot(), dt);
+    else if (fly) { film('fly', flyShot(dt, fly.out ? townShot(drive.state(A9.simT)) : a9Gate, fly.out ? carPt(st, 0, 0.9, 0) : null), dt); if (!fly.out && fly.t >= FLY) fly = null; }
+    else { const shot = snel.shot(A9.t); film('a9 ' + shot.key, { eye: shot.eye, look: shot.look, fov: shot.fov, lock: true }, dt); }
+    if (fly?.out && fly.t >= MID) { phase = 'drive'; simT = A9.simT; st = drive.state(simT); lastS = st.s; shownStreet = null; /* the town's clock goes back to the take-off, so she drives the same street again while we come down and the run-up to the bridge stays as long as it was */ tick('Zelfstandig rijden'); say('"...We never speak of the A9 again. Nooit."', 2.8); } // high over the polder again: the town's clock runs on
   } else { // getting out, the stamp, the reveal, the card
     const C = cast.outro(T, dt, now, events, prevT); stunts.frame(null, dt, now, events);
     film(...outroShot(T, st), dt);
@@ -319,4 +356,4 @@ $('go').textContent = 'Start het examen'; $('go').disabled = false; $('go').oncl
 
 // Camera check, the partner of tools/check.mjs: plays the whole film without drawing it and counts the frames where
 // the camera is inside a building or cannot see the car. Run exam.audit() in the browser console; {} means clean.
-window.exam = { hold: false, dbg: { world, drive, cam, SHOTS, snel, polder, A9, tooClose, hidden, P, cast, stunts, carPt, get st() { return st; } }, ff(secs) { for (let i = 0; i < secs * 30; i++) step(1 / 30); renderer.render(scene, cam); return `${phase} T=${T.toFixed(1)} s=${st.s.toFixed(0)} shot=${shotKey}`; }, audit() { begin(); const bad = {}; for (let i = 0; i < 9000 && $('end').hidden; i++) { const ph = phase; step(1 / 30); const k = `${phase} ${shotKey}`; if (tooClose(cam.position)) bad[k + ' inside'] = (bad[k + ' inside'] || 0) + 1; else if (phase !== 'intro' && ph === phase /* on a cut the picture is still the old scene */ && hidden(cam.position, carPt(st, 0, 1, 0))) bad[k + ' blocked'] = (bad[k + ' blocked'] || 0) + 1; for (const h of cast.poke()) bad[`${phase} clipboard in ${h}`] = (bad[`${phase} clipboard in ${h}`] || 0) + 1; } return bad; } };
+window.exam = { hold: false, dbg: { world, drive, cam, SHOTS, snel, polder, A9, tooClose, hidden, P, cast, stunts, carPt, get st() { return st; } }, ff(secs) { for (let i = 0; i < secs * 30; i++) step(1 / 30); renderer.render(scene, cam); return `${phase} T=${T.toFixed(1)} s=${st.s.toFixed(0)} shot=${shotKey}`; }, audit() { begin(); const bad = {}; for (let i = 0; i < 9000 && $('end').hidden; i++) { const ph = phase; step(1 / 30); const k = `${phase} ${shotKey}`; if (tooClose(cam.position)) bad[k + ' inside'] = (bad[k + ' inside'] || 0) + 1; else if (phase !== 'intro' && ph === phase /* on a cut the picture is still the old scene */ && shotKey !== 'fly' && hidden(cam.position, carPt(st, 0, 1, 0))) bad[k + ' blocked'] = (bad[k + ' blocked'] || 0) + 1; for (const h of cast.poke()) bad[`${phase} clipboard in ${h}`] = (bad[`${phase} clipboard in ${h}`] || 0) + 1; } return bad; } };

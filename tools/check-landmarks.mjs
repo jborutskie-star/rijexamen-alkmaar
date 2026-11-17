@@ -72,7 +72,7 @@ for (const [name, lim] of Object.entries(GEOS)) {
   judge(name, measure(name, [[g]]), lim.box, 0, lim.tris || 400);
   for (const w of ['tint', 'rest']) if (['berrieGeo', 'dormerGeo', 'chimneyGeo'].includes(name)) { const q = tryBuild(`${name}('${w}')`, () => L[name](w)); if (q) rows.push([`  ${name}('${w}')`, '', '', '', '', q.attributes.position.count / 3]); }
 }
-for (const k of Object.keys(L)) if (!(k in GROUPS) && !(k in GEOS) && k !== 'groteKerkSolids') bad(`${k}: exported but not checked`);
+for (const k of Object.keys(L)) if (!(k in GROUPS) && !(k in GEOS) && !['groteKerkSolids', 'SWAY'].includes(k)) bad(`${k}: exported but not checked`);
 
 if (process.argv.includes('--table')) { console.log('name | x | y | z | min xyz, max xyz | tris'); for (const r of rows) console.log(r.join(' | ')); }
 if (problems.length) { console.log(`PROBLEMS (${problems.length}):`); for (const p of problems) console.log(' - ' + p); process.exit(1); }

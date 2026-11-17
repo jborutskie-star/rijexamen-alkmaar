@@ -1,0 +1,47 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>sheet</title>
+<style>
+html,body{margin:0;background:#111}
+#f{position:fixed;left:0;top:0;border:0;z-index:-1}
+#g{display:block;position:relative}
+</style>
+<iframe id="f"></iframe>
+<canvas id="g"></canvas>
+<script>
+// Contact sheet of the film. Params: w,h (frame size, default 640x360), at (start metres),
+// from,to,step (film seconds) or list=t1,t2,...; cols (default 4). Sets document.title='done' when finished.
+const q = new URLSearchParams(location.search), num = (k, d) => q.has(k) ? +q.get(k) : d;
+const W = num('w', 640), H = num('h', 360), cols = num('cols', 4), LH = 26;
+let times = q.has('list') ? q.get('list').split(',').map(Number) : [];
+if (!times.length) { const a = num('from', 0), b = num('to', 21), s = num('step', 3); for (let t = a; t <= b + 1e-6; t += s) times.push(+t.toFixed(3)); }
+const rows = Math.ceil(times.length / cols), g = document.getElementById('g'), x = g.getContext('2d'), f = document.getElementById('f');
+g.width = cols * W; g.height = rows * (H + LH);
+x.fillStyle = '#111'; x.fillRect(0, 0, g.width, g.height);
+f.style.width = W + 'px'; f.style.height = H + 'px';
+f.src = '/index.html' + (q.has('at') ? '?at=' + q.get('at') : '');
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+async function run() {
+  await new Promise((r) => f.onload = r);
+  const w = f.contentWindow;
+  while (!(w.exam && w.document.getElementById('go') && !w.document.getElementById('go').disabled)) await wait(100);
+  w.document.getElementById('go').click();
+  w.exam.hold = true;
+  while (w.exam.ff(0).startsWith('title')) await wait(100); // begin() runs after audio starts
+  w.exam.ff(1 / 30); // one step so the first cell shows the camera of the first shot, not the title view
+  let now = 0;
+  for (let i = 0; i < times.length; i++) {
+    const t = times[i];
+    const st = w.exam.ff(Math.max(0, t - now)); now = Math.max(now, t);
+    const cx = (i % cols) * W, cy = Math.floor(i / cols) * (H + LH);
+    x.drawImage(w.document.querySelector('canvas'), cx, cy + LH, W, H); // same task as ff: the buffer is not preserved
+    x.fillStyle = '#000'; x.fillRect(cx, cy, W, LH);
+    x.fillStyle = '#fff'; x.font = 'bold 16px monospace'; x.textBaseline = 'middle';
+    x.fillText(`t=${t}s  ${st}`, cx + 6, cy + LH / 2, W - 12);
+    x.strokeStyle = '#444'; x.strokeRect(cx + .5, cy + .5, W - 1, H + LH - 1);
+    await wait(0);
+  }
+  document.title = 'done';
+}
+run();
+</script>
