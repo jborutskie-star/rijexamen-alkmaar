@@ -99,7 +99,8 @@ export function makeDrive(route, water = []) {
   const AX = 1.25; // half the wheelbase
   const rollStunt = (s) => 2 * PI * ramp(s, bridge.r1 + 1, bridge.land - 3);
   const timeScale = (s) => (1 - 0.74 * bump(s, bridge.r1 - 2, bridge.r1 + 3, bridge.land - 7, bridge.land - 1))
-    * (1 - 0.66 * bump(s, hop.r1 - 1, hop.r1 + 2, hop.land - 5, hop.land - 0.5)) * (1 - 0.62 * bump(s, boomS + 4, boomS + 7, boomS + 17, boomS + 26));
+    * (1 - 0.8 * bump(s, hop.r1 - 1, hop.r1 + 2, hop.land - 5, hop.land - 0.5)) * (1 - 0.62 * bump(s, boomS + 4, boomS + 7, boomS + 17, boomS + 26))
+    * (1 - 0.55 * bump(s, rev.a0 + 1, rev.a0 + 4, rev.a1 - 4, rev.a1 + 1)); // the flat spin over the roadworks and the turn on the canal both get time to be seen
 
   const TS = 0.02, NT = Math.ceil(L / TS) + 1, T = new Float64Array(NT), iHalt = Math.round(halt / TS); // fine steps, so the last metre of the stop is not jerky
   for (let i = 1; i < NT; i++) T[i] = T[i - 1] + TS / speed((i - 0.5) * TS) + (i === iHalt + 1 ? DWELL : 0);
@@ -168,7 +169,14 @@ export function makeDrive(route, water = []) {
     const [a, b] = [WAY[k - 1], WAY[k]], f = (p - wayAt[k - 1]) / (wayAt[k] - wayAt[k - 1]), c = q > 0 ? place(b[0] - q, b[1]) : place(lerp(a[0], b[0], f), lerp(a[1], b[1], f)); // f < 0: still queueing up the side street
     return { x: c.x, z: c.z, h: c.h + (q > 0 ? PI : atan2(b[1] - a[1], b[0] - a[0])), y: 0.25 * sin(PI * u) * (1 - u) - 1.25 * u * u, land: u <= 0, wet: u >= 1, p };
   };
+  // The canal tour boat the Eenhoornbrug stands open for. It slides out from under the leaf just as the car takes off; the canal crosses the route at a slant.
+  const BOAT = { v: 2.2, lead: 9, slant: -0.1375, len: 9, wid: 2.5 }, tTip = tOf(bridge.r1);
+  const boatAt = (t) => { // off: metres to the right of the route. It sails from right to left
+    const off = -BOAT.lead - BOAT.v * clamp(t - tTip, -14, 14), on = (o) => place(bridge.r1 + 0.06 + BOAT.slant * o, o), a = on(off), b = on(off - 1);
+    return { x: a.x, z: a.z, h: atan2(b.z - a.z, b.x - a.x), off };
+  };
   const layout = {
+    boat: { ...BOAT, at: boatAt, tTip },
     ducks: { s: duckS, halt, n: 6, at: duckAt, t0: tDuck, tHalt, tGo },
     clear, cyclists, cyclistAt, parked, park, rev, boom, works, humps, deckY, roadY: height, // roadY: how high the road is under the car
     solids: [...works, boom],

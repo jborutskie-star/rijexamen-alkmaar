@@ -43,7 +43,7 @@
   #form li i { width: 16px; height: 16px; border: 2px solid var(--navy); border-radius: 3px; position: relative; }
   #form li.done i::after { content: ""; position: absolute; left: 3px; top: -5px; width: 7px; height: 15px; border: solid var(--red); border-width: 0 4px 4px 0; transform: rotate(40deg); }
   #form li em { grid-column: 2; font: 700 17px/1 Caveat, cursive; color: var(--red); height: 0; opacity: 0; transform: rotate(-2deg); transition: height .2s ease-out, opacity .2s ease-out; }
-  #form li.done em { height: 16px; opacity: 1; }
+  #form li.fresh em { height: 16px; opacity: 1; }
   #stamp { position: absolute; left: 50%; top: 52%; translate: -50% -50%; rotate: -14deg; font-size: 30px; color: var(--red); border: 5px solid var(--red); border-radius: 6px; padding: 5px 10px 7px; background: rgba(255, 253, 244, .85); scale: 2.4; opacity: 0; transition: scale .16s cubic-bezier(.3, 1.5, .5, 1), opacity .1s linear; }
   #stamp.on { scale: 1; opacity: 1; }
 
@@ -60,7 +60,7 @@
 
   @media (max-width: 640px) {
     #form { width: 172px; padding: 8px 10px; } #form h2 { font-size: 15px; } #form p { font-size: 10px; margin-bottom: 6px; padding-bottom: 5px; } #form li { font-size: 11px; grid-template-columns: 14px 1fr; column-gap: 6px; } #form li i { width: 13px; height: 13px; }
-    #form li.done em { height: 13px; } #form li em { font-size: 14px; } #stamp { font-size: 22px; } #form small { display: none; } #form ul { gap: 3px; }
+    #form li.fresh em { height: 13px; } #form li em { font-size: 14px; } #stamp { font-size: 22px; } #form small { display: none; } #form ul { gap: 3px; }
   }
   @media (max-width: 1320px) { #cap { bottom: max(112px, calc(env(safe-area-inset-bottom) + 112px)); } }
   @media (max-width: 640px) { #cap { bottom: max(86px, calc(env(safe-area-inset-bottom) + 86px)); } }

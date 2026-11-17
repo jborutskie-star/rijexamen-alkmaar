@@ -5,6 +5,8 @@ import { buildWorld, canvasTex, inPoly, GROUND } from './world.js';
 import { buildCast } from './actors.js';
 import { buildStunts } from './stunts.js';
 import { makeAudio } from './audio.js';
+import { buildSnelweg } from './snelweg.js';
+import { buildPolder } from './polder.js';
 
 const { PI, sin, cos, atan, tan } = Math, $ = (id) => document.getElementById(id);
 const ramp = (t, a, b) => smooth((t - a) / (b - a));
@@ -12,6 +14,7 @@ const audio = makeAudio();
 const [map, route] = await Promise.all(['data/alkmaar.json', 'data/route.json'].map((f) => fetch(f).then((r) => r.json())));
 await Promise.race([Promise.all(['400 40px "Lilita One"', '600 16px Rubik', '700 16px Caveat'].map((f) => document.fonts.load(f))), new Promise((r) => setTimeout(r, 3000))]);
 const drive = makeDrive(route, map.water), { m, L, layout } = drive, R = layout.ramp, H = layout.hop, RV = layout.rev, BS = layout.boom.s, D = layout.donut, W0 = layout.cyclists[0].c?.sm ?? layout.cyclists[0].sm - 13, DK = layout.ducks;
+const A9 = { s: m.annabrug + 32, t: 0 }, hw = {}; // the film cuts away to the motorway at A9.s; hw is the car's pose out there
 
 // ---- renderer, sky, light ----
 const renderer = new THREE.WebGLRenderer({ canvas: $('view'), antialias: true, stencil: true }); // stencil: the canals are cut out of the ground with it
@@ -27,7 +30,7 @@ scene.add(new THREE.HemisphereLight('#dcecff', '#b98f66', 1.25)); // less fill t
 const sun = new THREE.DirectionalLight('#ffedc4', 3.1); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.06;
 Object.assign(sun.shadow.camera, { left: -80, right: 80, top: 80, bottom: -80, near: 10, far: 460 }); scene.add(sun, sun.target);
 const cam = new THREE.PerspectiveCamera(55, 1, 0.45, 7000);
-const world = buildWorld(scene, map, drive), cast = buildCast(scene, world, drive), stunts = buildStunts(scene, world, drive);
+const world = buildWorld(scene, map, drive), cast = buildCast(scene, world, drive), stunts = buildStunts(scene, world, drive), snel = buildSnelweg(scene), polder = buildPolder(scene, { rect: world.city });
 
 // ---- camera work ----
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -67,9 +70,10 @@ function corner(mark, s0, s1, fov = 52) {
 }
 const grid = (sA, sB, offs, ys) => { const c = []; for (const y of ys) for (let s = sA; s <= sB; s += 2) for (const o of offs) c.push(P(s, o, y), P(s, -o, y)); return c; };
 const canalSide = freeSide(m.dam + 36, m.annabrug - 52, 8);
-const parkShot = fixed(spot(L + 2, -4.2, 3.2, L), 60);
+const parkShot = fixed(spot(L + 2, -4.2, 1.8, L), 60); // only once the car is near: from down the street this was a long lens on a speck
+const parkTrack = (st) => ({ eye: P(st.s + 6, -3.6, 1 + st.y), look: carPt(st, 0, 0.8, 0), fov: 52, rate: 6 }); // alongside on the houses' side as it swings round, the quay and the crowd behind it
 // The emergency stop in four takes: from duck height as the car comes at them, side on as it stands on its nose, the examiner's face, then from the canal as the last ducklings file past and the car leaves.
-const duckCam = P(DK.s + 2.4, -1.1, 0.34), noseCam = P(DK.s + 3.4, -3.6, 0.45), canalCam = P(DK.s + 2.2, 10.8, 2.6); // the last one stands on the Kuipersbrug
+const duckCam = P(DK.s + 2.4, -1.1, 0.34), noseCam = P(DK.s + 3.4, -3.1, 0.45), canalCam = P(DK.s + 2.2, 10.8, 2.6); // the last one stands on the Kuipersbrug
 const duckStop = (st) => {
   const t = simT - DK.tHalt;
   if (t < -0.2) return { key: 'duck', eye: duckCam, look: P(DK.halt + 0.4, 0, 0.85), fov: 60, rate: 0, lock: true };
@@ -77,6 +81,10 @@ const duckStop = (st) => {
   if (t < 1.95) return { key: 'duckface', ...closeup(42)(st) };
   return { key: 'canal', eye: canalCam, look: P(DK.s - 3.2, 5.2, 0.2), fov: 50, rate: 0, lock: true };
 };
+// The frozen cheese carriers in front, the car whirling round behind them. The camera stands still too, so it is plain that they do not move
+const carriersEye = V(D.x - 6.8, 1.45, D.z), carriersShot = (st) => ({ eye: carriersEye, look: V(lerp(D.x, st.x, 0.2), 1.15, lerp(D.z, st.z, 0.2)), fov: 62, rate: 0, lock: true });
+// The drawbridge, from over the canal: the tour boat below, the car above
+const canalCam2 = P(R.s1 + 9, -23, 0.9);
 const SHOTS = [ // [from this many metres along the route, camera]
   [0, fixed(spot(17, 2.4, 0.8, 8), 55)],
   [12, chase(8, 2.8)],
@@ -87,15 +95,14 @@ const SHOTS = [ // [from this many metres along the route, camera]
   [W0 + 128, chase(8, 2.4, 0, 64)],
   [H.s0 - 66, closeup()],
   [H.s0 - 40, chase(9, 2.4, 0, 60, 10)],
-  [H.s1 - 2, fixed(pick(grid(H.s0 + 2, H.land - 2, [3.8, 4.4, 5, 6], [0.7, 1.3, 2.2]).filter((p) => layout.solids.every((o) => Math.hypot(o.x - p.x, o.z - p.z) > 3.2)), H.s1 - 2, H.land), 52)] /* the hop over the roadworks, side on */,
-  [H.s1 + 6, closeup(48)],
-  [H.land - 6, fixed(pick(grid(H.land + 4, H.land + 11, [0.8, 1.6, 2.4], [0.6, 1.2, 2]), H.land - 6, H.land + 4), 50)],
+  [H.s1 - 2, fixed(pick(grid(H.s0 + 2, H.land - 2, [3.8, 4.4, 5, 6], [0.7, 1.3, 2.2]).filter((p) => layout.solids.every((o) => Math.hypot(o.x - p.x, o.z - p.z) > 3.2)), H.s1 - 2, H.land - 6), 52)] /* the flat spin over the roadworks, side on and in one take */,
+  [H.land - 7, fixed(pick(grid(H.land + 4, H.land + 11, [0.8, 1.6, 2.4], [0.6, 1.2, 2]), H.land - 7, H.land + 4), 50)],
   [H.land + 5, closeup()],
   [m.mient - 40, corner(m.mient, m.mient - 40, m.mient + 12)],
   [m.mient + 12, chase(8, 2.8, 1.2)],
   [m.waagIn - 12, chase(11, 5)],
   [m.donut - 10, fixed(V(D.x + 6, 36, D.z + 22), 52, V(D.x, 0, D.z))],
-  [m.donut + 48, fixed(V(D.x, 3.6, D.z), 62)],
+  [m.donut + 48, carriersShot],
   [m.donut + 96, hood(58)],
   [m.donut + 128, chase(8, 3)],
   [m.voordam + 8, front()],
@@ -110,8 +117,9 @@ const SHOTS = [ // [from this many metres along the route, camera]
   [m.annabrug + 9, chase(8, 2.8)],
   [m.anna + 34, hood()],
   [m.bridgeN - 38, chase(9, 2.3, 0, 60, 10)],
-  [R.s1 - 3, fixed(pick(grid(R.s0 - 4, R.s1 + 12, [10, 14, 18, 22, 26], [1.2, 2.5, 4]), R.s1 - 3, R.s1 + 14), 44)] /* from the canal, side on */,
-  [R.s1 + 14, fixed(pick(grid(R.land + 6, R.land + 16, [1.4, 2.2, 3], [0.7, 1.4, 2.4]), R.s1 + 14, R.land + 2), 48)],
+  [R.s1 - 3, (st) => ({ eye: canalCam2, look: carPt(st, 0, 0.1, 0), fov: 42, rate: 0, lock: true })] /* from over the canal: the tour boat below, the car above */,
+  [R.s1 + 12, chase(5, 15, 0, 62, 2)], // from above the rooftops: the car rolling over the street
+  [R.s1 + 21, fixed(pick(grid(R.land + 6, R.land + 16, [1.4, 2.2, 3], [0.7, 1.4, 2.4]), R.s1 + 14, R.land + 2), 48)],
   [R.land + 2, corner(m.zout, R.land + 2, m.zout + 10)],
   [m.zout + 10, chase(8, 2.6)],
   [BS - 6, front(12, 1.5, -1.2, 50)] /* looking back: the stall goes up behind the car */,
@@ -120,14 +128,14 @@ const SHOTS = [ // [from this many metres along the route, camera]
   [m.limmer + 10, chase(8, 2.8)],
   [m.willems - 4, chase(11, 5)],
   [L - 52, closeup()] /* eyes shut, hands together */,
-  [L - 32, parkShot],
+  [L - 32, parkTrack], [L - 11.5, parkShot],
 ];
-const INTRO = 17, mill = world.windmill, waag = map.pois.Waag, kerk = map.pois['Grote of Sint-Laurenskerk'];
+const INTRO = 21.6, mill = world.windmill, waag = map.pois.Waag, kerk = map.pois['Grote of Sint-Laurenskerk'];
 function introShot(T, st) {
-  if (T < 3.5) { const a = 0.5 + T * 0.06; return ['mill', { eye: clearView(V(mill.x + cos(a) * 36, 8 + T * 0.4, mill.z + sin(a) * 36), V(mill.x, 16, mill.z)), look: V(mill.x, 13.5, mill.z), fov: 50, lock: true }]; }
+  if (T < 3.5) { const A = mill.face, d = 34 - T * 0.8, sd = -10 + T * 0.9; return ['mill', { eye: V(mill.x + sin(A) * d - cos(A) * sd, 1.9 + T * 0.15, mill.z + cos(A) * d + sin(A) * sd), look: V(mill.x, 14, mill.z), fov: 58, lock: true }]; } // low on the lawn in front, where the sails face
   if (T < 7) { const a = 4.42 + (T - 3.5) * 0.04; return ['kerk', { eye: V(kerk[0] + cos(a) * 62, 2.5, kerk[1] + sin(a) * 62), look: V(kerk[0], 17, kerk[1]), fov: 58, lock: true }]; } // from the open square north of the church
   if (T < 10.5) { const u = (T - 7) / 3.5; return ['waag', { eye: clearView(V(D.x + 8 - u * 5, 2.2 + u * 1.5, D.z - 12), V((D.x + waag[0]) / 2, 10, (D.z + waag[1]) / 2)), look: V(waag[0], 17, waag[1]), fov: 55, lock: true }]; } // sight line checked to a point in front of the Waag: its own middle is solid
-  if (T >= 13) return ['exam', closeup(46)(st)];
+  if (T >= 13) return T >= 16.6 && T < 19.1 ? ['far', { eye: clearView(carPt(st, -6.5, 2.4, 0.7), carPt(st, 0, 1, 0)), look: carPt(st, 70, 1.5, 0), fov: 30, lock: true }] : ['exam', closeup(46)(st)]; // the eye test: a long look down the street
   const u = (T - 10.5) / 2.5;
   return ['car', { eye: clearView(carPt(st, 5.2 - u * 1.2, 1.25, -3.4 + u * 0.5), carPt(st, 0, 1, 0)), look: carPt(st, -0.2, 1.15, 0), fov: 45, lock: true }];
 }
@@ -135,8 +143,9 @@ function outroShot(T, st) {
   const C = cast.CUE;
   if (T < 1) return ['park', parkShot(st)];
   if (T < C.nDoor - 0.3) { const u = ramp(T, 1, C.nDoor); return ['road', { eye: clearView(carPt(st, -0.3 - u * 0.3, 1.25, 6.4 - u * 1.2), carPt(st, -0.2, 1, 1.9)), look: carPt(st, -0.2, lerp(0.7, 1.1, ramp(T, C.exUp, C.exUp + 1)), 1.9), fov: 48, rate: 4 }]; }
-  if (T < C.wide) return ['kerb', { eye: carPt(st, 0.1, 1.45, -4.05 + 0.25 * ramp(T, C.nDoor, C.reveal + 1)), look: carPt(st, -0.2, lerp(1.2, 1.45, ramp(T, C.nOut, C.nStand)), -1.6), fov: lerp(54, 44, ramp(T, C.hands, C.reveal + 0.6)), rate: 5 }];
-  return ['wide', { eye: clearView(carPt(st, -2.5 - (T - C.wide) * 0.12, 1 + (T - C.wide) * 0.04, -13.5), carPt(st, 0, 1.3, -1.2)), look: carPt(st, -0.2, 4.4, -1.4), fov: 58, rate: 2 }]; // from the ground, looking up: the crowd, the houses and the fireworks over the roofs
+  if (T < C.wide) return ['kerb', { eye: carPt(st, 0.1, 1.45, -4.05 + 0.25 * ramp(T, C.nDoor, C.reveal + 1)), look: carPt(st, lerp(-0.2, -1.5, ramp(T, C.side, C.side + 0.35)), lerp(1.2, 1.45, ramp(T, C.nOut, C.nStand)) + 0.9 * ramp(T, C.hop, C.wide), -1.6), fov: lerp(54, 44, ramp(T, C.hands, C.reveal + 0.6)), rate: 5 }];
+  const u = ramp(T, C.wide, C.card + 2);
+  return ['hero', { eye: clearView(carPt(st, -0.9, 1.5 + u * 0.2, 5.4 + u * 1.2), carPt(st, -1.5, 2.2, 0)), look: carPt(st, -0.9, 1.9 + u * 0.5, 0), fov: 50, rate: 2 }]; // the photo from the houses' side: the examiner and his stamp, her on the boot, the crowd and the banners behind
 }
 
 const eye = V(0, 60, 0), look = V(0, 0, 0); let shotKey = null, fovNow = 55, shake = 0; world.eye = eye; // bystanders step out of the lens
@@ -158,7 +167,7 @@ const way = (mark) => (drive.centre(mark).k > 0 ? 'rechts' : 'links');
 const LINES = [ // [metres along the route, caption, seconds]
   [1, 'The candidate says nothing. The candidate floors it.', 2.8],
   [m.lange - 26, `Examinator: "Bocht naar ${way(m.lange)}. Rustig. RUSTIG!"`, 3],
-  [m.lange + 30, '"This is a 30 zone!"', 2.2],
+  [m.lange + 30, '"Dit is een 30-zone. Thirty! Not ninety!"', 2.4],
   [W0 - 5, '"FIETSERS! Mind the cyclists!"', 3],
   [W0 + 104, '"...you missed all of them. How?"', 2.4],
   [H.s0 - 56, '"Wegwerkzaamheden. That means SLOWER."', 2.4],
@@ -167,32 +176,42 @@ const LINES = [ // [metres along the route, caption, seconds]
   [m.mient - 16, `"${way(m.mient)[0].toUpperCase() + way(m.mient).slice(1)}. ${way(m.mient).toUpperCase()}!"`, 2.2],
   [m.waagIn - 10, '"Bij de rotonde rechtdoor..."', 2.4],
   [m.donut + 6, '"That is not a roundabout. That is the kaasmarkt!"', 3.4],
-  [m.donut + 80, '"Why are we going round AGAIN?"', 2.8],
+  [m.donut + 46, 'Kaasdrager: "Niet bewegen, Henk. Think of the cheese."', 2.6],
+  [m.donut + 84, '"Why are we going round AGAIN?"', 2.6],
   [m.voordam + 4, '"Mirror, signal... never mind."', 2.6],
   [m.zijdam + 12, '"Lovely canal. Please stay out of it."', 2.2],
   [DK.halt - 30, '"EENDJES! Ducks! REMMEN!"', 1.5],
   [RV.a1 + 2, '"Keren, zei ik. In drie keer. That was ONE."', 2.6],
   [RV.a1 + 40, '"Why can I see where we have BEEN?!"', 2.6],
-  [RV.b1 + 4, '"Thank you. Forwards. Like a car."', 2.6],
+  [RV.b1 + 4, '"Achteruitrijden: voldoende. Now FORWARDS. Like a car."', 2.4],
+  [A9.s - 34, '"Zelfstandig rijden: volg de borden. Centrum."', 2.2],
   [m.anna + 30, '"De brug staat open. Hallo? HALLO?! DE BRUG!"', 3.6],
-  [R.s1 + 2, '"aaaaaaaaaaaaaaaaaaaaaaaa"', 3.8],
-  [R.land + 4, '"All four wheels. Technically correct."', 2.8],
+  [R.s1 - 2, 'Gids: "And on your left, a typical Dutch... oh."', 2.4],
+  [R.s1 + 12, '"aaaaaaaaaaaaaaaaaaaaaaaa"', 2.6],
+  [R.land + 4, '"Hellingproef... all four wheels landed. Technically a pass."', 2.8],
   [BS + 6, '"...that was not us. Keep driving. KEEP DRIVING."', 3.2],
   [m.limmer + 14, '"Almost there. Just park like a normal person."', 2.8],
   [L - 64, '"Fileparkeren. Gewoon. Fileparkeren. Alsjeblieft."', 2.8],
   [L - 24, '"NOT LIKE THAT!"', 2],
 ];
-const CHECKS = [ // [Dutch, English, ticked at metres, the examiner's note]
-  ['Wegrijden', 'pulling away', 30, 'met rook'],
-  ['Bocht nemen', 'cornering', m.lange + 25, 'zijwaarts'],
+const CHECKS = [ // [Dutch, English, ticked at metres, the examiner's note, ticked by hand (at a moment, not at a place)]
+  ['Ogentest', 'eye test', 1, 'drie straten ver?!'],
+  ['Wegrijden', 'pulling away', 30, 'met rook. Mag.'],
+  ['Bocht nemen', 'cornering', m.lange + 25, 'zijwaarts. Telt.'],
   ['Fietsers', 'cyclists', W0 + 190, 'allemaal gemist'],
-  ['Wegwerk', 'roadworks', H.land + 6, 'eroverheen'],
-  ['Rotonde', 'roundabout', m.schapen - 20, 'twee keer?!'],
-  ['Achteruitrijden', 'reversing', RV.b1 + 4, 'met 50 km/u'],
-  ['Brug oversteken', 'bridge', R.land + 8, 'hij stond open'],
-  ['Fileparkeren', 'parking', L - 0.3, 'in één keer'],
+  ['Wegwerk', 'roadworks', H.land + 6, 'eroverheen. Tja.'],
+  ['Rotonde', 'roundabout', m.schapen - 20, 'twee keer rond?!'],
+  ['Noodstop', 'emergency stop', DK.halt, 'voor eendjes. Perfect.', true],
+  ['Keren', 'turning round', RV.a1 + 3, 'in één keer. Mag dat?'],
+  ['Achteruitrijden', 'reversing', RV.b1 + 4, 'kaarsrecht, 50 km/u'],
+  ...snel.checks.map(([, nl, en, note]) => [nl, en, A9.s, note, true]),
+  ['Zelfstandig rijden', 'solo', A9.s, 'via de A9. Tja.', true],
+  ['Hellingproef', 'hill start', R.land + 8, 'vliegend geslaagd'],
+  ['Fileparkeren', 'parking', L - 0.3, 'strak. Té strak.'],
 ];
 $('checks').innerHTML = CHECKS.map(([nl, en, , note]) => `<li><i></i><span>${nl} <small>(${en})</small></span><em>${note}</em></li>`).join('');
+const fresh = []; // the form is long, so only the two newest notes stay written out
+const tick = (i) => { const li = $('checks').children[typeof i === 'number' ? i : CHECKS.findIndex((c) => c[0] === i)]; if (!li || li.classList.contains('done')) return; li.classList.add('done', 'fresh'); fresh.push(li); if (fresh.length > 2) fresh.shift().classList.remove('fresh'); };
 const cap = $('cap'), [capA, capB] = cap.children, CPS = 30; let now = 0, capUntil = 0, capText = '', capN = 0, capT0 = 0, capVoice = false;
 // captions are typed out; the examiner's own words (in quotes) come with a blip per syllable, like talking in an old game
 const say = (text, secs = 2.6) => { capText = text; capN = 0; capT0 = now; capVoice = /^(Examinator: )?"(?!a+"$)/.test(text); capA.textContent = ''; capB.textContent = text; cap.classList.add('on'); capUntil = now + Math.max(secs, text.length / CPS + 1.2); };
@@ -216,6 +235,7 @@ let phase = 'title', T = 0, prevT = 0, simT = 0, lastS = -1, st = drive.stateAt(
 const still = (s) => ({ ...s, v: 0, slide: 0, beta: 0 });
 const crossed = (t) => prevT < t && T >= t;
 const hud = (on) => { for (const id of ['street', 'speed', 'form']) $(id).hidden = !on; };
+const speedo = (v, limit) => { const kmh = Math.round(v * 3.6), el = $('speed'); el.firstElementChild.textContent = kmh; el.lastElementChild.textContent = limit; el.classList.toggle('over', kmh > limit); };
 const events = {
   bell: audio.fx.bell, whoosh: audio.fx.whoosh, drumroll: audio.fx.drumroll,
   thud: () => { audio.fx.thud(); shake = 0.5; say('Examinator: "Grond. Lieve, stilstaande grond."', 3); },
@@ -227,14 +247,14 @@ const events = {
 function begin() {
   const q = new URLSearchParams(location.search); // ?at=600 jumps to that many metres, for trying things out
   $('title').hidden = true; $('end').hidden = true; $('end').classList.remove('on'); $('stamp').classList.remove('on');
-  for (const li of $('checks').children) li.classList.remove('done');
+  for (const li of $('checks').children) li.classList.remove('done', 'fresh'); fresh.length = 0; A9.t = 0;
   cast.reset(); stunts.reset(+q.get('at') || 0); $('who').textContent = '???'; document.title = 'Het Rijexamen'; audio.stop('calm', 0.3); audio.stop('chase', 0.3); audio.stop('win', 0.3); T = prevT = 0; lastS = -1; shotKey = null; st = drive.stateAt(0);
-  if (q.has('at')) { phase = 'drive'; simT = drive.tOf(+q.get('at')); lastS = +q.get('at') - 0.01; hud(true); audio.music('chase', 0.46, 0.05); CHECKS.forEach((c, i) => c[2] < lastS && $('checks').children[i].classList.add('done')); }
+  if (q.has('at')) { phase = 'drive'; simT = drive.tOf(+q.get('at')); lastS = +q.get('at') - 0.01; hud(true); audio.music('chase', 0.46, 0.05); CHECKS.forEach((c, i) => c[2] < lastS && tick(i)); }
   else { phase = 'intro'; simT = 0; hud(false); audio.music('calm', 0.4, 0.8); }
 }
 
 function step(dt) {
-  now += dt; prevT = T; T += dt; world.update(now); type();
+  now += dt; prevT = T; T += dt; world.update(now); polder.update(now); type();
   if (now > capUntil) cap.classList.remove('on');
   if (phase === 'title') {
     cast.frame(still(st), 0, dt, now); const a = now * 0.04 + 2.4;
@@ -245,13 +265,15 @@ function step(dt) {
     if (crossed(3.7)) say('The Grote Kerk. Five hundred years of calm.', 3);
     if (crossed(7.2)) say('Kaasmarkt. Bicycles. Peace and quiet.', 3);
     if (crossed(10.7)) say('And today: one driving exam.', 2.2);
-    if (crossed(13.2)) say('Examinator: "Goedemorgen. Ik ben meneer De Vries. Rustig wegrijden, graag."', 3.6);
+    if (crossed(13.2)) say('Examinator: "Goedemorgen. Ik ben meneer De Vries. Eerst de ogentest."', 3.2);
+    if (crossed(16.7)) say('The candidate reads a number plate. Three streets away.', 2.4);
+    if (crossed(19.2)) say('"...Dat is ook goed. Rustig wegrijden, graag."', 2);
     if (T >= INTRO) { phase = 'drive'; simT = 0; hud(true); audio.stop('calm', 0.25); audio.music('chase', 0.46, 0.05); }
   } else if (phase === 'drive') {
     const ts = st.timeScale, was = simT, at = (t) => was < t && simT >= t; simT += dt * ts; st = drive.state(simT);
     cast.frame(st, simT, dt * ts, now, events); stunts.frame(st, dt * ts, now, events);
     for (const [s, text, secs] of LINES) if (lastS < s && st.s >= s) say(text, secs);
-    CHECKS.forEach((c, i) => { if (lastS < c[2] && st.s >= c[2]) $('checks').children[i].classList.add('done'); });
+    CHECKS.forEach((c, i) => { if (!c[4] && lastS < c[2] && st.s >= c[2]) tick(i); });
     if (lastS < R.s1 && st.s >= R.s1) audio.fx.scream(3.6);
     if (lastS < R.land && st.s >= R.land) { audio.fx.thud(); shake = 1; }
     if (st.s > m.bridgeN - 110 && st.s < R.s1 && now > nextDing) { audio.fx.ding(); nextDing = now + 0.45; }
@@ -259,14 +281,24 @@ function step(dt) {
     if (lastS < H.land && st.s >= H.land) { audio.fx.thud(); shake = 0.8; }
     if (at(DK.t0 + 1.5) || at(DK.tHalt + 1.9)) audio.fx.quack(3);
     if (at(DK.tHalt + 0.9)) { audio.fx.thud(); shake = 0.6; } // the tail comes back down
-    if (at(DK.tHalt + 1.2)) say('"...Een noodstop. Voor eendjes. Dat was eigenlijk perfect."', 2.8);
+    if (at(DK.tHalt + 1.2)) { say('"...Een noodstop. Voor eendjes. Dat was eigenlijk perfect."', 2.8); tick('Noodstop'); }
     audio.engine(st.v, st.slide, st.air, ts); audio.rate('chase', Math.max(0.5, ts));
     let i = 0; while (i + 1 < SHOTS.length && SHOTS[i + 1][0] <= st.s) i++;
     const shot = SHOTS[i][1](st); film(shot.key ?? i, shot, dt);
-    const kmh = Math.round(st.v * 3.6); $('speed').firstElementChild.textContent = kmh; $('speed').classList.toggle('over', kmh > 30);
+    speedo(st.v, 30);
     const name = streetAt(st.s); if (name !== shownStreet) { shownStreet = name; $('street').textContent = name; $('street').hidden = !name; }
+    if (lastS < A9.s && st.s >= A9.s) { phase = 'snelweg'; A9.t = 0; shownStreet = 'A9'; $('street').textContent = 'A9'; $('street').hidden = false; } // smash cut to the motorway
     lastS = st.s;
     if (simT >= drive.duration) { phase = 'outro'; T = prevT = 0; st = drive.stateAt(L); cast.frame(still(st), simT, 0, now); audio.quiet(); audio.stop('chase', 1.4); $('speed').firstElementChild.textContent = 0; $('speed').classList.remove('over'); }
+  } else if (phase === 'snelweg') { // the A9: the town's own clock (simT) stands still while this one runs
+    const was = A9.t, ts = snel.timeScale(was), hit = (t) => was < t && A9.t >= t; A9.t = Math.min(snel.duration, was + dt * ts); st = snel.state(A9.t, hw); st.s = A9.s;
+    snel.frame(A9.t, now); cast.frame(st, simT, dt * ts, now); stunts.frame(null, dt * ts, now, events);
+    for (const [t, name] of snel.events) if (hit(t)) { audio.fx[name](name === 'heli' ? 14 : undefined); if (name === 'thud' || name === 'boom') shake = name === 'boom' ? 1.2 : 0.6; }
+    for (const [t, text, secs] of snel.lines) if (hit(t)) say(`"${text}"`, secs);
+    for (const [t, nl] of snel.checks) if (hit(t)) tick(nl);
+    audio.engine(st.v, st.slide, st.air, ts); audio.rate('chase', Math.max(0.5, ts)); speedo(st.v, 100);
+    const shot = snel.shot(A9.t); film('a9 ' + shot.key, { eye: shot.eye, look: shot.look, fov: shot.fov, lock: true }, dt);
+    if (A9.t >= snel.duration) { phase = 'drive'; st = drive.state(simT); shownStreet = null; tick('Zelfstandig rijden'); say('"...We never speak of the A9 again. Nooit."', 2.8); } // and back, as if nothing happened
   } else { // getting out, the stamp, the reveal, the card
     const C = cast.outro(T, dt, now, events, prevT); stunts.frame(null, dt, now, events);
     film(...outroShot(T, st), dt);
@@ -279,12 +311,12 @@ function step(dt) {
 
 const resize = () => { renderer.setSize(innerWidth, innerHeight, false); cam.aspect = innerWidth / innerHeight; };
 addEventListener('resize', resize); resize();
-let last = performance.now();
-renderer.setAnimationLoop((t) => { const dt = clamp((t - last) / 1000, 0, 0.1); last = t; if (!window.exam.hold) step(dt); renderer.render(scene, cam); });
+let last = performance.now(), slow = 0, tier = 0; // ponytail: a phone that cannot hold 24 frames a second gets a softer picture, then no cast shadows; it never steps back up
+renderer.setAnimationLoop((t) => { const raw = (t - last) / 1000, dt = clamp(raw, 0, 0.1); last = t; slow = raw > 1 / 24 && raw < 0.25 ? slow + 1 : 0; /* slower than 4 a second is a tab in the background, not a slow phone */ if (slow > 60 && tier < 2) { slow = 0; if (tier++) sun.castShadow = false; else renderer.setPixelRatio(1); } if (!window.exam.hold) step(dt); renderer.render(scene, cam); });
 
 const go = async () => { $('go').disabled = true; try { await audio.start(); } catch (e) { console.warn('continuing without sound', e); } begin(); };
 $('go').textContent = 'Start het examen'; $('go').disabled = false; $('go').onclick = go; $('again').onclick = begin;
 
 // Camera check, the partner of tools/check.mjs: plays the whole film without drawing it and counts the frames where
 // the camera is inside a building or cannot see the car. Run exam.audit() in the browser console; {} means clean.
-window.exam = { hold: false, dbg: { world, drive, cam, SHOTS, tooClose, hidden, P, cast, stunts, carPt, get st() { return st; } }, ff(secs) { for (let i = 0; i < secs * 30; i++) step(1 / 30); renderer.render(scene, cam); return `${phase} T=${T.toFixed(1)} s=${st.s.toFixed(0)} shot=${shotKey}`; }, audit() { begin(); const bad = {}; for (let i = 0; i < 9000 && $('end').hidden; i++) { step(1 / 30); const k = `${phase} ${shotKey}`; if (tooClose(cam.position)) bad[k + ' inside'] = (bad[k + ' inside'] || 0) + 1; else if (phase !== 'intro' && hidden(cam.position, carPt(st, 0, 1, 0))) bad[k + ' blocked'] = (bad[k + ' blocked'] || 0) + 1; for (const h of cast.poke()) bad[`${phase} clipboard in ${h}`] = (bad[`${phase} clipboard in ${h}`] || 0) + 1; } return bad; } };
+window.exam = { hold: false, dbg: { world, drive, cam, SHOTS, snel, polder, A9, tooClose, hidden, P, cast, stunts, carPt, get st() { return st; } }, ff(secs) { for (let i = 0; i < secs * 30; i++) step(1 / 30); renderer.render(scene, cam); return `${phase} T=${T.toFixed(1)} s=${st.s.toFixed(0)} shot=${shotKey}`; }, audit() { begin(); const bad = {}; for (let i = 0; i < 9000 && $('end').hidden; i++) { const ph = phase; step(1 / 30); const k = `${phase} ${shotKey}`; if (tooClose(cam.position)) bad[k + ' inside'] = (bad[k + ' inside'] || 0) + 1; else if (phase !== 'intro' && ph === phase /* on a cut the picture is still the old scene */ && hidden(cam.position, carPt(st, 0, 1, 0))) bad[k + ' blocked'] = (bad[k + ' blocked'] || 0) + 1; for (const h of cast.poke()) bad[`${phase} clipboard in ${h}`] = (bad[`${phase} clipboard in ${h}`] || 0) + 1; } return bad; } };

@@ -131,7 +131,7 @@ export function makePlan() {
   // where the searchlight points: the car, a touch late; while she is under the blade it carries straight on down the fast lane
   const light = (t, o) => {
     const c = state(t - 0.015, C1), lost = bump(t, tLost, tLost + 0.25, tFound, tFound + 0.3);
-    o.x = c.x + lost * (5 + 4 * sin(t * 6)); o.z = lerp(c.z, Z0 + L1 + 1.5 * sin(t * 4.3), lost); o.y = GROUND + (c.y > 0.3 ? c.y + 0.8 : 0); o.on = t >= tLight; o.lost = lost; return o;
+    o.x = c.x + lost * (5 + 4 * sin(t * 6)); o.z = lerp(c.z, Z0 + L1 + 1.5 * sin(t * 4.3), lost); o.y = GROUND + (c.y > 0.3 ? c.y + 0.8 : 0); o.on = t >= tLight && t < tL + 0.95; o.lost = lost; return o; // it lets go at the exit: on the off-ramp the helicopters are out of shot
   };
   const cop = (t, o) => { heli(0, t, H1); const l = HELI.ladder - 1.2; o.x = H1.x + HELI.hook[0] - sin(HELI.swing) * l; o.y = H1.y + HELI.hook[1] - cos(HELI.swing) * l; o.z = H1.z + HELI.hook[2]; return o; };
 
@@ -193,13 +193,13 @@ export function makePlan() {
   const filmTime = (t) => film[clamp(Math.round(t * 120), 0, film.length - 1)];
 
   const kmh = (t) => Math.round(V(t) * 3.6);
-  const lines = [
-    [0.3, 'Onderdeel: invoegen. Rustig aan, hè.', 2.2], [2.8, 'Er is geen gat. THERE IS NO GAP.', 1.5], [tD + 0.35, 'Dat was geen gat. Dat was een kier.', 1.8],
-    [5.3, 'En dan nu inhalen. Links. LINKS!', 1.5], [7.25, 'De vluchtstrook is voor pech.', 1.3], [8.35, 'Dat wordt een dure foto.', 1.2], [9.2, 'Dat was een trekker.', 1.3],
-    [10.9, 'Is dat de politie? Ik zwaai wel even.', 2], [12.5, 'We are on the news. Mijn moeder kijkt.', 2], [tBl - 0.4, 'Niet onder de... okay. Onder de wiek.', 2],
-    [16.8, 'Afrit Alkmaar-Centrum. Richting aangeven.', 1.6], [tR0 - 0.1, 'Dat is geen afrit. DAT IS GEEN AFRIT.', 1.4], [tApex - 0.25, 'Ik heb een hypotheek.', 1.6], [tL + 0.4, 'U vergat uw spiegels.', 2.2],
+  const lines = [ // [sequence time, the examiner, seconds]
+    [0.3, 'Dit is de A9. Why are we on the A9?!', 2.2], [2.6, 'Goed. Invoegen. Er is geen gat. THERE IS NO GAP.', 1.5], [tD + 0.35, 'Dat was geen gat. Dat was een kier.', 1.8],
+    [6.7, 'Inhalen doen we LINKS. Niet over de vluchtstrook!', 1.5], [8.4, 'Dat wordt een dure foto.', 1.4],
+    [10.3, 'Is dat de politie? Ik zwaai wel even.', 1.8], [12.3, 'We are on the news. Mijn moeder kijkt.', 2], [tBl - 0.4, 'Niet onder de... okay. Onder de wiek.', 2],
+    [16.6, 'Afrit Alkmaar-Centrum. Richting aangeven, graag.', 1.6], [tR0 - 0.1, 'Dat is geen afrit. DAT IS GEEN AFRIT.', 1.4], [tApex - 0.25, 'Ik heb een hypotheek.', 1.6], [tL + 0.4, 'U vergat uw spiegels.', 2.2],
   ];
-  const checks = [[tD + 0.45, 'Invoegen', 'merging', `met ${kmh(tD)} km/u`], [9.1, 'Inhalen', 'overtaking', 'rechts, over de vluchtstrook']];
+  const checks = [[tD + 0.45, 'Invoegen', 'merging', `met ${kmh(tD)} km/u`], [9.1, 'Inhalen', 'overtaking', 'over de vluchtstrook']];
   const events = [[1.9, 'whoosh'], [tD, 'whoosh'], [tD + 0.45, 'bell'], [5.5, 'whoosh'], [6.6, 'whoosh'], [tFlash, 'flash'], [tFlash + 0.02, 'pop'], [8.9, 'whoosh'], [9.1, 'bell'], [tH + 0.6, 'heli'], [tBl, 'whoosh'], [tR0, 'thud'], [tT, 'whoosh'], [tL, 'boom'], [D - 0.25, 'whoosh']].sort((a, b) => a[0] - b[0]);
 
   // ---------------------------------------------------------------- the audit ----------------------------------------------------------------

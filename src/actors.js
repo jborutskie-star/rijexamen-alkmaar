@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { mat, canvasTex, GROUND, bikeGeo, fuse } from './world.js';
 import { clamp, lerp, smooth } from './drive.js';
-import { berrieGeo, cheeseWheelGeo, duckGeo } from './landmarks.js';
+import { berrieGeo, cheeseWheelGeo, duckGeo, rondvaartboot } from './landmarks.js';
 
 const { PI, sin, cos, random, hypot, atan2, abs } = Math;
 const ramp = (t, a, b) => smooth((t - a) / (b - a));
@@ -297,7 +297,7 @@ export function buildCast(scene, world, drive) {
   const crowd = layout.crowd.map((c, i) => {
     const p = person(b, { shirt: pick(['#ff6a13', '#1f5fd0', '#e0202a', '#3fbf6a', '#f7c400', '#ff5fa8', '#7a4fd0'], i * 3), pants: pick(['#2d3142', '#6f8fc0', '#4a3f3a'], i), skin: pick(['#f1c9a5', '#8d5a3c', '#c99c7c'], i), hair: pick(['#e6cf9c', '#4a3526', '#b5532a', '#1d1f24', '#9a9da6'], i), face: pick(['grin', 'smile', 'o'], i) });
     p.g.position.set(c.x, GROUND + 0.55, c.z); p.g.rotation.y = -(c.h - PI / 2); scene.add(p.g);
-    if (i % 4 === 1) { const s = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.5), signMat); s.rotation.y = PI / 2; s.position.set(0.125, 1.6, 0); p.sign = true; p.g.add(s, b(0.04, 1.05, 0.04, '#8a5a3a', 0.1, 1.325, -0.33), b(0.04, 1.05, 0.04, '#8a5a3a', 0.1, 1.325, 0.33)); } // a banner on two poles, one in each raised fist
+    if ([1, 3, 4, 6].includes(i)) { const s = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.5), signMat); s.rotation.y = PI / 2; s.position.set(0.125, 1.6, 0); p.sign = true; p.g.add(s, b(0.04, 1.05, 0.04, '#8a5a3a', 0.1, 1.325, -0.33), b(0.04, 1.05, 0.04, '#8a5a3a', 0.1, 1.325, 0.33)); } // a banner on two poles, one in each raised fist
     return p;
   });
 
@@ -333,7 +333,7 @@ export function buildCast(scene, world, drive) {
   };
 
   // Two cheese carriers in the middle of the Waagplein with a berrie of Gouda between them. They stand frozen; only their heads follow the car.
-  const carriers = new THREE.Group(); carriers.position.set(layout.donut.x, GROUND, layout.donut.z);
+  const carriers = new THREE.Group(); carriers.position.set(layout.donut.x, GROUND, layout.donut.z); carriers.rotation.y = Math.PI / 2; // side on to the camera that stands west of them (main.js)
   const VEEM = '#e0202a', tinted = (geo, color = '#ffffff') => { const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, color, roughness: 0.55 })); m.castShadow = true; return m; };
   carriers.add(tinted(berrieGeo('tint'), VEEM), tinted(berrieGeo('rest')));
   { const fy = (x) => 0.54 + 0.3 * (x / 0.85) ** 2, R = 0.17, geo = cheeseWheelGeo().scale(R / 0.36, 1.18, R / 0.36); // fy: the curve of the berrie's floor (landmarks.js). Each wheel lies across it like a chord, so none sinks in
@@ -346,6 +346,7 @@ export function buildCast(scene, world, drive) {
   scene.add(carriers);
 
   // The duck family of the emergency stop: a mother and five ducklings. drive.js says where each one is at any moment.
+  const tour = rondvaartboot(); tour.traverse((o) => { o.castShadow = true; }); scene.add(tour); // the canal tour boat the drawbridge stands open for
   const DK = layout.ducks, BILL = '#f08a1c', sph = (r) => new THREE.SphereGeometry(r, 10, 8);
   const ducklingGeo = fuse([sph(0.09).scale(1.25, 0.85, 0.95), '#f7d84a', 0, 0.065, 0], [sph(0.065), '#fbe37a', 0.1, 0.165, 0], [new THREE.ConeGeometry(0.024, 0.07, 6).rotateZ(-PI / 2), BILL, 0.185, 0.155, 0], [sph(0.013), '#1b1b1b', 0.14, 0.185, 0.045], [sph(0.013), '#1b1b1b', 0.14, 0.185, -0.045]);
   const ducks = Array.from({ length: DK.n }, (_, i) => {
@@ -423,6 +424,7 @@ export function buildCast(scene, world, drive) {
     // the cheese carriers dare not move: their heads follow the car as far as a neck goes, then whip round to the other shoulder
     const dcx = st.x - layout.donut.x, dcz = st.z - layout.donut.z, near = 1 - ramp(hypot(dcx, dcz), 30, 45), neck = clamp(turn(atan2(dcz, dcx) + carriers.rotation.y), -1.25, 1.25) * near;
     kaas.forEach((k, i) => { k.head.rotation.y = lerp(k.head.rotation.y, -neck, Math.min(1, dt * 10)); k.g.position.y = 0.55 + 0.02 * near * abs(sin(now * 18 + i * 2)); }); // and their knees knock
+    { const b = layout.boat.at(t); tour.position.set(b.x, -1.2 + sin(now * 1.4) * 0.02, b.z); tour.rotation.set(sin(now * 1.1) * 0.012, -b.h, 0); } // -1.2: the canal's water level
     ducks.forEach((d, i) => { // waddling on the street, nose down off the quay, bobbing on the canal
       const q = DK.at(i, t), moved = hypot(q.x - d.g.position.x, q.z - d.g.position.z) > 1e-4;
       d.h = dt ? d.h + turn(q.h - d.h) * Math.min(1, dt * 9) : q.h; d.g.position.set(q.x, GROUND + q.y, q.z); d.g.rotation.y = -d.h; d.feet.visible = !q.wet; d.body.position.y = q.wet ? sin(now * 2.4 + i) * 0.012 : d.leg;
@@ -435,7 +437,7 @@ export function buildCast(scene, world, drive) {
   }
 
   // after the car has stopped: T seconds of getting out, the stamp, the helmet coming off
-  const CUE = { exDoor: 1.2, exOut: 1.7, exUp: 4.0, exTurn: 5.0, clipUp: 5.6, stamp: 6.4, nDoor: 7.6, nOut: 8.0, nStand: 8.55, nTurn: 8.8, roll: 9.4, hands: 10.6, reveal: 11.6, wide: 14.2, card: 16.2 };
+  const CUE = { exDoor: 1.2, exOut: 1.7, exUp: 4.0, exTurn: 5.0, clipUp: 5.6, stamp: 6.4, nDoor: 7.6, nOut: 8.0, nStand: 8.55, nTurn: 8.8, roll: 9.4, hands: 10.6, reveal: 11.6, side: 14.03, hop: 14.4, wide: 14.65, card: 17 };
   function outro(T, dt, now, events, prevT) {
     const hit = (k) => prevT < CUE[k] && T >= CUE[k];
     smoke.update(dt); party.update(dt, now); talking = false;
@@ -455,9 +457,10 @@ export function buildCast(scene, world, drive) {
     clip.scale.setScalar(1 + 0.5 * raise + 0.35 * Math.max(0, 1 - Math.abs(T - CUE.stamp - 0.08) * 6)); hold(grab, raise, 1 - ramp(out, 0, 0.18));
     // Nikki steps out on the quay side, turns round, takes the helmet off
     const nOut = ramp(T, CUE.nOut, CUE.nOut + 0.9), nStand = ramp(T, CUE.nStand, CUE.nStand + 0.45), nTurn = ramp(T, CUE.nTurn, CUE.nTurn + 0.7), hands = ramp(T, CUE.hands, CUE.hands + 0.6), rev = ramp(T, CUE.reveal, CUE.reveal + 0.5);
-    const joy = T > CUE.reveal + 0.5 ? Math.abs(sin((T - CUE.reveal - 0.5) * 6.5)) : 0;
-    nikki.g.position.set(-0.2, lerp(0.62, 0.55, nStand) + sin(nOut * PI) * 0.12 + joy * 0.28, lerp(-0.4, -1.6, nOut));
-    nikki.g.rotation.set(0, nTurn * PI / 2, 0); sit(nikki, 1 - nStand); nikki.head.rotation.set(0, 0, 0);
+    const side = ramp(T, CUE.side, CUE.side + 0.35), hop = ramp(T, CUE.hop, CUE.hop + 0.6), land = CUE.hop + 0.6; // a skip to the back of the car, then up onto the boot for the photo. She goes up before she goes across, so nothing passes through the bodywork
+    const joy = T > land ? Math.abs(sin((T - land) * 6.5)) : T > CUE.reveal + 0.5 && T < CUE.side ? Math.abs(sin((T - CUE.reveal - 0.5) * 6.5)) : 0; // CUE.side falls where a bounce ends
+    nikki.g.position.set(lerp(-0.2, -1.5, side), lerp(0.62, 0.55, nStand) + sin(nOut * PI) * 0.12 + sin(side * PI) * 0.1 + 1.02 * ramp(hop, 0, 0.35) + sin(hop * PI) * 0.9 + joy * 0.28, lerp(lerp(-0.4, -1.6, nOut), 0, hop)); // 1.02: the boot lid is 1 m up
+    nikki.g.rotation.set(0, nTurn * PI / 2 - hop * PI, 0); sit(nikki, 1 - nStand); nikki.head.rotation.set(0, 0, 0);
     const armUp = lerp(lerp(lerp(1.45, 0.1, ramp(nOut, 0, 0.4)), 2.5, hands), 2.9, rev);
     nikki.armL.rotation.set(-0.35 * hands * (1 - rev) - 0.5 * rev, 0, armUp); nikki.armR.rotation.set(0.35 * hands * (1 - rev) + 0.5 * rev, 0, armUp);
     if (hit('roll')) events.drumroll?.();

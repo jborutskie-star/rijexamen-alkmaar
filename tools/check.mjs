@@ -50,6 +50,12 @@ for (let t = 0; t <= drive.duration; t += 1 / 60) {
   const dn = layout.donut; if (Math.hypot(st.x - dn.x, st.z - dn.z) < 5.2) hit('cheese carriers', st);
 }
 // the ducks walk on the street and swim in the canal, never the other way round, and never through a house
+{ const B = layout.boat, k = Math.hypot(1, B.slant), fixed0 = layout.ramp.s1 + 2.2; // the tour boat: afloat all the way, and never under the fixed half of the bridge (it is taller than that deck is high)
+  for (let t = 0; t <= drive.duration; t += 0.2) { const b = B.at(t), c = Math.cos(b.h), sn = Math.sin(b.h);
+    for (const f of [-1, -0.5, 0, 0.5, 1]) for (const r of [-1, 1]) { const u = f * B.len / 2, v = r * B.wid / 2, w = v + r * 0.3, x = b.x + c * u - sn * w, z = b.z + sn * u + c * w; // w: the hull side plus 0.3 m of water
+      if (!water.some((q) => inPoly(q.p, x, z))) hits.set('the tour boat on dry land', [0]);
+      const sAt = layout.ramp.s1 + 0.06 + B.slant * b.off + (-u * B.slant + v) / k, off = b.off + (-u - v * B.slant) / k; // where that point of the hull is along and beside the route
+      if (Math.abs(off) < 3.2 && sAt > fixed0 - 0.3) hits.set('the tour boat under the fixed half of the bridge', [0]); } } }
 for (let i = 0; i < layout.ducks.n; i++) for (let t = 0; t <= drive.duration; t += 0.1) {
   const d = layout.ducks.at(i, t), inWater = water.some((w) => inPoly(w.p, d.x, d.z));
   const deck = Math.min(...flatDecks.map((b) => dLine(b.pts, d.x, d.z) - b.W / 2)); // < 0: on (or under) a level bridge

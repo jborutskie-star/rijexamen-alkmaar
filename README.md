@@ -7,6 +7,8 @@ Open `index.html` through any web server, or publish the folder with GitHub Page
 
 - `node tools/check.mjs` replays the whole drive and fails if the car touches a building, the water, a cyclist, parked car, bystander, lamppost, bench, roadworks or the fireworks stall, or leaves a bridge deck.
 - `node tools/smooth.mjs` replays the drive and fails if the car's position, heading, lean or height ever jumps between two frames.
+- `node tools/check-snelweg.mjs` replays the motorway scene and fails if anything touches or hides the car, or the camera ends up inside something.
+- `node tools/check-landmarks.mjs` builds every landmark and prop model and fails on broken numbers, a model outside its size limits or over its triangle budget.
 - In the browser console, `exam.audit()` plays the film without drawing it and lists any shot where the camera is inside or behind a building. `{}` means clean.
 
 ## Credits
