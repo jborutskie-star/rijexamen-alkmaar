@@ -11,7 +11,8 @@ if (process.argv.includes('-v')) {
   console.log(Object.entries(plan.T).map(([k, v]) => `${k}=${v.toFixed(2)}`).join(' '));
   console.log(Object.entries(plan.layout).filter(([, v]) => typeof v === 'number').map(([k, v]) => `${k}=${Math.round(v)}`).join(' '));
   for (const d of [0.3, 0.6, 1, 1.6]) console.log(`within ${d} m of the car: ${plan.near(d).join(', ')}`);
-  for (const s of plan.timeline) console.log(`  t=${s.t.toFixed(2)} (film ${s.film.toFixed(1)} s, lasts ${(plan.filmTime(s.until) - s.film).toFixed(1)} s) ${s.key}`);
+  const cop = (a, b) => { let d = Infinity; for (let t = a; t < b; t += 0.05) { const c = plan.state(t, {}); for (const i of [0, 1]) { const p = plan.police(i, t, {}); if (p.on) d = Math.min(d, Math.hypot(c.x - p.x, c.z - p.z)); } } return d; }; // nearest police car, centre to centre
+  for (const s of plan.timeline) console.log(`  t=${s.t.toFixed(2)} (film ${s.film.toFixed(1)} s, lasts ${(plan.filmTime(s.until) - s.film).toFixed(1)} s) ${s.key.padEnd(9)} police within ${cop(s.t, s.until).toFixed(0)} m`);
 }
 if (problems.length) { console.log(problems.join('\n')); process.exit(1); }
 console.log('OK: the snelweg is clean');

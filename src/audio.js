@@ -73,6 +73,15 @@ export function makeAudio() {
     plop() { const t = now(); tone(430, t, 0.13, 0.16, 'sine', 130); hiss(t, 0.16, 0.08, 1900, 1); },
     flash() { hiss(now(), 0.12, 0.45, 6000, 0.8, 'highpass'); tone(2300, now(), 0.07, 0.12, 'square', 1700); }, // the speed camera
     heli(dur = 6) { const t = now(); for (let i = 0; i < dur * 11; i++) { tone(72, t + i / 11, 0.07, 0.3, 'sine', 44); hiss(t + i / 11, 0.06, 0.1, 900, 0.8); } }, // rotor blades
+    siren(dur = 10) { // the police's two-tone horn; the film starts one every ten seconds or so while they chase
+      const t = now(), o = ctx.createOscillator(), f = ctx.createBiquadFilter(), g = ctx.createGain(); o.type = 'sawtooth'; f.type = 'bandpass'; f.frequency.value = 1100; f.Q.value = 1.2;
+      for (let i = 0; i * 0.55 < dur; i++) o.frequency.setValueAtTime(i % 2 ? 440 : 587, t + i * 0.55);
+      g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.07, t + 1.5); g.gain.setValueAtTime(0.07, t + dur - 1); g.gain.linearRampToValueAtTime(0.0001, t + dur);
+      o.connect(f).connect(g).connect(out); o.start(t); o.stop(t + dur + 0.05);
+    },
+    creak() { const t = now(); tone(240, t, 0.35, 0.08, 'sawtooth', 520); hiss(t + 0.25, 0.12, 0.25, 700, 1); }, // the cheese truck's doors fly open
+    kaas() { const t = now(); tone(120 + Math.random() * 30, t, 0.22, 0.45, 'sine', 55); tone(260, t + 0.02, 0.12, 0.08, 'triangle', 380); hiss(t, 0.1, 0.2, 500, 0.8, 'lowpass'); }, // a Gouda lands: bonk, with a little boing
+    skid() { hiss(now(), 1.4, 0.22, 2300, 7); hiss(now() + 0.1, 1.1, 0.12, 3400, 9); }, // the police stand on the brakes
     speak() { try { const u = new SpeechSynthesisUtterance('Congratulations!'); u.lang = 'en-US'; u.pitch = 1.3; u.rate = 0.9; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch { /* no voice on this device, the fanfare is enough */ } },
   };
   const safe = Object.fromEntries(Object.entries(fx).map(([k, f]) => [k, (...a) => { if (ctx) try { f(...a); } catch (e) { console.warn(e); } }]));
