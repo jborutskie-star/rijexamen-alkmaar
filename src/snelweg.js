@@ -126,8 +126,8 @@ export function makePlan() {
   // ---- the helicopters: [0] police, [1] news. They fly in formation with the car: metres ahead of it, height, metres south of the centre line ----
   const tH = 9.6, tLight = 11.5 + dT, tLost = tBl - 0.05, tFound = tBl + 1.15; // they show up far behind and high at tH and take a good three seconds to settle in
   const HK = [
-    [[tH, -230, 48, -38], [12.9, -6, 15.5, 6.6], [18.0, -6, 15.5, 6.6], [17.4 + dT, -7, 17.5, 7], [18.5 + dT, 9, 12, 6.8], [tT + 0.3, 9, 12, 6.8], [tL - 0.1, -11, 12, 6.8], [tL + 2, -16, 23, 6.8], [40, -16, 23, 6.8]], // police: lower and nearer once settled, up again in time for the second gantry
-    [[tH + 0.3, -215, 40, 70], [13.3, 9, 14.5, 23.5], [17.4 + dT, 9, 14.5, 23.5], [18.5 + dT, 11, 11.5, 21.5], [tT + 0.3, 11, 11.5, 21.5], [tL - 0.1, -9, 11.5, 21.5], [tL + 2, -12, 23, 23], [40, -12, 23, 23]],
+    [[tH, -230, 48, -38], [12.9, -6, 15.5, 6.6], [18.0, -6, 15.5, 6.6], [17.4 + dT, -7, 17.5, 7], [18.5 + dT, 9, 12, 6.8], [tT + 0.3, 9, 14.5, 6.8], [tL - 0.1, -11, 14.5, 6.8], [tL + 2, -16, 23, 6.8], [40, -16, 23, 6.8]], // police: lower and nearer once settled, up again for the second gantry, higher still over the jump so 'sprong' shows the car pass under it, past the ladder
+    [[tH + 0.3, -215, 40, 70], [13.3, 9, 14.5, 23.5], [17.4 + dT, 9, 14.5, 23.5], [18.5 + dT, 11, 11.5, 21.5], [tT + 0.3, 11, 17, 21.5], [tL - 0.1, -9, 17, 21.5], [tL + 2, -12, 23, 23], [40, -12, 23, 23]], // news: up out of the way of the jump, which 'sprong' sees from behind it
   ].map((K) => [keyed(K, 1), keyed(K, 2), keyed(K, 3)]);
   const heli = (i, t, o) => { o.x = X(t) + HK[i][0](t); o.y = GROUND + HK[i][1](t); o.z = Z0 + HK[i][2](t) + 0.25 * sin(t * 2.1 + i * 2); o.on = t >= tH + i * 0.3; return o; };
   const C1 = {}, H1 = {};
@@ -469,9 +469,11 @@ export function buildSnelweg(scene) {
       tri(side, [x - o, 0, za], [x + o, 0, za], [x + w, h + 0.06, za]); tri(side, [x - o, 0, za], [x + w, h + 0.06, za], [x - w, h + 0.06, za]);
       solid.part(fix(top, () => [0, 1, 0]), road).part(fix(side, (i) => (i < 9 ? [-1, 0.5, 0] : i < 18 ? [1, 0.5, 0] : [0, 0, -dir])), '#5f9d45');
     } }
-  light.part(box(X1 - X0, 0.32, 0.1), steel, 0, 0.62, Z0 - 1.1).part(box(X1 - X0, 0.32, 0.1), steel, 0, 0.62, Z0 + 1.1).part(box(X1 - X0, 0.32, 0.1), steel, 0, 0.62, Z0 - 18.4);
-  for (const [a, b] of Y.railS) light.part(box(b - a, 0.32, 0.1), steel, (a + b) / 2, 0.62, Z0 + 18.4);
-  for (const [a, b, z] of Y.barriers) { const m = (a + b) / 2; light.part(box(b - a, 1.5, 0.3), '#3f8f57', m, 0.75, Z0 + z).part(box(b - a, 2.1, 0.14), '#bfe6ee', m, 2.55, Z0 + z).part(box(b - a, 0.16, 0.36), '#2f6f43', m, 3.68, Z0 + z); for (let x = a; x <= b; x += 10) light.part(box(0.3, 3.8, 0.44), '#2f6f43', x, 1.9, Z0 + z); }
+  // long runs in 40 m pieces: one 6400 m box, clipped right by a low camera, lost enough depth precision to draw its top edge over the cars in front of it
+  const run = (a, b, h, w, color, y, z) => { for (let x = a; x < b - 1e-6; x += 40) { const l = min(40, b - x); light.part(box(l, h, w), color, x + l / 2, y, z); } };
+  for (const z of [-1.1, 1.1, -18.4]) run(X0, X1, 0.32, 0.1, steel, 0.62, Z0 + z);
+  for (const [a, b] of Y.railS) run(a, b, 0.32, 0.1, steel, 0.62, Z0 + 18.4);
+  for (const [a, b, z] of Y.barriers) { run(a, b, 1.5, 0.3, '#3f8f57', 0.75, Z0 + z); run(a, b, 2.1, 0.14, '#bfe6ee', 2.55, Z0 + z); run(a, b, 0.16, 0.36, '#2f6f43', 3.68, Z0 + z); for (let x = a; x <= b; x += 10) light.part(box(0.3, 3.8, 0.44), '#2f6f43', x, 1.9, Z0 + z); }
   const solidMesh = new THREE.Mesh(solid.geo(), paint), lightMesh = new THREE.Mesh(light.geo(), paint); solidMesh.castShadow = solidMesh.receiveShadow = lightMesh.receiveShadow = true; still.add(solidMesh, lightMesh);
   const many = (geo, material, list, shadow, parent = still) => { // [[x, y, z, turn, sx, sy, sz]]
     const im = new THREE.InstancedMesh(geo, material, list.length);
@@ -487,10 +489,10 @@ export function buildSnelweg(scene) {
 
   // ---- the scenery close to the road: ditches with reed, poplars, two stolp farms and a distance sign ----
   { const r = rnd(23), nearFarm = (x) => Y.farms.some((f) => abs(x - f[0]) < 18), water = kit(uv), reeds = [], trees = [];
-    for (const [[a, b], z] of Y.ditches) { water.part(new THREE.PlaneGeometry(b - a, 2).rotateX(-PI / 2), '#4f8aa3', (a + b) / 2, GROUND + 0.02, Z0 + z);
+    for (const [[a, b], z] of Y.ditches) { water.part(new THREE.PlaneGeometry(b - a, 2, Math.ceil((b - a) / 40)).rotateX(-PI / 2), '#4f8aa3', (a + b) / 2, GROUND + 0.04, Z0 + z);
       for (let x = a; x < b; x += 2.2 + r() * 2.5) if (!nearFarm(x) && r() < 0.8) reeds.push([x, GROUND, Z0 + z + (r() < 0.5 ? -1.2 : 1.2) + (r() - 0.5) * 0.4, r() * 6, 0.8 + r() * 0.5, 0.8 + r() * 0.6, 0.8 + r() * 0.5]); }
     for (const [a, b, z] of Y.rows) for (let x = a; x < b; x += 11) if (!nearFarm(x)) trees.push([x + (r() - 0.5) * 2, GROUND, Z0 + z + (r() - 0.5) * 1.5, r() * 6, 0.9 + r() * 0.25, 0.85 + r() * 0.35, 0.9 + r() * 0.25]);
-    still.add(new THREE.Mesh(water.geo(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.2, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })));
+    still.add(new THREE.Mesh(water.geo(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.2 }))); // lifted 4 cm, no polygon offset: seen edge-on, a sloped offset pulled the ditches in front of everything
     const reed = kit(uv); [[0, 0, 1.9, 0.12, '#9bab55'], [0.12, 0.08, 1.6, -0.15, '#b3b86a'], [-0.1, 0.1, 1.75, 0.2, '#8a9a48'], [0.05, -0.12, 1.45, -0.1, '#a5b45c'], [-0.08, -0.06, 1.3, 0.25, '#b3b86a']].forEach(([x, z, h, lean, c]) => reed.part(new THREE.ConeGeometry(0.045, h, 3).translate(0, h / 2, 0).rotateZ(lean), c, x, 0, z));
     reed.part(cyl(0.045, 0.045, 0.26, 5), '#6b4a2a', -0.02, 1.7, 0).part(cyl(0.04, 0.04, 0.22, 5), '#6b4a2a', 0.27, 1.55, 0.08); // two bulrush heads
     many(reed.geo(), paint, reeds, false);

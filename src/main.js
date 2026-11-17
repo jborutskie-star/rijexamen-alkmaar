@@ -152,7 +152,7 @@ function introShot(T, st) {
 function outroShot(T, st) {
   const C = cast.CUE;
   if (T < 1) return ['park', parkShot(st)];
-  if (T < C.nDoor - 0.3) { const u = ramp(T, 1, C.nDoor); return ['road', { eye: clearView(carPt(st, -0.3 - u * 0.3, 1.25, 6.4 - u * 1.2), carPt(st, -0.2, 1, 1.9)), look: carPt(st, -0.2, lerp(0.7, 1.1, ramp(T, C.exUp, C.exUp + 1)), 1.9), fov: 48, rate: 4 }]; }
+  if (T < C.nDoor - 0.3) { const u = ramp(T, 1, C.nDoor); return ['road', { eye: clearView(carPt(st, 3.2 - u * 0.6, 1.35, 5.2 - u * 0.6), carPt(st, -0.2, 1, 1.9)), /* on the diagonal: he falls out flat towards the road, and head-on he was just a head */ look: carPt(st, -0.2, lerp(0.7, 1.1, ramp(T, C.exUp, C.exUp + 1)), 1.9), fov: 48, rate: 4 }]; }
   if (T < C.wide) return ['kerb', { eye: carPt(st, 0.1, 1.45, -4.05 + 0.25 * ramp(T, C.nDoor, C.reveal + 1)), look: carPt(st, lerp(-0.2, -1.5, ramp(T, C.side, C.side + 0.35)), lerp(1.2, 1.45, ramp(T, C.nOut, C.nStand)) + 0.9 * ramp(T, C.hop, C.wide), -1.6), fov: lerp(54, 44, ramp(T, C.hands, C.reveal + 0.6)), rate: 5 }];
   const u = ramp(T, C.wide, C.card + 2);
   return ['hero', { eye: clearView(carPt(st, -0.9, 1.5 + u * 0.2, 5.4 + u * 1.2), carPt(st, -1.5, 2.2, 0)), look: carPt(st, -0.9, 1.9 + u * 0.5, 0), fov: 50, rate: 2 }]; // the photo from the houses' side: the examiner and his stamp, her on the boot, the crowd and the banners behind
@@ -162,6 +162,8 @@ const eye = V(0, 60, 0), look = V(0, 0, 0); let shotKey = null, fovNow = 55, sha
 // The flight between the town and the A9, which really are 2 km apart in this world: up over the roofs, across the polder, down onto the next shot.
 // Halfway, high up where the car is a speck, the story switches over to the other place
 const FLY = 5.4, MID = 2.7; let fly = null;
+const BAR = 4 * 60 / 139.5; // the chase track's bar: jumps inside it keep the beat, so the crossfade never stumbles
+const cue = (at, late) => { const d = ((audio.pos('chase') - at) % BAR + BAR) % BAR; audio.music('chase', 0.46, 0.8, Math.max(0, at + d - (late && d > 0 ? BAR : 0))); }; // late: never start after `at`, so the track cannot run out before the moment it is aimed at
 const takeOff = (out) => { fly = { t: 0, out, e0: eye.clone(), l0: look.clone(), f0: fovNow }; if (!out) A9.simT = simT; audio.fx.whoosh(); };
 function flyShot(dt, to, watch) { // to: the shot to land on; watch: what to keep looking at until halfway
   fly.t += dt; const u = Math.min(1, fly.t / FLY), v = Math.min(1, u / 0.92), h = v * v * v * (v * (6 * v - 15) + 10), k = sin(PI * u) ** 2; if (watch && fly.t < MID) fly.l0.lerp(watch, Math.min(1, fly.t / 0.4));
@@ -175,7 +177,7 @@ const townShot = (s) => { let i = 0; while (i + 1 < SHOTS.length && SHOTS[i + 1]
 // The speed camera's photo: the motorway stands still for a moment, in black and white, with the evidence burnt in
 const PIC = 1.9; let pic = 0, flashed = false;
 const flitsEnd = (() => { const s = snel.timeline.find((x) => x.key === 'flits'); return s ? s.until : snel.T.flash + 0.3; })(); // the photo comes once the flash shot has played out
-const photo = (on) => { $('view').classList.toggle('flits', on); $('flits').hidden = !on; hud(!on); if (on) { capUntil = now; $('flitsV').textContent = Math.round(st.v * 3.6); $('flitsD').textContent = new Date().toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' }); } };
+const photo = (on) => { $('view').classList.toggle('flits', on); $('flits').hidden = !on; hud(!on); if (on) { capUntil = now; cast.smoke.clear(); /* frozen tyre smoke reads as white rocks round the bonnet */ $('flitsV').textContent = Math.round(st.v * 3.6); $('flitsD').textContent = new Date().toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' }); } };
 const photoShot = () => ({ eye: carPt(st, 5.2, 1.55, 1.1), look: carPt(st, 0, 1.3, 0.2), fov: lerp(31, 25, smooth(1 - pic / PIC)), lock: true }); // through the windscreen, slowly closer: his face, her helmet. From the side his arms hid his face
 function film(key, shot, dt) {
   const want = shot.lock ? shot.eye : clearView(shot.eye.clone(), shot.look);
@@ -311,13 +313,13 @@ function step(dt) {
     if (at(DK.t0 + 1.5) || at(DK.tHalt + 1.9)) audio.fx.quack(3);
     if (at(DK.tHalt + 0.9)) { audio.fx.thud(); shake = 0.6; } // the tail comes back down
     if (at(DK.tHalt + 1.2)) { say('"...Een noodstop. Voor eendjes. Dat was eigenlijk perfect."', 2.8); tick('Noodstop'); }
-    audio.engine(fly ? 0 : st.v, st.slide, st.air, ts); audio.rate('chase', Math.max(0.5, ts));
+    audio.engine(fly ? 0 : st.v, st.slide, st.air, ts); audio.level('chase', ts < 0.9 ? 0.6 : 1); // slow motion ducks the music; slowing the track itself put it out of tune and out of step
     if (!fly && A9.t === 0 && lastS < A9.s && st.s >= A9.s) takeOff(false); // she goes straight on, past the sign: the camera goes up
     if (fly) { film('fly', flyShot(dt, fly.out ? townShot(st) : a9Gate, fly.out ? null : carPt(st, 0, 0.9, 0)), dt); if (fly.out && fly.t >= FLY) fly = null; }
     else { const shot = townShot(st); film(shot.key, shot, dt); }
     speedo(st.v, 30);
     const name = streetAt(st.s); if (name !== shownStreet) { shownStreet = name; $('street').textContent = name; $('street').hidden = !name; }
-    if (fly && !fly.out && fly.t >= MID) { phase = 'snelweg'; A9.t = MID - FLY; shownStreet = 'A9'; $('street').textContent = 'A9'; $('street').hidden = false; } // high over the polder: from here on it is the motorway's clock
+    if (fly && !fly.out && fly.t >= MID) { phase = 'snelweg'; A9.t = MID - FLY; cue(0); shownStreet = 'A9'; $('street').textContent = 'A9'; $('street').hidden = false; } // high over the polder: from here on it is the motorway's clock
     lastS = st.s;
     if (simT >= drive.duration) { phase = 'outro'; T = prevT = 0; st = drive.stateAt(L); cast.frame(still(st), simT, 0, now); audio.quiet(); audio.stop('chase', 1.4); $('speed').firstElementChild.textContent = 0; $('speed').classList.remove('over'); }
   } else if (phase === 'snelweg') { // the A9: the town's own clock (simT) stands still while this one runs
@@ -330,12 +332,12 @@ function step(dt) {
     for (const [t, name] of snel.events) if (hit(t)) { audio.fx[name](name === 'heli' ? 14 : undefined); if (name === 'thud' || name === 'boom') shake = name === 'boom' ? 1.2 : 0.6; }
     for (const [t, text, secs] of snel.lines) if (hit(t)) say(`"${text}"`, secs);
     for (const [t, nl] of snel.checks) if (hit(t)) tick(nl);
-    audio.engine(fly || pic ? 0 : st.v, st.slide, st.air, ts); audio.rate('chase', Math.max(0.5, ts)); speedo(st.v, 100);
+    audio.engine(fly || pic ? 0 : st.v, st.slide, st.air, ts); audio.level('chase', ts < 0.9 ? 0.6 : 1); speedo(st.v, 100);
     if (!fly && A9.t >= snel.duration - MID) takeOff(true); // off the slip road and up: back to town the way she came
     if (pic) film('a9 photo', photoShot(), dt);
     else if (fly) { film('fly', flyShot(dt, fly.out ? townShot(drive.state(A9.simT)) : a9Gate, fly.out ? carPt(st, 0, 0.9, 0) : null), dt); if (!fly.out && fly.t >= FLY) fly = null; }
     else { const shot = snel.shot(A9.t); film('a9 ' + shot.key, { eye: shot.eye, look: shot.look, fov: shot.fov, lock: true }, dt); }
-    if (fly?.out && fly.t >= MID) { phase = 'drive'; simT = A9.simT; st = drive.state(simT); lastS = st.s; shownStreet = null; /* the town's clock goes back to the take-off, so she drives the same street again while we come down and the run-up to the bridge stays as long as it was */ tick('Zelfstandig rijden'); say('"...We never speak of the A9 again. Nooit."', 2.8); } // high over the polder again: the town's clock runs on
+    if (fly?.out && fly.t >= MID) { phase = 'drive'; simT = A9.simT; st = drive.state(simT); lastS = st.s; shownStreet = null; { let left = 0; for (let t = simT; t < drive.duration; t += 1 / 60) left += 1 / 60 / Math.max(0.05, drive.state(t).timeScale ?? 1); cue(audio.length('chase') - left, true); } /* the town's clock goes back to the take-off, so she drives the same street again while we come down and the run-up to the bridge stays as long as it was */ tick('Zelfstandig rijden'); say('"...We never speak of the A9 again. Nooit."', 2.8); } // high over the polder again: the town's clock runs on
   } else { // getting out, the stamp, the reveal, the card
     const C = cast.outro(T, dt, now, events, prevT); stunts.frame(null, dt, now, events);
     film(...outroShot(T, st), dt);

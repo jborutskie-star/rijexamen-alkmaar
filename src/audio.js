@@ -20,12 +20,15 @@ export function makeAudio() {
     const p = playing[name]; if (!p) return; delete playing[name];
     p.g.gain.cancelScheduledValues(now()); p.g.gain.setValueAtTime(p.g.gain.value, now()); p.g.gain.linearRampToValueAtTime(0.0001, now() + fade); p.src.stop(now() + fade + 0.05);
   }
-  function music(name, vol = 0.5, fade = 0.6) {
-    if (!ctx || !buf[name]) return; stop(name, 0.05);
-    const src = ctx.createBufferSource(), g = ctx.createGain(); src.buffer = buf[name]; src.loop = true;
-    g.gain.setValueAtTime(0.0001, now()); g.gain.linearRampToValueAtTime(vol, now() + fade); src.connect(g).connect(out); src.start(); playing[name] = { src, g };
+  function music(name, vol = 0.5, fade = 0.6, at = 0) { // at: seconds into the track; playing it again while it plays crossfades over `fade`
+    if (!ctx || !buf[name]) return; stop(name, Math.max(0.05, fade));
+    const src = ctx.createBufferSource(), g = ctx.createGain(); src.buffer = buf[name]; src.loop = !at; /* a track cued into the middle is aimed at a moment: it ends rather than starting over */
+    g.gain.setValueAtTime(0.0001, now()); g.gain.linearRampToValueAtTime(vol, now() + fade); src.connect(g).connect(out); src.start(0, at % buf[name].duration); playing[name] = { src, g, vol, t0: now() - at };
   }
   const rate = (name, r) => playing[name]?.src.playbackRate.setTargetAtTime(r, now(), 0.06);
+  const level = (name, k) => { const p = playing[name]; if (p) p.g.gain.setTargetAtTime(p.vol * k, now(), 0.12); }; // duck a track without touching its tempo
+  const pos = (name) => (playing[name] && ctx ? now() - playing[name].t0 : 0); // seconds played since its start point (the tempo never changes)
+  const length = (name) => buf[name]?.duration ?? 0;
 
   const tone = (f, t0, dur, vol = 0.2, type = 'sine', f1 = f) => {
     const o = ctx.createOscillator(), g = ctx.createGain(); o.type = type; o.frequency.setValueAtTime(f, t0); if (f1 !== f) o.frequency.exponentialRampToValueAtTime(f1, t0 + dur);
@@ -92,5 +95,5 @@ export function makeAudio() {
     eng.g.gain.setTargetAtTime(v > 0.3 ? 0.06 : 0, now(), 0.1); scr.g.gain.setTargetAtTime(air ? 0 : Math.min(0.18, slide * 0.2), now(), 0.05); scr.bp.frequency.setTargetAtTime(1500 + slide * 700, now(), 0.1);
   }
   const quiet = () => { if (!ctx) return; eng.g.gain.setTargetAtTime(0, now(), 0.15); scr.g.gain.setTargetAtTime(0, now(), 0.1); };
-  return { start, music, stop: (n, f) => ctx && stop(n, f), rate: (n, r) => ctx && rate(n, r), engine, quiet, fx: safe };
+  return { start, music, stop: (n, f) => ctx && stop(n, f), rate: (n, r) => ctx && rate(n, r), level: (n, k) => ctx && level(n, k), pos, length, engine, quiet, fx: safe };
 }
