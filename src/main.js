@@ -299,7 +299,7 @@ function step(dt) {
     if (crossed(13.2)) say('Examinator: "Goedemorgen. Ik ben meneer De Vries. Eerst de ogentest."', 3.2);
     if (crossed(16.7)) say('The candidate reads a number plate. Three streets away.', 2.4);
     if (crossed(19.2)) say('"...Dat is ook goed. Rustig wegrijden, graag."', 2);
-    if (T >= INTRO) { phase = 'drive'; simT = 0; hud(true); audio.stop('calm', 0.25); audio.music('chase', 0.46, 0.05); }
+    if (T >= INTRO) { phase = 'drive'; simT = 0; hud(true); } // the calm music plays on through the talking, until the front wheels lift
   } else if (phase === 'drive') {
     const ts = st.timeScale, was = simT, at = (t) => was < t && simT >= t; simT += dt * ts; st = drive.state(simT);
     cast.frame(st, simT, dt * ts, now, events); stunts.frame(st, dt * ts, now, events);
@@ -314,6 +314,7 @@ function step(dt) {
     if (at(DK.tHalt + 0.9)) { audio.fx.thud(); shake = 0.6; } // the tail comes back down
     if (at(DK.tHalt + 1.2)) { say('"...Een noodstop. Voor eendjes. Dat was eigenlijk perfect."', 2.8); tick('Noodstop'); }
     audio.engine(fly ? 0 : st.v, st.slide, st.air, ts); audio.level('chase', ts < 0.9 ? 0.6 : 1); // slow motion ducks the music; slowing the track itself put it out of tune and out of step
+    if (lastS < 2.5 && st.s >= 2.5) { audio.stop('calm', 0.4); audio.music('chase', 0.46, 0.05); } // 2.5 m in, the nose comes up (drive.js wheelie): that is where the action music kicks in
     if (!fly && A9.t === 0 && lastS < A9.s && st.s >= A9.s) takeOff(false); // she goes straight on, past the sign: the camera goes up
     if (fly) { film('fly', flyShot(dt, fly.out ? townShot(st) : a9Gate, fly.out ? null : carPt(st, 0, 0.9, 0)), dt); if (fly.out && fly.t >= FLY) fly = null; }
     else { const shot = townShot(st); film(shot.key, shot, dt); }
@@ -358,4 +359,4 @@ $('go').textContent = 'Start het examen'; $('go').disabled = false; $('go').oncl
 
 // Camera check, the partner of tools/check.mjs: plays the whole film without drawing it and counts the frames where
 // the camera is inside a building or cannot see the car. Run exam.audit() in the browser console; {} means clean.
-window.exam = { hold: false, dbg: { world, drive, cam, SHOTS, snel, polder, A9, tooClose, hidden, P, cast, stunts, carPt, get st() { return st; } }, ff(secs) { for (let i = 0; i < secs * 30; i++) step(1 / 30); renderer.render(scene, cam); return `${phase} T=${T.toFixed(1)} s=${st.s.toFixed(0)} shot=${shotKey}`; }, audit() { begin(); const bad = {}; this.where = {}; /* exam.where: the first spot each problem was seen */ for (let i = 0; i < 9000 && $('end').hidden; i++) { const ph = phase; step(1 / 30); const k = `${phase} ${shotKey}`; if (tooClose(cam.position)) { bad[k + ' inside'] = (bad[k + ' inside'] || 0) + 1; this.where[k] ??= [cam.position.x, cam.position.y, cam.position.z, st.s, fly?.t].map((v) => +(v ?? -1).toFixed(2)); } else if (phase !== 'intro' && ph === phase /* on a cut the picture is still the old scene */ && shotKey !== 'fly' && hidden(cam.position, carPt(st, 0, 1, 0))) bad[k + ' blocked'] = (bad[k + ' blocked'] || 0) + 1; for (const h of cast.poke()) bad[`${phase} clipboard in ${h}`] = (bad[`${phase} clipboard in ${h}`] || 0) + 1; } return bad; } };
+window.exam = { hold: false, dbg: { world, drive, cam, SHOTS, snel, polder, A9, audio, tooClose, hidden, P, cast, stunts, carPt, get st() { return st; } }, ff(secs) { for (let i = 0; i < secs * 30; i++) step(1 / 30); renderer.render(scene, cam); return `${phase} T=${T.toFixed(1)} s=${st.s.toFixed(0)} shot=${shotKey}`; }, audit() { begin(); const bad = {}; this.where = {}; /* exam.where: the first spot each problem was seen */ for (let i = 0; i < 9000 && $('end').hidden; i++) { const ph = phase; step(1 / 30); const k = `${phase} ${shotKey}`; if (tooClose(cam.position)) { bad[k + ' inside'] = (bad[k + ' inside'] || 0) + 1; this.where[k] ??= [cam.position.x, cam.position.y, cam.position.z, st.s, fly?.t].map((v) => +(v ?? -1).toFixed(2)); } else if (phase !== 'intro' && ph === phase /* on a cut the picture is still the old scene */ && shotKey !== 'fly' && hidden(cam.position, carPt(st, 0, 1, 0))) bad[k + ' blocked'] = (bad[k + ' blocked'] || 0) + 1; for (const h of cast.poke()) bad[`${phase} clipboard in ${h}`] = (bad[`${phase} clipboard in ${h}`] || 0) + 1; } return bad; } };
