@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { mat, canvasTex, GROUND, bikeGeo, fuse } from './world.js';
 import { clamp, lerp, smooth } from './drive.js';
+import { berrieGeo, cheeseWheelGeo, duckGeo } from './landmarks.js';
 
 const { PI, sin, cos, random, hypot, atan2, abs } = Math;
 const ramp = (t, a, b) => smooth((t - a) / (b - a));
@@ -140,7 +141,7 @@ function lessonCar(world) {
   // doors, hinged at the front edge, with the driving school on them
   const decal = tex(512, 256, (g) => {
     g.fillStyle = '#fbfaf4'; g.fillRect(0, 0, 512, 256); g.fillStyle = orange; g.fillRect(0, 34, 512, 32);
-    g.fillStyle = '#14213d'; g.textAlign = 'center'; g.font = `400 40px ${FONT}`; g.fillText('RIJSCHOOL', 256, 128); g.font = `400 66px ${FONT}`; g.fillText('BUTTERHUIZEN', 256, 200);
+    g.fillStyle = '#14213d'; g.textAlign = 'center'; g.font = `400 88px ${FONT}`; g.fillText('RIJSCHOOL', 256, 186);
   });
   const door = (z) => {
     const h = new THREE.Group(); h.position.set(0.67, 0, z * 0.83);
@@ -296,7 +297,7 @@ export function buildCast(scene, world, drive) {
   const crowd = layout.crowd.map((c, i) => {
     const p = person(b, { shirt: pick(['#ff6a13', '#1f5fd0', '#e0202a', '#3fbf6a', '#f7c400', '#ff5fa8', '#7a4fd0'], i * 3), pants: pick(['#2d3142', '#6f8fc0', '#4a3f3a'], i), skin: pick(['#f1c9a5', '#8d5a3c', '#c99c7c'], i), hair: pick(['#e6cf9c', '#4a3526', '#b5532a', '#1d1f24', '#9a9da6'], i), face: pick(['grin', 'smile', 'o'], i) });
     p.g.position.set(c.x, GROUND + 0.55, c.z); p.g.rotation.y = -(c.h - PI / 2); scene.add(p.g);
-    if (i % 4 === 1) { const s = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.45), signMat); s.rotation.y = PI / 2; s.position.set(0.1, 1.45, 0); p.g.add(s, b(0.04, 0.6, 0.04, '#8a5a3a', 0.08, 1.0, 0)); }
+    if (i % 4 === 1) { const s = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.5), signMat); s.rotation.y = PI / 2; s.position.set(0.125, 1.6, 0); p.sign = true; p.g.add(s, b(0.04, 1.05, 0.04, '#8a5a3a', 0.1, 1.325, -0.33), b(0.04, 1.05, 0.04, '#8a5a3a', 0.1, 1.325, 0.33)); } // a banner on two poles, one in each raised fist
     return p;
   });
 
@@ -331,22 +332,33 @@ export function buildCast(scene, world, drive) {
     for (const m of [wShirt, wSkin, wHair, wArm, ...wFace]) m.instanceMatrix.needsUpdate = true;
   };
 
-  // cheese carriers in the middle of the Waagplein, trying to keep an eye on the car
+  // Two cheese carriers in the middle of the Waagplein with a berrie of Gouda between them. They stand frozen; only their heads follow the car.
   const carriers = new THREE.Group(); carriers.position.set(layout.donut.x, GROUND, layout.donut.z);
-  carriers.add(b(2.3, 0.06, 0.7, '#8a5a3a', 0, 0.62, 0));
-  for (let i = 0; i < 6; i++) { const ch = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.2, 14), mat('#f5b82e', { roughness: 0.45 })); ch.position.set(-0.66 + (i % 3) * 0.66, 0.75 + Math.floor(i / 3) * 0.2, 0); ch.castShadow = true; carriers.add(ch); }
-  const kaas = [-1.35, 1.35].map((x, i) => {
-    const p = person(b, { shirt: '#ffffff', pants: '#ffffff', hair: null, face: 'o', shoes: '#ffffff' }); p.g.position.set(x, 0.55, 0); p.armL.rotation.z = p.armR.rotation.z = x < 0 ? 0.5 : -0.5;
-    const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.05, 16), mat(i ? '#e0202a' : '#3fbf6a')), top = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.2, 0.12, 16), mat('#f3e2a8'));
-    hat.position.y = 0.2; top.position.y = 0.26; p.head.add(hat, top); carriers.add(p.g); return p;
+  const VEEM = '#e0202a', tinted = (geo, color = '#ffffff') => { const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, color, roughness: 0.55 })); m.castShadow = true; return m; };
+  carriers.add(tinted(berrieGeo('tint'), VEEM), tinted(berrieGeo('rest')));
+  { const fy = (x) => 0.54 + 0.3 * (x / 0.85) ** 2, R = 0.17, geo = cheeseWheelGeo().scale(R / 0.36, 1.18, R / 0.36); // fy: the curve of the berrie's floor (landmarks.js). Each wheel lies across it like a chord, so none sinks in
+    for (const c of [-0.575, -0.2, 0.2, 0.575, 0]) { const ch = tinted(geo); if (c) { ch.position.set(c, (fy(c - R) + fy(c + R)) / 2 + 0.025, 0); ch.rotation.z = atan2(fy(c + R) - fy(c - R), 2 * R); } else ch.position.y = 0.73; carriers.add(ch); } } // the fifth rides on the middle two
+  const kaas = [-1.52, 1.52].map((x) => { // at arm's length from the handles: the rear man reaches forward, the front man behind him
+    const p = person(b, { shirt: '#ffffff', pants: '#ffffff', hair: null, face: 'o', shoes: '#ffffff' }); p.g.position.set(x, 0.55, 0); p.armL.rotation.z = p.armR.rotation.z = x < 0 ? 1.228 : -1.228;
+    const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.05, 16), mat('#f3e2a8')), top = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.2, 0.12, 16), mat('#f3e2a8')), band = new THREE.Mesh(new THREE.CylinderGeometry(0.203, 0.21, 0.05, 16), mat(VEEM));
+    hat.position.y = 0.2; top.position.y = 0.285; band.position.y = 0.25; p.head.add(hat, top, band); carriers.add(p.g); return p;
   });
   scene.add(carriers);
 
-  const V = new THREE.Vector3(); let mood = 'calm', fear = 0, dist = 0, spun = 0, steer = 0, lastDrop = 0, headPhase = 0, talking = false;
+  // The duck family of the emergency stop: a mother and five ducklings. drive.js says where each one is at any moment.
+  const DK = layout.ducks, BILL = '#f08a1c', sph = (r) => new THREE.SphereGeometry(r, 10, 8);
+  const ducklingGeo = fuse([sph(0.09).scale(1.25, 0.85, 0.95), '#f7d84a', 0, 0.065, 0], [sph(0.065), '#fbe37a', 0.1, 0.165, 0], [new THREE.ConeGeometry(0.024, 0.07, 6).rotateZ(-PI / 2), BILL, 0.185, 0.155, 0], [sph(0.013), '#1b1b1b', 0.14, 0.185, 0.045], [sph(0.013), '#1b1b1b', 0.14, 0.185, -0.045]);
+  const ducks = Array.from({ length: DK.n }, (_, i) => {
+    const g = new THREE.Group(), leg = i ? 0.05 : 0.1, body = tinted(i ? ducklingGeo : duckGeo().scale(1.5, 1.5, 1.5)), w = i ? 0.035 : 0.06;
+    const feet = tinted(fuse(...[w, -w].flatMap((z) => [[box(0.02, leg, 0.02), BILL, 0, leg / 2, z], [box(w * 1.3, 0.016, w * 0.9), BILL, w * 0.5, 0.008, z]])));
+    g.add(body, feet); scene.add(g); return { g, body, feet, leg, wet: false, h: 0 };
+  });
+
+  const V = new THREE.Vector3(); let mood = 'calm', fear = 0, dist = 0, spun = 0, steer = 0, lastDrop = 0, headPhase = 0, talking = false, lurch = 0;
   const setMood = (k, now = 0) => { mood = k; const t = (talking && sin(now * 34) > 0 && moods[k + '!']) || moods[k]; if (ex.faceMat.map !== t) ex.faceMat.map = t; }; // his mouth moves while he talks
 
   function reset() {
-    smoke.clear(); marks.clear(); party.clear(); fear = 0; dist = 0; spun = 0; lastDrop = 0; headPhase = 0; talking = false; setMood('calm'); showHair(false); signMat.map = signs.before; car.shell.rotation.z = 0;
+    smoke.clear(); marks.clear(); party.clear(); fear = 0; lurch = 0; dist = 0; spun = 0; lastDrop = 0; headPhase = 0; talking = false; setMood('calm'); showHair(false); signMat.map = signs.before; car.shell.rotation.z = 0;
     sheet.material.map = papers.blank; nikki.head.add(helmet); helmet.position.set(0, 0, 0); helmet.rotation.set(0, 0, 0); helmet.scale.setScalar(1);
     for (const p of [nikki, ex]) { p.g.rotation.set(0, 0, 0); p.head.rotation.set(0, 0, 0); sit(p); for (const a of [p.armL, p.armR]) a.rotation.set(0, 0, 0); }
     nikki.g.position.set(-0.2, 0.62, -0.4); ex.g.position.set(-0.2, 0.62, 0.4); car.doorL.rotation.y = car.doorR.rotation.y = 0; clip.scale.setScalar(1); hold();
@@ -392,7 +404,8 @@ export function buildCast(scene, world, drive) {
     const glance = ramp(sin(now * 1.4), 0.5, 0.9), wobble = sin(headPhase) * 0.35 * ramp(fear, 0.2, 0.5) * (1 - ramp(fear, 0.6, 0.8));
     ex.head.rotation.z = lerp(-0.15, 0.3, fear) * (1 - hug) + shake * 0.03 + pray * 0.3;
     ex.head.rotation.y = lerp(lerp(wobble * (1 - hug), 1.0 + sin(now * 11) * 0.06, scold), lerp(-2.2, 0.9, glance), back); // over his shoulder at the road behind, then at the driver, then back
-    ex.g.rotation.set(clamp(-st.lean * 1.6 - st.beta * 0.25, -0.22, 0.22), 0.45 * back * (1 - glance), -fear * 0.12);
+    lurch = lerp(lurch, clamp(acc * 0.02, -0.4, 0.1), Math.min(1, dt * 9)); // thrown at the windscreen when she brakes
+    ex.g.rotation.set(clamp(-st.lean * 1.6 - st.beta * 0.25, -0.22, 0.22), 0.45 * back * (1 - glance), -fear * 0.12 + lurch);
     // Nikki: relaxed, steering, one arm out of the window during the doughnut
     const wave = ramp(st.s, drive.m.donut + 4, drive.m.donut + 14) * (1 - ramp(st.s, drive.m.schapen - 40, drive.m.schapen - 28));
     const look = st.rev * (1 - ramp(s, L - 9, L - 2)); // reversing: head round, one arm over the back of the other seat, as taught
@@ -407,17 +420,22 @@ export function buildCast(scene, world, drive) {
       c.p.legL.rotation.z = 0.9 + sin(ped) * 0.55; c.p.legR.rotation.z = 0.9 - sin(ped) * 0.55; c.p.head.rotation.y = near * (c.c.side > 0 ? 1 : -1) * 0.9;
       if (near > 0.5 && !c.rung) { c.rung = true; events?.bell?.(); }
     }
-    // cheese carriers spin to keep watching
-    const a = Math.atan2(st.z - layout.donut.z, st.x - layout.donut.x), onSquare = Math.hypot(st.x - layout.donut.x, st.z - layout.donut.z) < 40;
-    if (onSquare) carriers.rotation.y = -a + PI / 2;
-    kaas.forEach((k) => { k.head.rotation.y = onSquare ? -0.45 * PI : 0; });
+    // the cheese carriers dare not move: their heads follow the car as far as a neck goes, then whip round to the other shoulder
+    const dcx = st.x - layout.donut.x, dcz = st.z - layout.donut.z, near = 1 - ramp(hypot(dcx, dcz), 30, 45), neck = clamp(turn(atan2(dcz, dcx) + carriers.rotation.y), -1.25, 1.25) * near;
+    kaas.forEach((k, i) => { k.head.rotation.y = lerp(k.head.rotation.y, -neck, Math.min(1, dt * 10)); k.g.position.y = 0.55 + 0.02 * near * abs(sin(now * 18 + i * 2)); }); // and their knees knock
+    ducks.forEach((d, i) => { // waddling on the street, nose down off the quay, bobbing on the canal
+      const q = DK.at(i, t), moved = hypot(q.x - d.g.position.x, q.z - d.g.position.z) > 1e-4;
+      d.h = dt ? d.h + turn(q.h - d.h) * Math.min(1, dt * 9) : q.h; d.g.position.set(q.x, GROUND + q.y, q.z); d.g.rotation.y = -d.h; d.feet.visible = !q.wet; d.body.position.y = q.wet ? sin(now * 2.4 + i) * 0.012 : d.leg;
+      d.body.rotation.x = q.land && moved ? sin(now * 13 + i * 1.7) * 0.24 : q.wet ? sin(now * 2.1 + i) * 0.05 : 0; d.body.rotation.z = q.land || q.wet ? 0 : -0.5;
+      if (q.wet && !d.wet && dt) events?.plop?.(); d.wet = q.wet;
+    });
     // the crowd shrinks back as the car comes in sideways
     const scare = ramp(st.s, drive.L - 26, drive.L - 6);
-    crowd.forEach((p, i) => { p.g.rotation.z = 0; p.armL.rotation.z = p.armR.rotation.z = scare * 2.6; p.armL.rotation.x = p.armR.rotation.x = 0; p.g.position.y = GROUND + 0.55; p.head.rotation.z = scare * 0.25; });
+    crowd.forEach((p, i) => { p.g.rotation.z = 0; p.armL.rotation.z = p.armR.rotation.z = p.sign ? PI : scare * 2.6; p.armL.rotation.x = p.armR.rotation.x = 0; p.g.position.y = GROUND + 0.55; p.head.rotation.z = scare * 0.25; });
   }
 
   // after the car has stopped: T seconds of getting out, the stamp, the helmet coming off
-  const CUE = { exDoor: 1.2, exOut: 1.7, exUp: 4.0, exTurn: 5.0, clipUp: 5.6, stamp: 6.4, nDoor: 7.6, nOut: 8.0, nStand: 9.0, nTurn: 9.5, hands: 10.6, reveal: 11.6, wide: 14.2, card: 16.2 };
+  const CUE = { exDoor: 1.2, exOut: 1.7, exUp: 4.0, exTurn: 5.0, clipUp: 5.6, stamp: 6.4, nDoor: 7.6, nOut: 8.0, nStand: 8.55, nTurn: 8.8, roll: 9.4, hands: 10.6, reveal: 11.6, wide: 14.2, card: 16.2 };
   function outro(T, dt, now, events, prevT) {
     const hit = (k) => prevT < CUE[k] && T >= CUE[k];
     smoke.update(dt); party.update(dt, now); talking = false;
@@ -436,13 +454,13 @@ export function buildCast(scene, world, drive) {
     if (hit('stamp')) { sheet.material.map = papers.stamped; events.stamp?.(); }
     clip.scale.setScalar(1 + 0.5 * raise + 0.35 * Math.max(0, 1 - Math.abs(T - CUE.stamp - 0.08) * 6)); hold(grab, raise, 1 - ramp(out, 0, 0.18));
     // Nikki steps out on the quay side, turns round, takes the helmet off
-    const nOut = ramp(T, CUE.nOut, CUE.nOut + 0.9), nStand = ramp(T, CUE.nStand, CUE.nStand + 0.45), nTurn = ramp(T, CUE.nTurn, CUE.nTurn + 0.6), hands = ramp(T, CUE.hands, CUE.hands + 0.6), rev = ramp(T, CUE.reveal, CUE.reveal + 0.5);
+    const nOut = ramp(T, CUE.nOut, CUE.nOut + 0.9), nStand = ramp(T, CUE.nStand, CUE.nStand + 0.45), nTurn = ramp(T, CUE.nTurn, CUE.nTurn + 0.7), hands = ramp(T, CUE.hands, CUE.hands + 0.6), rev = ramp(T, CUE.reveal, CUE.reveal + 0.5);
     const joy = T > CUE.reveal + 0.5 ? Math.abs(sin((T - CUE.reveal - 0.5) * 6.5)) : 0;
     nikki.g.position.set(-0.2, lerp(0.62, 0.55, nStand) + sin(nOut * PI) * 0.12 + joy * 0.28, lerp(-0.4, -1.6, nOut));
     nikki.g.rotation.set(0, nTurn * PI / 2, 0); sit(nikki, 1 - nStand); nikki.head.rotation.set(0, 0, 0);
     const armUp = lerp(lerp(lerp(1.45, 0.1, ramp(nOut, 0, 0.4)), 2.5, hands), 2.9, rev);
     nikki.armL.rotation.set(-0.35 * hands * (1 - rev) - 0.5 * rev, 0, armUp); nikki.armR.rotation.set(0.35 * hands * (1 - rev) + 0.5 * rev, 0, armUp);
-    if (hit('nStand')) events.drumroll?.();
+    if (hit('roll')) events.drumroll?.();
     if (hit('reveal')) { showHair(true); signMat.map = signs.after; car.root.attach(helmet); helmet.userData.v = [1.2, 5.5, -0.6]; events.reveal?.(); const p = nikki.head.getWorldPosition(V); party.burst(p.x, p.y + 1.5, p.z, 7); }
     if (T >= CUE.reveal && helmet.parent === car.root) { // tossed helmet: up, over, bounce, roll to a stop
       const v = helmet.userData.v; v[1] -= 14 * dt; helmet.position.x += v[0] * dt; helmet.position.y += v[1] * dt; helmet.position.z += v[2] * dt; helmet.rotation.z -= v[0] * dt * 3;
@@ -452,7 +470,7 @@ export function buildCast(scene, world, drive) {
     // crowd goes wild after the reveal
     crowd.forEach((p, i) => {
       const j = T > CUE.reveal ? Math.abs(sin(now * (6 + (i % 3)) + i)) : 0, calm = ramp(T, 0.5, 2.5);
-      p.g.position.y = GROUND + 0.55 + j * 0.35; p.armL.rotation.z = p.armR.rotation.z = T > CUE.reveal ? PI - 0.25 : 2.6 * (1 - calm); p.armL.rotation.x = -j * 0.4; p.armR.rotation.x = j * 0.4; p.head.rotation.z = 0;
+      p.g.position.y = GROUND + 0.55 + j * 0.35; p.armL.rotation.z = p.armR.rotation.z = p.sign ? PI : T > CUE.reveal ? PI - 0.25 : 2.6 * (1 - calm); p.armL.rotation.x = p.sign ? 0 : -j * 0.4; p.armR.rotation.x = p.sign ? 0 : j * 0.4; p.head.rotation.z = 0; // whoever holds the banner keeps both fists on its poles
     });
     return CUE;
   }

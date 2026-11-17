@@ -1,6 +1,6 @@
 // The "no clipping" test. Replays the whole drive at 60 fps and asserts the car's
 // footprint never overlaps a building, open water, a bridge railing, street furniture, the roadworks, the fireworks stall,
-// a parked car, a cyclist, a tree or the barrier.
+// a parked car, a cyclist, a duck, a tree or the barrier.
 // Run: node tools/check.mjs      (exit code 1 on any overlap)
 import { readFile } from 'node:fs/promises';
 import { makeDrive, footprint, inPoly } from '../src/drive.js';
@@ -46,7 +46,15 @@ for (let t = 0; t <= drive.duration; t += 1 / 60) {
   { const b = layout.barrier, c0 = drive.place(drive.m.bridgeN - 9, b.from), c1 = drive.place(drive.m.bridgeN - 9, b.to);
     if (st.y < 1.2 && pts.some(([x, z]) => distSeg(x, z, c0.x, c0.z, c1.x, c1.z) < 0.12)) hit('barrier', st); }
   for (const p of layout.crowd) if (inPoly(poly, p.x, p.z)) hit('crowd', st);
+  for (let i = 0; i < layout.ducks.n; i++) { const d = layout.ducks.at(i, t); if (!d.wet && (inPoly(poly, d.x, d.z) || pts.some(([x, z]) => Math.hypot(d.x - x, d.z - z) < 0.3))) hit('duck', st); }
   const dn = layout.donut; if (Math.hypot(st.x - dn.x, st.z - dn.z) < 5.2) hit('cheese carriers', st);
+}
+// the ducks walk on the street and swim in the canal, never the other way round, and never through a house
+for (let i = 0; i < layout.ducks.n; i++) for (let t = 0; t <= drive.duration; t += 0.1) {
+  const d = layout.ducks.at(i, t), inWater = water.some((w) => inPoly(w.p, d.x, d.z));
+  const deck = Math.min(...flatDecks.map((b) => dLine(b.pts, d.x, d.z) - b.W / 2)); // < 0: on (or under) a level bridge
+  if (buildings.some((b) => near(b, d.x, d.z, 1) && distPoly(b.p, d.x, d.z) < 0.4) || (d.land && inWater && deck > -0.15)) hits.set('a duck walking through something', [0]);
+  if (d.wet && (!inWater || deck < 0.4)) hits.set('a duck swimming on dry land or under a bridge deck', [0]);
 }
 // the stage props must also stand clear of buildings
 for (const pc of layout.parked) for (const [x, z] of footprint(pc.x, pc.z, pc.h)) for (const b of buildings) if (near(b, x, z, 1) && inPoly(b.p, x, z)) hits.set('parked car ' + pc.i + ' inside a building', [0]);

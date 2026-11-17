@@ -63,13 +63,14 @@ export function makeDrive(route, water = []) {
   const JUMPS = [hop, bridge];
   const rev = { a0: m.dam + 14, a1: m.dam + 30, b0: m.annabrug - 54, b1: m.annabrug - 38 }; // spin round, drive backwards along the canal, spin back
   const boomS = m.zout + 55; // the fireworks stall on the Zoutstraat
+  const duckS = m.dam - 8.1, halt = duckS - 3.6, DWELL = 2.7, BRAKE = 16, LAUNCH = 8; // the emergency stop: a duck family crosses at duckS, the car stands still at halt for DWELL seconds
   const WEAVE0 = m.lange + 95, WEAVE_N = 7, WEAVE_L = 26;
   const humps = []; // [from, to] in metres for every stretch of the line that is over water
   for (let i = 0; i < n; i++) if (water.some((w) => inPoly(w, P[2 * i], P[2 * i + 1]))) { const l = humps.at(-1); if (l && S[i] - l.s1 < 9) l.s1 = S[i] + 2; else humps.push({ s0: S[i] - 2, s1: S[i] + 2 }); }
   for (let i = humps.length - 1; i >= 0; i--) { const b = humps[i]; if (b.s1 - b.s0 < 7 || (b.s1 > bridge.r0 - 8 && b.s0 < bridge.land)) humps.splice(i, 1); else { b.h = clamp(0.045 * (b.s1 - b.s0), 0.4, 1.05); b.w = 7.6; } }
   const deckY = (s) => { for (const b of humps) if (s > b.s0 && s < b.s1) return b.h * sin((PI * (s - b.s0)) / (b.s1 - b.s0)) ** 2; return 0; }; // height of the road surface over a bridge
 
-  const speed = keys([
+  const cruise = keys([
     [0, 1.5], [22, 15], [m.lange - 14, 13], [m.lange + 12, 13], [m.lange + 70, 29], [hop.r0 - 34, 29], [hop.r0, 25], [hop.land, 24], [hop.land + 14, 14],
     [m.mient - 14, 13], [m.mient + 22, 15], [m.waagIn - 5, 16], [m.donut - 6, 12.5], [m.schapen - 22, 12.5], [m.schapen, 15],
     [m.voordam - 4, 11], [m.voordam + 30, 19], [m.zijdam - 12, 11], [m.zijdam + 12, 12], [m.zijdam + 40, 21], [m.dam, 20],
@@ -77,6 +78,7 @@ export function makeDrive(route, water = []) {
     [bridge.r0, 23], [bridge.land, 20], [m.zout - 12, 11], [m.zout + 12, 11], [m.zout + 50, 22], [m.limmer - 48, 22], [m.limmer - 12, 11.5], [m.limmer + 12, 12],
     [m.willems - 6, 18], [m.bier, 16], [stop - 30, 12], [stop - 12, 6.5], [stop - 5, 4], [stop, 0.45],
   ]);
+  const speed = (s) => min(cruise(s), Math.sqrt(0.02 + 2 * (s < halt ? BRAKE * (halt - s) : LAUNCH * (s - halt)))); // full brakes down to the halt, then away again
   // swing wide, spin round, then reverse into the parking gap in one glide
   const parkLat = keys([[stop - 34, 0], [stop - 26, -1.1], [stop - 11.5, -1.1], [stop - 0.4, park.lat], [stop, park.lat]]);
   const lat = (s) =>
@@ -93,15 +95,16 @@ export function makeDrive(route, water = []) {
   const inAir = (s) => JUMPS.some((j) => s > j.r1 && s < j.land);
   const grip = (s) => JUMPS.reduce((g, j) => g * (1 - bump(s, j.r0 - 9, j.r0 - 1, j.land + 0.5, j.land + 8)), 1); // no drifting on a ramp or in the air
   const squash = (s) => JUMPS.reduce((q, j) => q + (s < j.land ? 0 : 0.08 * sin(min(PI, (s - j.land) * 0.5)) * (1 - ramp(s, j.land, j.land + 6))), 0); // suspension dip on landing
-  const wheelie = (s) => 0.2 * bump(s, 2, 7, 13, 21); // the front wheels leave the ground at the start
+  const wheelie = (s) => 0.2 * bump(s, 2, 7, 13, 21) + 0.2 * bump(s, halt + 0.6, halt + 3, halt + 6.5, halt + 11); // the front wheels leave the ground at the start, and again after the ducks
   const AX = 1.25; // half the wheelbase
   const rollStunt = (s) => 2 * PI * ramp(s, bridge.r1 + 1, bridge.land - 3);
   const timeScale = (s) => (1 - 0.74 * bump(s, bridge.r1 - 2, bridge.r1 + 3, bridge.land - 7, bridge.land - 1))
     * (1 - 0.66 * bump(s, hop.r1 - 1, hop.r1 + 2, hop.land - 5, hop.land - 0.5)) * (1 - 0.62 * bump(s, boomS + 4, boomS + 7, boomS + 17, boomS + 26));
 
-  const TS = 0.25, NT = Math.ceil(L / TS) + 1, T = new Float64Array(NT);
-  for (let i = 1; i < NT; i++) T[i] = T[i - 1] + TS / speed((i - 0.5) * TS);
-  const duration = T[NT - 1];
+  const TS = 0.02, NT = Math.ceil(L / TS) + 1, T = new Float64Array(NT), iHalt = Math.round(halt / TS); // fine steps, so the last metre of the stop is not jerky
+  for (let i = 1; i < NT; i++) T[i] = T[i - 1] + TS / speed((i - 0.5) * TS) + (i === iHalt + 1 ? DWELL : 0);
+  const duration = T[NT - 1], tHalt = T[iHalt], tGo = T[iHalt + 1];
+  const vAt = (s) => (s > iHalt * TS && s < (iHalt + 1) * TS ? TS / (tGo - tHalt) : speed(s)); // standing still while the ducks cross
   const tOf = (s) => { const q = clamp(s / TS, 0, NT - 1), i = min(NT - 2, floor(q)); return lerp(T[i], T[i + 1], q - i); };
   const sOf = (t) => {
     if (t <= 0) return 0; if (t >= duration) return L;
@@ -111,7 +114,7 @@ export function makeDrive(route, water = []) {
 
   function stateAt(s) {
     const c = centre(s), l = lat(s), dl = (lat(s + 0.5) - lat(s - 0.5));
-    const v = speed(s), air = inAir(s), w = wheelie(s);
+    const v = vAt(s), air = inAir(s), w = wheelie(s);
     // tail steps out a few metres before the apex; wilder in the donut; tamer where the street is tight
     const kd = sample(K, clamp(s + 3, 0, L)), wild = 1 + 0.9 * bump(s, m.donut - 12, m.donut + 4, m.schapen - 30, m.schapen - 12);
     const tight = sample(Rs, clamp(s, 0, L));
@@ -125,7 +128,7 @@ export function makeDrive(route, water = []) {
       travel, yaw: travel + beta + spin(s),
       pitch: atan((yF - yR) / (2 * AX)) + w, squash: squash(s),
       roll: rollStunt(s), lean: 0.16 * Math.tanh((sample(Kl, clamp(s, 0, L)) * v * v * 0.011) / 0.16) * grip(s),
-      slide: Math.abs(beta) + 0.8 * spinning + 0.5 * (1 - ramp(s, 20, 28)), // how much the tyres are smoking, 0..1+
+      slide: Math.abs(beta) + 0.8 * spinning + 0.5 * (1 - ramp(s, 20, 28)) + 0.9 * bump(s, halt - 12.5, halt - 10.5, halt - 0.6, halt), // how much the tyres are smoking, 0..1+
       rev: ramp(s, rev.a0, rev.a1) - ramp(s, rev.b0, rev.b1) + ramp(s, stop - 27, stop - 11), // 1 while the car is travelling backwards
       timeScale: timeScale(s),
     };
@@ -148,7 +151,25 @@ export function makeDrive(route, water = []) {
     ...[3, 5, 7, 9].flatMap((d) => [post(hop.r1 + d, -2.3, 0.25, 0.6, 'cone'), post(hop.r1 + d, 2.3, 0.25, 0.6, 'cone')]),
     post(hop.r1 + 6.5, 0, 1.6, 0.5, 'pit'), post(hop.r1 + 4, -4.4, 0.45, 1.7, 'worker'), post(hop.r1 + 8.5, 3.9, 0.45, 1.7, 'worker'), post(hop.r0 - 3, -4.6, 1.3, 2.7, 'digger'), post(hop.r0 - 11, 3.7, 0.45, 2.1, 'sign'),
   ];
+  // The emergency stop happens in time, not distance: the car arrives, stands on its nose, drops back and waits.
+  const state = (t) => {
+    const st = stateAt(sOf(t)), q = 0.34 * bump(t, tHalt - 0.55, tHalt + 0.05, tHalt + 0.5, tHalt + 0.9);
+    if (q) { st.pitch -= q; st.y += sin(q) * AX; } // nose down about the front axle
+    st.squash += 0.07 * bump(t, tHalt + 0.86, tHalt + 0.93, tHalt + 0.97, tHalt + 1.3); // the tail lands with a bounce
+    return st;
+  };
+  // A duck and her five ducklings cross at duckS: out of the side street on the left, over the road, onto the foot of the Kuipersbrug, off its side into the canal and away.
+  const DUCK = { swim: 30, gap: 0.55, v: 1.7 }, WAY = [[duckS, -7.5], [duckS, 2.5], [duckS - 1.25, 6.3], [duckS - 2.6, 6.6]]; // [metres along the route, metres to the right]; the last leg is the jump
+  const wayAt = [0]; for (let i = 1; i < WAY.length; i++) wayAt.push(wayAt[i - 1] + hypot(WAY[i][0] - WAY[i - 1][0], WAY[i][1] - WAY[i - 1][1]));
+  const tDuck = tHalt - 1.2 - (-1.3 - WAY[0][1]) / DUCK.v; // she steps in front of the car 1.2 s before it stands still
+  const duckAt = (i, t) => { // y: metres above the street; land: still on her feet; wet: swimming
+    const p = clamp(DUCK.v * (t - tDuck), 0, wayAt[3] + DUCK.swim) - DUCK.gap * i, q = p - wayAt[3], u = clamp((p - wayAt[2]) / (wayAt[3] - wayAt[2]), 0, 1);
+    let k = 1; while (k < 3 && p > wayAt[k]) k++;
+    const [a, b] = [WAY[k - 1], WAY[k]], f = (p - wayAt[k - 1]) / (wayAt[k] - wayAt[k - 1]), c = q > 0 ? place(b[0] - q, b[1]) : place(lerp(a[0], b[0], f), lerp(a[1], b[1], f)); // f < 0: still queueing up the side street
+    return { x: c.x, z: c.z, h: c.h + (q > 0 ? PI : atan2(b[1] - a[1], b[0] - a[0])), y: 0.25 * sin(PI * u) * (1 - u) - 1.25 * u * u, land: u <= 0, wet: u >= 1, p };
+  };
   const layout = {
+    ducks: { s: duckS, halt, n: 6, at: duckAt, t0: tDuck, tHalt, tGo },
     clear, cyclists, cyclistAt, parked, park, rev, boom, works, humps, deckY, roadY: height, // roadY: how high the road is under the car
     solids: [...works, boom],
     barrier: { ...place(m.bridgeN - 9, 0), from: 0.35, to: 2.9 }, // right-hand half barrier, metres right of centre
@@ -157,7 +178,7 @@ export function makeDrive(route, water = []) {
     crowd: Array.from({ length: 9 }, (_, i) => place(stop - 12 + i * 3.1, 7.4 + (i % 2) * 1.3)).filter((_, i) => i !== 4), // nobody stands right in front of the driver's door, that is the camera's spot
   };
 
-  return { L, m, duration, speed, tOf, sOf, stateAt, state: (t) => stateAt(sOf(t)), place, centre, layout };
+  return { L, m, duration, speed, tOf, sOf, stateAt, state, place, centre, layout };
 }
 
 // the four ground corners of a car-sized box

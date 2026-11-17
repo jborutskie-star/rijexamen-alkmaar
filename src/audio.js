@@ -69,6 +69,10 @@ export function makeAudio() {
     boom() { const t = now(); tone(90, t, 1.3, 0.9, 'sine', 26); tone(140, t, 0.5, 0.5, 'triangle', 40); hiss(t, 1.6, 0.8, 420, 0.5, 'lowpass'); hiss(t + 0.05, 0.5, 0.4, 2600, 0.7); },
     rocket() { const t = now(), f = 900 + Math.random() * 700; tone(f, t, 0.5, 0.05, 'sine', f * 2.2); hiss(t, 0.45, 0.05, 5200, 2); },
     pop() { const t = now(); tone(180 + Math.random() * 80, t, 0.22, 0.28, 'sine', 60); hiss(t, 0.5, 0.16, 3600 + Math.random() * 2500, 0.8); },
+    quack(n = 2) { for (let i = 0; i < n; i++) { const t = now() + i * 0.19; tone(640, t, 0.13, 0.13, 'sawtooth', 430); tone(1290, t, 0.1, 0.05, 'square', 880); } },
+    plop() { const t = now(); tone(430, t, 0.13, 0.16, 'sine', 130); hiss(t, 0.16, 0.08, 1900, 1); },
+    flash() { hiss(now(), 0.12, 0.45, 6000, 0.8, 'highpass'); tone(2300, now(), 0.07, 0.12, 'square', 1700); }, // the speed camera
+    heli(dur = 6) { const t = now(); for (let i = 0; i < dur * 11; i++) { tone(72, t + i / 11, 0.07, 0.3, 'sine', 44); hiss(t + i / 11, 0.06, 0.1, 900, 0.8); } }, // rotor blades
     speak() { try { const u = new SpeechSynthesisUtterance('Congratulations!'); u.lang = 'en-US'; u.pitch = 1.3; u.rate = 0.9; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch { /* no voice on this device, the fanfare is enough */ } },
   };
   const safe = Object.fromEntries(Object.entries(fx).map(([k, f]) => [k, (...a) => { if (ctx) try { f(...a); } catch (e) { console.warn(e); } }]));

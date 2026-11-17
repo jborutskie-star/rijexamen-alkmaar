@@ -54,7 +54,7 @@ export function placeProps(map, drive) {
 
   const car = []; for (let t = 0; t <= drive.duration; t += 0.05) { const s = drive.state(t); car.push(s.x, s.z); }
   const carGap = (x, z) => { let d = 1e9; for (let i = 0; i < car.length; i += 2) d = Math.min(d, hypot(car[i] - x, car[i + 1] - z)); return d; };
-  const stage = [layout.hop, layout.ramp].map((j) => [j.s0 - 12, j.land + 8]).concat(layout.humps.map((b) => [b.s0 - 4, b.s1 + 4]));
+  const stage = [layout.hop, layout.ramp].map((j) => [j.s0 - 12, j.land + 8]).concat(layout.humps.map((b) => [b.s0 - 4, b.s1 + 4]), [[layout.ducks.s - 2, layout.ducks.s + 2]]); // and the ducks' crossing
   const out = [];
   const put = (s, side, kind) => {
     if (stage.some(([a, b]) => s > a && s < b)) return;

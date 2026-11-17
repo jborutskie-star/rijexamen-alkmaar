@@ -11,22 +11,22 @@ const ramp = (t, a, b) => smooth((t - a) / (b - a));
 const audio = makeAudio();
 const [map, route] = await Promise.all(['data/alkmaar.json', 'data/route.json'].map((f) => fetch(f).then((r) => r.json())));
 await Promise.race([Promise.all(['400 40px "Lilita One"', '600 16px Rubik', '700 16px Caveat'].map((f) => document.fonts.load(f))), new Promise((r) => setTimeout(r, 3000))]);
-const drive = makeDrive(route, map.water), { m, L, layout } = drive, R = layout.ramp, H = layout.hop, RV = layout.rev, BS = layout.boom.s, D = layout.donut, W0 = layout.cyclists[0].c?.sm ?? layout.cyclists[0].sm - 13;
+const drive = makeDrive(route, map.water), { m, L, layout } = drive, R = layout.ramp, H = layout.hop, RV = layout.rev, BS = layout.boom.s, D = layout.donut, W0 = layout.cyclists[0].c?.sm ?? layout.cyclists[0].sm - 13, DK = layout.ducks;
 
 // ---- renderer, sky, light ----
 const renderer = new THREE.WebGLRenderer({ canvas: $('view'), antialias: true, stencil: true }); // stencil: the canals are cut out of the ground with it
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5)); renderer.shadowMap.enabled = true; renderer.toneMapping = THREE.NeutralToneMapping;
 const scene = new THREE.Scene();
 // the sky is a dome round the camera, so it turns with the view: deep blue overhead, pale only right at the horizon
-const sky = new THREE.Mesh(new THREE.SphereGeometry(1250, 24, 24), new THREE.MeshBasicMaterial({ side: THREE.BackSide, fog: false, depthWrite: false, map: canvasTex(4, 512, (g) => {
+const sky = new THREE.Mesh(new THREE.SphereGeometry(6200, 24, 24), new THREE.MeshBasicMaterial({ side: THREE.BackSide, fog: false, depthWrite: false, map: canvasTex(4, 512, (g) => {
   const s = g.createLinearGradient(0, 0, 0, 512); [[0, '#0a47b8'], [0.3, '#1670e0'], [0.42, '#3f9cf2'], [0.475, '#8ccafa'], [0.5, '#cfe8fb'], [1, '#cfe8fb']].forEach(([t, c]) => s.addColorStop(t, c)); g.fillStyle = s; g.fillRect(0, 0, 4, 512);
 }, false) }));
 sky.renderOrder = -1; sky.frustumCulled = false; sky.onBeforeRender = (r, sc, c) => { sky.position.copy(c.position); sky.updateMatrixWorld(); }; scene.add(sky);
-scene.fog = new THREE.Fog('#cfe8fb', 220, 1000);
-scene.add(new THREE.HemisphereLight('#e6f4ff', '#c9a57a', 1.25));
-const sun = new THREE.DirectionalLight('#fff1d0', 2.4); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.06;
-Object.assign(sun.shadow.camera, { left: -75, right: 75, top: 75, bottom: -75, near: 10, far: 420 }); scene.add(sun, sun.target);
-const cam = new THREE.PerspectiveCamera(55, 1, 0.45, 1300);
+scene.fog = new THREE.Fog('#cfe8fb', 260, 5600); // thin haze: the polder and the horizon stay in view from the rooftops
+scene.add(new THREE.HemisphereLight('#dcecff', '#b98f66', 1.25)); // less fill than sun, so shapes keep a lit and a shaded side
+const sun = new THREE.DirectionalLight('#ffedc4', 3.1); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.06;
+Object.assign(sun.shadow.camera, { left: -80, right: 80, top: 80, bottom: -80, near: 10, far: 460 }); scene.add(sun, sun.target);
+const cam = new THREE.PerspectiveCamera(55, 1, 0.45, 7000);
 const world = buildWorld(scene, map, drive), cast = buildCast(scene, world, drive), stunts = buildStunts(scene, world, drive);
 
 // ---- camera work ----
@@ -68,6 +68,15 @@ function corner(mark, s0, s1, fov = 52) {
 const grid = (sA, sB, offs, ys) => { const c = []; for (const y of ys) for (let s = sA; s <= sB; s += 2) for (const o of offs) c.push(P(s, o, y), P(s, -o, y)); return c; };
 const canalSide = freeSide(m.dam + 36, m.annabrug - 52, 8);
 const parkShot = fixed(spot(L + 2, -4.2, 3.2, L), 60);
+// The emergency stop in four takes: from duck height as the car comes at them, side on as it stands on its nose, the examiner's face, then from the canal as the last ducklings file past and the car leaves.
+const duckCam = P(DK.s + 2.4, -1.1, 0.34), noseCam = P(DK.s + 3.4, -3.6, 0.45), canalCam = P(DK.s + 2.2, 10.8, 2.6); // the last one stands on the Kuipersbrug
+const duckStop = (st) => {
+  const t = simT - DK.tHalt;
+  if (t < -0.2) return { key: 'duck', eye: duckCam, look: P(DK.halt + 0.4, 0, 0.85), fov: 60, rate: 0, lock: true };
+  if (t < 1.2) return { key: 'nose', eye: noseCam, look: P(DK.halt + 1, -0.2, 1), fov: 52, rate: 0, lock: true };
+  if (t < 1.95) return { key: 'duckface', ...closeup(42)(st) };
+  return { key: 'canal', eye: canalCam, look: P(DK.s - 3.2, 5.2, 0.2), fov: 50, rate: 0, lock: true };
+};
 const SHOTS = [ // [from this many metres along the route, camera]
   [0, fixed(spot(17, 2.4, 0.8, 8), 55)],
   [12, chase(8, 2.8)],
@@ -92,7 +101,8 @@ const SHOTS = [ // [from this many metres along the route, camera]
   [m.voordam + 8, front()],
   [m.zijdam - 16, corner(m.zijdam, m.zijdam - 16, m.zijdam + 10)],
   [m.zijdam + 10, chase(7, 2.2, 0, 66)],
-  [RV.a0 - 8, chase(11, 5, 0, 56, 0)],
+  [DK.halt - 22, duckStop],
+  [RV.a0 - 5, chase(11, 5, 0, 56, 0)],
   [RV.a1 + 2, chase(6.5, 1.7, 0, 46, 0)] /* driving backwards: the camera follows the nose, so both faces show */,
   [RV.a1 + 28, closeup()],
   [RV.a1 + 54, (st) => ({ eye: P(st.s + 3, canalSide, 1.5), look: carPt(st, 0, 0.8, 0), fov: 50, rate: 6 })],
@@ -140,7 +150,7 @@ function film(key, shot, dt) {
   const aspect = innerWidth / innerHeight; // on a tall phone, widen the view so the action still fits
   cam.fov = aspect >= 1.4 ? fovNow : clamp((2 * atan((tan((fovNow * PI) / 360) * 1.4) / aspect) * 180) / PI, fovNow, 100);
   cam.updateProjectionMatrix();
-  sun.target.position.copy(look); sun.position.copy(look).add(V(-70, 130, 90));
+  sun.target.position.copy(look); sun.position.copy(look).add(V(...world.sun));
 }
 
 // ---- words on screen ----
@@ -159,9 +169,10 @@ const LINES = [ // [metres along the route, caption, seconds]
   [m.donut + 6, '"That is not a roundabout. That is the kaasmarkt!"', 3.4],
   [m.donut + 80, '"Why are we going round AGAIN?"', 2.8],
   [m.voordam + 4, '"Mirror, signal... never mind."', 2.6],
-  [RV.a0 - 22, '"Lovely canal. Please stay out of it."', 2.2],
-  [RV.a1 + 2, '"Why can I see where we have BEEN?!"', 2.4],
-  [RV.a1 + 36, '"Achteruitrijden is hoofdstuk 9. We are on hoofdstuk 2!"', 3],
+  [m.zijdam + 12, '"Lovely canal. Please stay out of it."', 2.2],
+  [DK.halt - 30, '"EENDJES! Ducks! REMMEN!"', 1.5],
+  [RV.a1 + 2, '"Keren, zei ik. In drie keer. That was ONE."', 2.6],
+  [RV.a1 + 40, '"Why can I see where we have BEEN?!"', 2.6],
   [RV.b1 + 4, '"Thank you. Forwards. Like a car."', 2.6],
   [m.anna + 30, '"De brug staat open. Hallo? HALLO?! DE BRUG!"', 3.6],
   [R.s1 + 2, '"aaaaaaaaaaaaaaaaaaaaaaaa"', 3.8],
@@ -209,7 +220,7 @@ const events = {
   bell: audio.fx.bell, whoosh: audio.fx.whoosh, drumroll: audio.fx.drumroll,
   thud: () => { audio.fx.thud(); shake = 0.5; say('Examinator: "Grond. Lieve, stilstaande grond."', 3); },
   stamp: () => { audio.fx.stamp(); shake = 0.4; $('stamp').classList.add('on'); say('"Ge... geslaagd. But never again."', 3); },
-  boom: () => { audio.fx.boom(); shake = 1.3; }, rocket: audio.fx.rocket, pop: audio.fx.pop,
+  boom: () => { audio.fx.boom(); shake = 1.3; }, rocket: audio.fx.rocket, pop: audio.fx.pop, plop: audio.fx.plop,
   reveal: () => { audio.fx.fanfare(); audio.fx.cheer(); say('GESLAAGD! Gefeliciteerd, Nikki!', 4.5); $('who').textContent = 'Nikki'; document.title = "Nikki's rijexamen"; stunts.fireworks(st.x, st.z, st.yaw + PI / 2, 26); }, // the first time her name appears anywhere
 };
 
@@ -237,7 +248,7 @@ function step(dt) {
     if (crossed(13.2)) say('Examinator: "Goedemorgen. Ik ben meneer De Vries. Rustig wegrijden, graag."', 3.6);
     if (T >= INTRO) { phase = 'drive'; simT = 0; hud(true); audio.stop('calm', 0.25); audio.music('chase', 0.46, 0.05); }
   } else if (phase === 'drive') {
-    const ts = st.timeScale; simT += dt * ts; st = drive.state(simT);
+    const ts = st.timeScale, was = simT, at = (t) => was < t && simT >= t; simT += dt * ts; st = drive.state(simT);
     cast.frame(st, simT, dt * ts, now, events); stunts.frame(st, dt * ts, now, events);
     for (const [s, text, secs] of LINES) if (lastS < s && st.s >= s) say(text, secs);
     CHECKS.forEach((c, i) => { if (lastS < c[2] && st.s >= c[2]) $('checks').children[i].classList.add('done'); });
@@ -246,9 +257,12 @@ function step(dt) {
     if (st.s > m.bridgeN - 110 && st.s < R.s1 && now > nextDing) { audio.fx.ding(); nextDing = now + 0.45; }
     if (lastS < H.s1 && st.s >= H.s1) audio.fx.whoosh();
     if (lastS < H.land && st.s >= H.land) { audio.fx.thud(); shake = 0.8; }
+    if (at(DK.t0 + 1.5) || at(DK.tHalt + 1.9)) audio.fx.quack(3);
+    if (at(DK.tHalt + 0.9)) { audio.fx.thud(); shake = 0.6; } // the tail comes back down
+    if (at(DK.tHalt + 1.2)) say('"...Een noodstop. Voor eendjes. Dat was eigenlijk perfect."', 2.8);
     audio.engine(st.v, st.slide, st.air, ts); audio.rate('chase', Math.max(0.5, ts));
     let i = 0; while (i + 1 < SHOTS.length && SHOTS[i + 1][0] <= st.s) i++;
-    film(i, SHOTS[i][1](st), dt);
+    const shot = SHOTS[i][1](st); film(shot.key ?? i, shot, dt);
     const kmh = Math.round(st.v * 3.6); $('speed').firstElementChild.textContent = kmh; $('speed').classList.toggle('over', kmh > 30);
     const name = streetAt(st.s); if (name !== shownStreet) { shownStreet = name; $('street').textContent = name; $('street').hidden = !name; }
     lastS = st.s;
