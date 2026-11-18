@@ -1,7 +1,7 @@
 // The set pieces: the roadworks and plank ramp on the Langestraat, the fireworks stall on the Zoutstraat,
 // and everything that goes bang. Where things stand comes from drive.js, so tools/check.mjs tests the same layout.
 import * as THREE from 'three';
-import { mat, canvasTex, GROUND } from './world.js';
+import { mat, canvasTex, reliefTex, GROUND } from './world.js';
 import { clamp, smooth } from './drive.js';
 import { person, puffs, FONT } from './actors.js';
 
@@ -63,23 +63,135 @@ function debris(scene, world, n) {
   };
 }
 
+// One timber tile for the ramp, its supports and the market counter. The screws and
+// grain are painted into the existing surfaces, so even the ramp's wheel contact stays exact.
+function timber(g, bump) {
+  const rng = (k) => (Math.imul(k+57,2654435761)>>>8)/16777216;
+  for (let row=0;row<6;row++) {
+    const y=row*32, tone=219+Math.floor(rng(row)*29);
+    g.fillStyle=bump?'#aaa':`rgb(${tone},${tone},${tone})`;
+    g.fillRect(0,y,256,32);
+    g.fillStyle=bump?'#555':'#9b8979'; g.fillRect(0,y,256,2);
+    g.fillStyle=bump?'#cecece':'#f9f5e8'; g.fillRect(0,y+2,256,1.5);
+    for (let line=0;line<5;line++) {
+      const mid=y+5+line*5, phase=rng(row*11+line)*6;
+      g.beginPath();
+      for(let x=0;x<=256;x+=4) {
+        const v=mid+sin(x/26+phase)*1.5+sin(x/7+phase)*.4;
+        if(x)g.lineTo(x,v); else g.moveTo(x,v);
+      }
+      g.lineWidth=line%2?.8:1.2; g.strokeStyle=bump?'#929292':'rgba(99,67,42,.22)'; g.stroke();
+    }
+    const knot=43+row*39%161;
+    for (const r of [6,3]) {
+      g.strokeStyle=bump?'#777':'rgba(113,80,49,.46)'; g.lineWidth=1.2;
+      g.beginPath(); g.ellipse(knot,y+15,r,r*.26,0,0,2*PI); g.stroke();
+    }
+    for (const x of [13,122,233]) for(const dy of [7,25]) {
+      g.fillStyle=bump?'#888':'#766c5e'; g.fillRect(x-1.5,y+dy-1.5,3,3);
+      g.fillStyle=bump?'#bdbdbd':'#c4c4b6'; g.fillRect(x-1,y+dy-1,2,1);
+    }
+  }
+}
+
+function trackAtlas() {
+  return tex(384,128,(g) => {
+    g.fillStyle='#2e3137'; g.fillRect(0,0,384,128);
+    g.fillStyle='#454951'; g.beginPath(); g.roundRect(5,5,374,70,30); g.fill();
+    g.fillStyle='#20252b'; g.beginPath(); g.roundRect(11,12,362,55,23); g.fill();
+    for(let i=0;i<6;i++) {
+      const x=41+i*60.5;
+      for (const [r,colour] of [[24,'#63676a'],[19,'#474b50'],[12,'#33383b'],[6,'#aa9b75']]) {
+        g.fillStyle=colour; g.beginPath(); g.arc(x,40,r,0,2*PI); g.fill();
+      }
+    }
+    for(let x=3;x<384;x+=15) {
+      g.fillStyle='#686965'; g.fillRect(x,2,10,4); g.fillRect(x,74,10,4); g.fillRect(x,83,10,43);
+      g.fillStyle='#393b3a'; g.fillRect(x+2,84,3,41);
+    }
+  });
+}
+
+function machinePaint() {
+  return tex(128,256,(g) => {
+    g.fillStyle='#f7c400';g.fillRect(0,0,128,256);
+    // Cab above, engine cover below. The rest of the shell keeps the original yellow enamel.
+    g.fillStyle='#333b40';g.fillRect(11,11,106,69);
+    const glass=g.createLinearGradient(0,14,0,78);
+    glass.addColorStop(0,'#7999a6');glass.addColorStop(.57,'#3d586a');glass.addColorStop(1,'#22344a');
+    g.fillStyle=glass;g.fillRect(15,15,61,61);g.fillRect(81,15,32,61);
+    g.strokeStyle='#cd9908';g.lineWidth=2;g.strokeRect(8,7,73,112);
+    g.fillStyle='#353b38';g.fillRect(58,86,15,4);
+    g.fillStyle='#d5a506';g.fillRect(8,229,112,3);
+    for(let i=0;i<8;i++) {
+      g.fillStyle='#513f1e';g.fillRect(16+i*8,161,4,35);
+      g.fillStyle='#fbd64b';g.fillRect(20+i*8,161,2,35);
+    }
+    g.strokeStyle='#b88f08';g.strokeRect(10,151,75,56);
+    g.fillStyle='#c2beb0';g.fillRect(91,169,13,7);
+  });
+}
+
+function machineSide(mesh,finish,top,bottom) {
+  mesh.material.map=finish; mesh.material.color.set('#ffffff'); mesh.material.roughness=.49;
+  const uv=mesh.geometry.attributes.uv;
+  for(let i=0;i<uv.count;i++) {
+    if(i<16) uv.setXY(i,.005,.992);
+    else uv.setY(i,bottom+(top-bottom)*uv.getY(i));
+  }
+  return mesh;
+}
+
+function wrapperAtlas() {
+  return tex(128,128,(g) => {
+    g.fillStyle='#fff';g.fillRect(0,0,128,128);
+    for(const y of [6,14,106,116]) {
+      g.fillStyle=y%4?'#9c9a95':'#5f6270';g.fillRect(0,y,128,3);
+    }
+    for(let i=-1;i<4;i++) {
+      const x=i*40+2;g.fillStyle='#8f8e98';g.beginPath();g.moveTo(x,25);g.lineTo(x+13,25);g.lineTo(x+2,46);g.lineTo(x-11,46);g.fill();
+    }
+    g.fillStyle='#48485b';g.fillRect(0,55,128,40);
+    for(const x of [31,95]) {
+      g.beginPath();
+      for(let i=0;i<12;i++) {
+        const t=i*PI/6, r=i%2?5:16, px=x+cos(t)*r, py=75+sin(t)*r;
+        if(i)g.lineTo(px,py);else g.moveTo(px,py);
+      }
+      g.closePath();g.fillStyle='#fff';g.fill();
+    }
+  });
+}
+
 export function buildStunts(scene, world, drive) {
   const { layout } = drive, b = world.box, bm = world.beam, H = layout.hop, B = layout.boom;
   const put = (o, hd) => { const g = new THREE.Group(); g.position.set(o.x, GROUND, o.z); g.rotation.y = -hd; scene.add(g); return g; };
-  const stripes = (a, c) => tex(64, 64, (g) => { g.fillStyle = a; g.fillRect(0, 0, 64, 64); g.fillStyle = c; g.fillRect(0, 0, 16, 64); g.fillRect(32, 0, 16, 64); });
+  const stripes = (a, c) => tex(64, 64, (g) => { g.fillStyle = a; g.fillRect(0, 0, 64, 64); g.fillStyle = c; g.fillRect(0, 0, 16, 64); g.fillRect(32, 0, 16, 64);
+    g.fillStyle='rgba(56,52,49,.22)'; g.fillRect(0,0,64,4); g.fillRect(0,59,64,5);
+    g.fillStyle='rgba(255,255,255,.6)';g.fillRect(0,4,64,2);
+    for(const x of [3,59]){g.fillStyle='#727979';g.fillRect(x,7,2,3);}
+  });
   const redWhite = stripes('#f4f1e6', '#e0202a');
+  const timberFinish = {map:tex(256,192,g=>timber(g,false)),normalMap:reliefTex(256,192,g=>timber(g,true),1.05),roughness:.84};
+  const foil = wrapperAtlas(), tracks = trackAtlas(), enamel=machinePaint();
+  const reflector = tex(64,32,(g) => {
+    g.fillStyle='#eff1e8';g.fillRect(0,0,64,32);
+    g.fillStyle='#bdc4bf'; g.fillRect(0,0,64,3);g.fillRect(0,29,64,3);
+    g.fillStyle='#d5dcd4';
+    for(let y=5;y<28;y+=5)for(let x=(y%2)*3;x<64;x+=6)g.fillRect(x,y,2,2);
+  });
 
   // ---- roadworks on the Langestraat: a builder's plank makes a fine ramp ----
   const hd = H.h, len = H.s1 - H.s0, run = len / cos(H.angle), tan = Math.tan(H.angle);
   const rampG = put(H, hd), tilt = (me) => { me.rotation.z = H.angle; return me; };
-  rampG.add(tilt(b(run, 0.08, 2.7, '#c9a26b', len / 2, H.tipY / 2 - 0.085, 0)), b(1.0, 0.92, 2.4, '#8a6a45', len - 0.55, 0.46, 0), b(0.8, 0.4, 2.4, '#8a6a45', 2.9, 0.2, 0));
+  rampG.add(tilt(b(run, 0.08, 2.7, '#c9a26b', len / 2, H.tipY / 2 - 0.085, 0,timberFinish)), b(1.0, 0.92, 2.4, '#8a6a45', len - 0.55, 0.46, 0,timberFinish), b(0.8, 0.4, 2.4, '#8a6a45', 2.9, 0.2, 0,timberFinish));
   for (let i = 0; i < 8; i++) for (const z of [-1.34, 1.34]) { const x = ((i + 0.5) / 8) * len; rampG.add(tilt(b(run / 8, 0.16, 0.07, i % 2 ? '#22242a' : '#f7c400', x, x * tan - 0.02, z))); }
   const workers = [];
   for (const o of layout.works) {
     const g = put(o, hd);
     if (o.kind === 'fence') g.add(b(0.05, 0.2, 0.86, '#ffffff', 0, 0.9, 0, { map: redWhite }), b(0.05, 0.2, 0.86, '#ffffff', 0, 0.52, 0, { map: redWhite }), b(0.07, 1.0, 0.07, '#8f949e', 0.02, 0.5, -0.36), b(0.07, 1.0, 0.07, '#8f949e', 0.02, 0.5, 0.36), b(0.5, 0.07, 0.14, '#f7c400', 0.02, 0.035, -0.36), b(0.5, 0.07, 0.14, '#f7c400', 0.02, 0.035, 0.36));
     else if (o.kind === 'cone') {
-      const cone = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.56, 12), mat('#ff6a13')), band = new THREE.Mesh(new THREE.CylinderGeometry(0.098, 0.135, 0.1, 12), mat('#ffffff'));
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.56, 12), mat('#ff6a13',{roughness:.47})), band = new THREE.Mesh(new THREE.CylinderGeometry(0.098, 0.135, 0.1, 12), mat('#ffffff',{map:reflector,roughness:.27,metalness:.2}));
       cone.position.y = 0.32; band.position.y = 0.33; cone.castShadow = true; g.add(cone, band, b(0.44, 0.04, 0.44, '#ff6a13', 0, 0.02, 0));
     } else if (o.kind === 'pit') {
       const sand = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 6), mat('#d9b877', { flatShading: true, roughness: 1 })); sand.scale.set(1.0, 0.45, 0.9); sand.position.set(0.5, 0, 0.1); sand.castShadow = true;
@@ -92,7 +204,16 @@ export function buildStunts(scene, world, drive) {
       p.g.position.y = 0.55; g.rotation.y = -(hd - side * PI / 2); g.add(p.g); workers.push({ p, o, face: hd - side * PI / 2 }); // facing the street
     } else if (o.kind === 'digger') {
       const arm = new THREE.Group(); arm.position.set(0.3, 0.95, 0.28); arm.add(bm([0, 0, 0], [0.4, 1.1, 0], 0.14, '#f7c400'), bm([0.4, 1.1, 0], [0.75, 0.5, 0], 0.11, '#f7c400'), b(0.3, 0.3, 0.42, '#2b2e36', 0.78, 0.36, 0));
-      g.add(b(1.9, 0.4, 0.34, '#2b2e36', 0, 0.2, -0.44), b(1.9, 0.4, 0.34, '#2b2e36', 0, 0.2, 0.44), b(1.3, 0.5, 1.0, '#f7c400', -0.1, 0.66, 0), b(0.7, 0.8, 0.66, '#f7c400', -0.35, 1.31, -0.12), b(0.74, 0.42, 0.5, '#22344a', -0.35, 1.4, -0.12, { roughness: 0.2 }), b(0.14, 0.1, 0.14, '#ff9a1a', -0.35, 1.76, -0.12, { emissive: '#ff8a00', emissiveIntensity: 1 }), arm);
+      const tread = (z) => {
+        const shell=b(1.9,0.4,0.34,'#ffffff',0,0.2,z,{map:tracks,roughness:.88});
+        const uv=shell.geometry.attributes.uv;
+        for(let i=0;i<uv.count;i++) {
+          // BoxGeometry's last two faces are the long sides; the strip wraps the four narrow faces.
+          const v=uv.getY(i); uv.setY(i,i>=16?.375+v*.625:v*.35);
+        }
+        return shell;
+      };
+      g.add(tread(-0.44),tread(0.44), machineSide(b(1.3, 0.5, 1.0, '#f7c400', -0.1, 0.66, 0),enamel,.5,0), machineSide(b(0.7, 0.8, 0.66, '#f7c400', -0.35, 1.31, -0.12),enamel,1,.5), b(0.74, 0.42, 0.5, '#22344a', -0.35, 1.4, -0.12, { roughness: 0.2 }), b(0.14, 0.1, 0.14, '#ff9a1a', -0.35, 1.76, -0.12, { emissive: '#ff8a00', emissiveIntensity: 1 }), arm);
       g.userData.arm = arm; workers.digger = g;
     } else if (o.kind === 'sign') {
       const board = new THREE.Mesh(new THREE.PlaneGeometry(0.84, 0.84), new THREE.MeshStandardMaterial({ map: tex(256, 256, (c) => { c.fillStyle = '#f7c400'; c.fillRect(0, 0, 256, 256); c.strokeStyle = '#14161c'; c.lineWidth = 12; c.strokeRect(10, 10, 236, 236); c.fillStyle = '#14161c'; c.textAlign = 'center'; c.font = `400 44px ${FONT}`; c.fillText('WERK IN', 128, 96); c.font = `400 34px ${FONT}`; c.fillText('UITVOERING', 128, 146); c.font = `400 30px ${FONT}`; c.fillText('langzaam!', 128, 206); }) }));
@@ -103,13 +224,13 @@ export function buildStunts(scene, world, drive) {
   // ---- the fireworks stall on the Zoutstraat ----
   const B_S = B.s, bh = drive.centre(B_S).h, ax = sin(bh), az = -cos(bh), E = { x: B.x + ax * 0.8, z: B.z + az * 0.8 }; // (ax, az): from the stall towards the middle of the street
   const stall = put(B, bh), wreck = put(B, bh);
-  const banner = new THREE.Mesh(new THREE.PlaneGeometry(1.86, 0.38), new THREE.MeshStandardMaterial({ map: tex(512, 104, (c) => { c.fillStyle = '#14213d'; c.fillRect(0, 0, 512, 104); c.fillStyle = '#ffd23f'; c.textAlign = 'center'; c.font = `400 78px ${FONT}`; c.fillText('VUURWERK', 256, 80); }) }));
+  const banner = new THREE.Mesh(new THREE.PlaneGeometry(1.86, 0.38), new THREE.MeshStandardMaterial({ map: tex(512, 104, (c) => { c.fillStyle = '#14213d'; c.fillRect(0, 0, 512, 104); c.strokeStyle='#94989b'; c.lineWidth=2; c.strokeRect(5,5,502,94); c.fillStyle='#cbb788'; for(const x of [14,498])for(const y of [14,90])c.fillRect(x-2,y-2,4,4); c.fillStyle = '#ffd23f'; c.textAlign = 'center'; c.font = `400 78px ${FONT}`; c.fillText('VUURWERK', 256, 80); }) }));
   banner.rotation.y = PI; banner.position.set(0, 1.95, -0.645);
   const roof = b(2.2, 0.07, 1.22, '#ffffff', 0, 2.3, 0, { map: redWhite }); roof.rotation.x = 0.1;
-  stall.add(b(2.0, 0.85, 0.8, '#b5834f', 0, 0.425, 0.1), b(2.06, 0.3, 0.86, '#ffffff', 0, 0.62, 0.1, { map: redWhite }), roof, b(1.9, 0.42, 0.04, '#14213d', 0, 1.95, -0.62), banner, b(0.9, 0.2, 0.5, '#8a5a3a', -0.4, 0.95, 0.1));
+  stall.add(b(2.0, 0.85, 0.8, '#b5834f', 0, 0.425, 0.1,timberFinish), b(2.06, 0.3, 0.86, '#ffffff', 0, 0.62, 0.1, { map: redWhite }), roof, b(1.9, 0.42, 0.04, '#14213d', 0, 1.95, -0.62), banner, b(0.9, 0.2, 0.5, '#8a5a3a', -0.4, 0.95, 0.1,timberFinish));
   for (const x of [-0.95, 0.95]) for (const z of [-0.5, 0.5]) stall.add(b(0.07, 2.25, 0.07, '#e8e2d0', x, 1.125, z));
   for (let i = 0; i < 7; i++) {
-    const r = new THREE.Group(), body = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.36, 8), mat(COLS[i % 6])), tip = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.14, 8), mat('#e0202a'));
+    const r = new THREE.Group(), body = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.36, 8), mat(COLS[i % 6],{map:foil,roughness:.43,metalness:.13})), tip = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.14, 8), mat('#e0202a',{roughness:.34}));
     body.position.y = 0.18; tip.position.y = 0.43; r.add(body, tip, b(0.012, 0.3, 0.012, '#8a5a3a', 0.05, -0.1, 0));
     if (i === 6) { r.scale.setScalar(2.4); r.position.set(0.55, 1.05, 0.05); r.rotation.z = -0.3; } else { r.position.set(-0.72 + i * 0.13, 1.1, 0.02 + (i % 2) * 0.14); r.rotation.z = (i - 2.5) * 0.06; }
     stall.add(r);

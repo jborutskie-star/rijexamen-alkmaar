@@ -64,7 +64,8 @@ let torsoGeo;
 function shirtBody(shirt) {
   if (!torsoGeo) {
     torsoGeo = mould(0.26, 0.52, 0.5, 0.03).clone();
-    const uv = torsoGeo.attributes.uv;
+    const { uv, position } = torsoGeo.attributes;
+    for (let i = 0; i < 16; i++) uv.setXY(i, 0.5 - position.getZ(i) / 0.5, 0.5 + position.getY(i) / 0.52);
     for (let i = 16; i < uv.count; i++) uv.setXY(i, 0.04, 0.96);
   }
   const torso = new THREE.Mesh(torsoGeo, mat(shirt, { map: shirtPrint(), roughness: 0.87 }));
@@ -142,13 +143,17 @@ function examinerFace(kind, open) {
 
 // ---------- cars ----------
 // One profiled tyre and stamped alloy face per wheel, including the tread shoulder and recessed rim.
-const wheelProfile = [[0, -0.125], [0.17, -0.125], [0.214, -0.095], [0.245, -0.116], [0.292, -0.12], [0.328, -0.092], [0.34, -0.068],
-  [0.34, 0.068], [0.328, 0.092], [0.292, 0.12], [0.245, 0.116], [0.214, 0.095], [0.17, 0.125], [0, 0.125]];
-const wheelGeo = new THREE.LatheGeometry(wheelProfile.map(([r, h]) => new THREE.Vector2(r, h)), 24);
-for (let i = 0; i < wheelGeo.attributes.uv.count; i++) {
-  const p = wheelGeo.attributes.position;
-  wheelGeo.attributes.uv.setXY(i, 0.5 + p.getX(i) / 0.69, 0.5 + p.getZ(i) / 0.69);
+// Keep the original 18 tread corners on each side and five hub corners: even while spinning,
+// the lowest tyre vertex and the widest steered-wheel vertex follow the finished film exactly.
+const wheelProfile = [[0, -0.095], [0.213, -0.095], [0.253, -0.113], [0.29, -0.118], [0.34, -0.12],
+  [0.34, 0.12], [0.29, 0.118], [0.253, 0.113], [0.213, 0.095], [0, 0.095]];
+const wheelGeo = fuse([new THREE.LatheGeometry(wheelProfile.map(([r, h]) => new THREE.Vector2(r, h)), 18), '#ffffff'],
+  [new THREE.CylinderGeometry(0.2, 0.2, 0.25, 5), '#ffffff']);
+const wheelVertices = wheelGeo.attributes.position, wheelUV = new Float32Array(wheelVertices.count * 2);
+for (let i = 0; i < wheelVertices.count; i++) {
+  wheelUV[2 * i] = 0.5 + wheelVertices.getX(i) / 0.69; wheelUV[2 * i + 1] = 0.5 + wheelVertices.getZ(i) / 0.69;
 }
+wheelGeo.setAttribute('uv', new THREE.BufferAttribute(wheelUV, 2)); wheelGeo.deleteAttribute('color');
 let wheelPaint;
 function wheel(parent, x, z) {
   const steer = new THREE.Group(), spin = new THREE.Group(); steer.position.set(x, 0.34, z);
@@ -216,13 +221,16 @@ function lessonCar(world) {
   }
   shell.add(pane(0.02, 0.88, 1.48, 0.52, 1.39, 0, 0.525), pane(0.02, 0.78, 1.48, -1.025, 1.39, 0, -0.195));
   // The original bumper is the extremity. The grille and pressed ribs sit on the nose within it.
-  const faceTrim = new THREE.Mesh(new THREE.PlaneGeometry(0.75, 0.245), mat('#ffffff', { map: tex(192, 64, (g) => {
+  const grille = new THREE.BoxGeometry(0.09, 0.245, 0.75);
+  const uv = grille.attributes.uv;
+  for (let i = 4; i < uv.count; i++) uv.setXY(i, 0.01, 0.99);
+  const faceTrim = new THREE.Mesh(grille, mat('#ffffff', { map: tex(192, 64, (g) => {
     g.fillStyle = '#69747b'; g.fillRect(0, 0, 192, 64); g.fillStyle = '#29363e'; g.fillRect(4, 4, 184, 56);
     for (const y of [13, 27, 41, 52]) { g.fillStyle = '#849298'; g.fillRect(9, y, 174, 3); }
     g.fillStyle = '#dae5e7'; g.beginPath(); g.ellipse(96, 30, 13, 9, 0, 0, PI * 2); g.fill();
     g.fillStyle = '#496473'; g.fillRect(90, 28, 12, 4);
   }), roughness: 0.4, metalness: 0.18 }));
-  faceTrim.rotation.y = PI / 2; faceTrim.position.set(1.975, 0.675, 0); shell.add(faceTrim);
+  faceTrim.position.set(1.93, 0.675, 0); shell.add(faceTrim);
   const pl = new THREE.MeshStandardMaterial({ map: plate() });
   for (const s of [1, -1]) { const p = new THREE.Mesh(new THREE.PlaneGeometry(0.52, 0.12), pl); p.position.set(s * 1.985, 0.47, 0); p.rotation.y = s * PI / 2; shell.add(p); }
 
@@ -235,11 +243,19 @@ function lessonCar(world) {
   });
   const door = (z) => {
     const h = new THREE.Group(); h.position.set(0.67, 0, z * 0.83);
-    const panel = b(1.17, 0.6, 0.07, '#ffffff', -0.585, 0.72, 0, { map: decal, roughness: 0.25, metalness: 0.2 });
-    const uv = panel.geometry.attributes.uv, outside = z > 0 ? 4 : 5;
-    for (let i = 0; i < uv.count; i++) if (Math.floor(i / 4) !== outside) uv.setXY(i, 0.01, 0.96);
-    h.add(panel, moulded(0.16, 0.04, 0.03, 0.009, mat(dark), -0.95, 0.86, z * 0.05),
-      moulded(0.1, 0.12, 0.2, 0.025, white, -0.12, 1.08, z * 0.12));
+    // The printed sheet used to hover 2 mm above the door. Form the skin in one piece
+    // with a return at each end, retaining those same outer corners when the door swings.
+    const section = new THREE.Shape([[0.035, -0.3], [0.035, 0.3], [-0.035, 0.3],
+      [-0.037, 0.2925], [-0.037, -0.2925], [-0.035, -0.3]].map(([x, y]) => new THREE.Vector2(x * z, y)));
+    const geo = new THREE.ExtrudeGeometry(section, { depth: 1.17, bevelEnabled: false }).rotateY(PI / 2).translate(-0.585, 0, 0);
+    const { uv, normal, position } = geo.attributes;
+    for (let i = 0; i < uv.count; i++) {
+      if (normal.getZ(i) * z > 0.995) uv.setXY(i, 0.5 + z * position.getX(i) / 1.17, 0.5 + position.getY(i) / 0.585);
+      else uv.setXY(i, 0.01, 0.96);
+    }
+    const panel = new THREE.Mesh(geo, mat('#ffffff', { map: decal, roughness: 0.25, metalness: 0.2 }));
+    panel.position.set(-0.585, 0.72, 0); panel.castShadow = panel.receiveShadow = true;
+    h.add(panel, b(0.16, 0.04, 0.03, dark, -0.95, 0.86, z * 0.05), b(0.1, 0.12, 0.2, '#fbfaf4', -0.12, 1.08, z * 0.12, { roughness: 0.25, metalness: 0.2 }));
     shell.add(h); return h;
   };
   const doorL = door(-1), doorR = door(1);
