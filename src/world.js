@@ -1,5 +1,6 @@
 // The city: real Alkmaar footprints, streets and canals (OpenStreetMap) built as a chunky toy town.
 import * as THREE from 'three';
+import { ridgePlan, buildRidge, boardedShed } from './town-roofs.js';
 import { streetFinish } from './street-finish.js';
 import * as Street from './street-props.js';
 import { canalReflections, sunOffset } from './atmosphere.js';
@@ -570,6 +571,8 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
   }
 
   const dim = (c, k) => c.clone().multiplyScalar(k), aoDark = C('#8a8a8a'), AO = 1.7, SK = 1.2, pitched = [], tops = []; // AO: width of the shading at the foot of a wall; SK: metres of roof to one repeat of the tile picture
+  const roofSpots = [[...map.pois.Waag,100],[...map.pois['Grote of Sint-Laurenskerk'],120],[...map.pois['Molen van Piet'],90],[...map.pois.Accijnstoren,80]];
+  const roofNearby = (x,z) => !layout.clear(x,z,55) || roofSpots.some(([px,pz,r]) => hypot(px-x,pz-z)<r);
   for (const b of B) {
     if (b.gone) continue;
     const p = b.p, n = p.length / 2, Rb = rnd(b.i * 7919 + 13), [cx, cz] = b.c, t = tileOf(cx, cz), church = b.k === 'church', big = church && /^Grote/.test(b.n || ''), special = church || b.n === 'Waag' || b.n === 'Accijnstoren';
@@ -579,6 +582,19 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
     if (b.n === 'Waag') { h = 13; wall = C('#b78665'); roof = C('#3f4656'); }
     if (b.n === 'Accijnstoren') { h = 12; wall = C('#f6f1e4'); roof = C('#3f4656'); }
     b.H = b.W = h; // W: top of the wall, H: top of the roof
+    const fittedRoof = !special && n > 4 && n <= 20 && h > 5.5 ? ridgePlan(p, h) : null;
+    if (fittedRoof) {
+      // Keep the existing collision height and fit the eaves below it.
+      let originalInset;
+      for (const d of [2.2, 1.3, .7]) if ((originalInset = inset(p,d))) break;
+      b.H = h + (originalInset?.d || 0);
+      h = b.H - fittedRoof.rise;
+    }
+    const smallShed = !special && n === 4 && b.h === 3 && h < 4 &&
+      (max(b.bb[2]-b.bb[0], b.bb[3]-b.bb[1]) < 8 && Math.abs(area(p)) < 18 ||
+       hypot(cx - map.pois['Molen van Piet'][0],cz - map.pois['Molen van Piet'][1]) < 32 && Math.abs(area(p)) < 65);
+    const joseph = b.n === 'Sint-Josephkerk';
+    if (joseph) { h = 6.68; wall = C('#906c5c'); }
     const gf = !church && h >= 5.5 ? 3.3 : 0, plinth = wall.clone().lerp(white, 0.4), foot = dim(wall, 0.72), low = dim(wall, 0.9), pfoot = dim(plinth, 0.72); let inWater = false;
     for (let i = 0; i < n && !inWater; i++) inWater = wet(p[2 * i], p[2 * i + 1]);
     const crown = [], hex = '#' + wall.getHexString(), side = []; // side: which way each wall faces, if it stands free
@@ -589,8 +605,17 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
       const ux = (bx - ax) / len, uz = (bz - az) / len, mx = (ax + bx) / 2, mz = (az + bz) / 2; let nx = -uz, nz = ux; if (inPoly(p, mx + nx * 0.3, mz + nz * 0.3)) { nx = -nx; nz = -nz; }
       const free = !hitB(mx + nx * 0.45, mz + nz * 0.45, b); side.push(free ? [nx, nz] : null); // free: nothing is built against this wall
       if (free) t.ao.quad([ax, Y0, az], [bx, Y0, bz], [bx + nx * AO, Y0, bz + nz * AO], [ax + nx * AO, Y0, az + nz * AO], UP, [aoDark, aoDark, white, white]);
-      if (big) continue;
+      if (big || smallShed) continue;
       if (inWater) t.a.wall(ax, az, bx, bz, -1.6, 0, want, C('#8a5a48')); // standing in a canal: the wall goes on down to the water
+      if (joseph) {
+        // Small survey edges mark returns on buttresses, not additional window bays.
+        if (len < 2.2) t.trim.wall(ax,az,bx,bz,0,h,want,wall);
+        else {
+          const bays = max(1, round(len / 3.4));
+          t.church.wall(ax,az,bx,bz,0,h,want,wall,[[0,0],[bays,0],[bays,1],[0,1]]);
+        }
+        continue;
+      }
       if (church) { const cb = max(1, round(len / 5)); t.church.wall(ax, az, bx, bz, 0, h, want, wall, plain ? undefined : [[0, 0], [cb, 0], [cb, 1], [0, 1]]); continue; }
       const y0 = plain ? 0 : gf, floors = max(1, round((h - y0) / 3.1));
       const bw = len / bays, fh = (h-y0) / floors;
@@ -685,6 +710,18 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
       t.ao.tri([p[2 * j], Y0, p[2 * j + 1]], [p[2 * j] + a[0] * AO, Y0, p[2 * j + 1] + a[1] * AO], [p[2 * j] + c[0] * AO, Y0, p[2 * j + 1] + c[1] * AO], UP, [aoDark, white, white]);
     }
     if (big) continue;
+    if (smallShed) { boardedShed(p,t,h,b.i); continue; }
+    if (joseph) {
+      t.flat.flat(p,h,C('#6e6661'));
+      const g = LM.josephkerk();
+      g.position.set(-571,0,136); g.rotation.y = Math.asin(.65);
+      scene.add(g); tallyGroup('Sint-Josephkerk',g);
+      continue;
+    }
+    if (fittedRoof) {
+      buildRidge(fittedRoof,t,h,roof,wall,SK,roofNearby(cx,cz) ? b.i+1 : 0,tally,(x,z)=>hitB(x,z,b));
+      continue;
+    }
     const P3 = (i, y) => [p[2 * i], y, p[2 * i + 1]], mid = (a, c, y) => [(a[0] + c[0]) / 2, y, (a[2] + c[2]) / 2];
     const e = (i) => hypot(p[2 * ((i + 1) % 4)] - p[2 * i], p[2 * ((i + 1) % 4) + 1] - p[2 * i + 1]);
     const tiled = !special && h > 4;
@@ -749,11 +786,9 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
   // --- roof life, for the shots from above: brick chimneys, dormers and roof windows on the pitched roofs; vents, skylights and a roof terrace here and
   // there on the flat ones. Only where a camera comes (along the route and round the landmarks); everything further off keeps a plain chimney ---
   {
-    const SPOTS = [[...map.pois.Waag, 100], [...map.pois['Grote of Sint-Laurenskerk'], 120], [...map.pois['Molen van Piet'], 90], [...map.pois.Accijnstoren, 80]];
-    const nearby = (x, z) => !layout.clear(x, z, 55) || SPOTS.some(([px, pz, r]) => hypot(px - x, pz - z) < r);
     const plain = [], cT = [], cR = [], dT = [], dR = [], sky = [], vents = [], terr = [], caps = [], BRICK = ['#8f4a36', '#a8573a', '#7d4433', '#b0624a'];
     for (const { b, q, r0, r1, rh, rl, h, roof, chim, ang } of pitched) {
-      const k = mix(b.i, 0), fine = nearby(b.c[0], b.c[1]), tile = '#' + dim(roof, 0.93).getHexString();
+      const k = mix(b.i, 0), fine = roofNearby(b.c[0], b.c[1]), tile = '#' + dim(roof, 0.93).getHexString();
       if (chim >= 0) { const o = { x: lerp(r0[0], r1[0], chim), y: h + rh, z: lerp(r0[2], r1[2], chim), a: ang }; if (fine) { cT.push({ ...o, c: BRICK[k % 4] }); cR.push(o); } else plain.push({ ...o, y: o.y - 0.1 }); }
       if (!fine) continue;
       if (rl > 1.6) caps.push({ x: (r0[0] + r1[0]) / 2, y: h + rh + 0.03, z: (r0[2] + r1[2]) / 2, a: ang, sx: rl - 0.9, c: '#' + dim(roof, 0.74).getHexString() }); // ridge tiles, stopping short of the stone on each gable
@@ -779,7 +814,7 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
       });
     }
     for (const { b, p, y, d, q, roof } of tops) {
-      if (!nearby(b.c[0], b.c[1])) continue;
+      if (!roofNearby(b.c[0], b.c[1])) continue;
       if (d > 2) for (let n = q.length / 2, i = 0; i < n; i++) { // a mansard: dormers in its 45 degree skirt, well clear of the hips at the corners
         const j = (i + 1) % n, ax = q[2 * i], az = q[2 * i + 1], ex = q[2 * j] - ax, ez = q[2 * j + 1] - az, len = hypot(ex, ez), tx = ex / len, tz = ez / len, nx = -tz, nz = tx, m = floor((len - 6.4) / 4.4) + 1, a = atan2(-nx, nz);
         for (let e = 0; e < m && len >= 6.4; e++) {

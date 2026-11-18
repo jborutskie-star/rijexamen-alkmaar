@@ -24,7 +24,8 @@ function churchOutline() {
 // [min x, min y, min z, max x, max y, max z] the model has to stay inside (null = no limit), and its triangle budget
 const B = (x, y0, y1, z) => [-x, y0, -z, x, y1, z];
 const GROUPS = {
-  groteKerk: { tris: [6000, 18600], box: [-48, -0.05, -30, 48, 53, 33] },
+  josephkerk: { tris: [0, 3500], box: B(11.6, -0.01, 27, 17.1) },
+  groteKerk: { meshes: 5, tris: [6000, 18600], box: [-48, -0.05, -30, 48, 53, 33] },
   molen: { tris: [0, 6400], box: B(13, -0.01, 31, 13) },
   rondvaartboot: { tris: [0, 2500], box: B(4.6, -0.35, 1.0, 1.3) },
   sloep: { tris: [0, 1500], box: B(3.0, -0.35, 1.5, 1.05) },
@@ -66,7 +67,8 @@ const tryBuild = (name, f) => { try { return f(); } catch (e) { bad(`${name}: th
 for (const [name, lim] of Object.entries(GROUPS)) {
   const made = tryBuild(name, () => L[name]()); if (!made) continue;
   const group = made.group || made, list = meshes(group);
-  if (list.length > 4) bad(`${name}: ${list.length} meshes, more than 4`);
+  const meshLimit = lim.meshes ?? 4;
+  if (list.length > meshLimit) bad(`${name}: ${list.length} meshes, more than ${meshLimit}`);
   if (name === 'molen' && !(made.sails && made.sails.isObject3D)) bad('molen: no sails object');
   judge(name, measure(name, list), lim.box, ...lim.tris);
   if (name === 'groteKerk') { // every vertex inside the real outline, or at most 0.3 m outside it

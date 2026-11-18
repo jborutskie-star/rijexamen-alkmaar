@@ -2,6 +2,7 @@
 // One-off models return a THREE.Group (a few meshes); instanced props return one fused, vertex-coloured BufferGeometry (position, normal, color).
 // Metres; x east, z south, y up. Geometry builds without a DOM (node): textures are only made when `document` exists.
 import * as THREE from 'three';
+import { churchMaterials, weatherStone } from './church-detail.js';
 import { loft, duckBill } from './fauna.js';
 import { fuse, canvasTex, reliefTex, bikeGeo } from './world.js';
 
@@ -156,14 +157,102 @@ const kerkXZ = (u, w) => [u * cos(KERK_TURN) + w * sin(KERK_TURN), -u * sin(KERK
 export const groteKerkSolids = [[-36, 0, 8, 33], [-24, 0, 8, 33], [-12, 0, 8, 33], [2.2, 0, 8.5, 33], [2.2, 0, 3, 53], [14, 0, 8, 33], [26, 0, 8, 33], [35.5, 0, 7, 32], [2.2, -13, 8, 33], [2.2, -22, 8, 33], [2.2, 13, 8, 33], [2.2, 21.5, 8, 33],
   [-36, -12, 6, 18], [-24, -12, 6, 18], [-12, -12, 6, 18], [-36, 12, 6, 18], [-24, 12, 6, 18], [-12, 12, 6, 18], [15, -9, 5.5, 18], [25, -9, 5.5, 18], [15, 13.5, 7.5, 18], [24, 13.5, 7.5, 18], [-18, 21.5, 4, 9], [-9, 22.5, 5, 9]] // nave, crossing and spire, choir, apse, transepts; then the aisles and the houses
   .map(([u, w, r, h]) => { const [x, z] = kerkXZ(u, w); return { x, z, r, h }; });
+// Sint-Josephkerk faces the Kennemersingel. The survey outline includes two
+// round stair towers, the rectory and the chapels; only the central nave rises.
+export function josephkerk() {
+  const S = new Skin(), R = new Skin(), K = new Kit(), g = new THREE.Group(), M = mats();
+  const brick = '#a5725d', warm = '#b38163', buff = '#d2ba91', dark = '#645449';
+  const slate = '#636b74', copper = '#83a99c', glass = '#344850';
+  const gable = (z0, z1, side, eave, ridge, colour) => {
+    const end = (z, n) => S.poly([[-side,6.68,z],[side,6.68,z],[side,eave,z],[0,ridge,z],[-side,eave,z]],[0,0,n],colour,.66);
+    end(z0,-1); end(z1,1);
+    for (const d of [-1,1]) {
+      const x = d * side;
+      S.poly([[x,6.68,z0],[x,6.68,z1],[x,eave,z1],[x,eave,z0]],[d,0,0],colour,.66);
+      R.poly([[x,eave,z0],[x,eave,z1],[0,ridge,z1],[0,ridge,z0]],[d,1,0],slate,.48);
+    }
+  };
+  const window = (x,y,z,angle,w,h) => {
+    const shape = arch(w,h,4);
+    K.at(x,y,z,angle).add(slab(shape,.085),glass)
+      .add(ring(arch(w+.38,h+.33,4).map(([u,v])=>[u,v-.12]),shape,.22),buff)
+      .box(.1,h-.12,.09,dark,0,(h-.12)/2,.14)
+      .box(w-.08,.10,.09,dark,0,h*.42,.14);
+  };
+  gable(-17,15.7,5.25,14.1,20.3,brick);
+  for (const d of [-1,1]) {
+    const x = d * 8.35, inner = d * 5.25;
+    S.poly([[x,6.68,-13],[x,6.68,13.8],[x,8.5,13.8],[x,8.5,-13]],[d,0,0],warm,.66);
+    R.poly([[x,8.5,-13],[x,8.5,13.8],[inner,11.05,13.8],[inner,11.05,-13]],[d,1,0],slate,.48);
+    for (const [z,front] of [[-13,-1],[13.8,1]]) {
+      S.poly([[x,6.68,z],[inner,6.68,z],[inner,11.05,z],[x,8.5,z]],[0,0,front],warm,.66);
+    }
+    for (const z of [-10,-4.4,1.2,6.8,12.1]) {
+      window(inner,11.25,z,d*PI/2,2.15,2.55);
+      K.at(inner,0,z+2.55,d*PI/2).box(.34,3.0,.31,buff,0,12.64,.08);
+    }
+    // The broad transept is lower than the nave, with a steep gable on each end.
+    const outer = d*11.35;
+    S.poly([[outer,6.68,-11.8],[outer,6.68,-3.3],[outer,13.25,-3.3],[outer,17.65,-7.55],[outer,13.25,-11.8]],[d,0,0],brick,.66);
+    for (const z of [-11.8,-3.3]) {
+      S.poly([[inner,6.68,z],[outer,6.68,z],[outer,13.25,z],[inner,13.25,z]],[0,0,z+7.55],brick,.66);
+      R.poly([[outer,13.25,z],[inner,13.25,z],[inner,17.65,-7.55],[outer,17.65,-7.55]],[0,1,z+7.55],slate,.48);
+    }
+    window(outer,7.0,-7.55,d*PI/2,3.05,6.4);
+    const xTower=d*5.85;
+    K.at(xTower,0,14.55).add(Cyl(1.30,1.48,14.9,10),brick,0,7.45,0)
+      .add(Cyl(1.43,1.33,.45,10),buff,0,14.95,0)
+      .add(Cyl(1.1,1.25,1.9,10),warm,0,16.1,0)
+      .add(Cyl(1.33,1.18,.25,10),buff,0,17.14,0)
+      .add(Cone(1.48,6.4,10),copper,0,20.46,0);
+    for (const n of [-1,0,1]) {
+      const a=n*.62;
+      K.at(xTower+sin(a)*1.20,15.45,14.55+cos(a)*1.20,a)
+        .add(slab(arch(.36,1.12,3),.10),'#3f4240');
+    }
+    K.at(0,0,15.73).bar([d*5.18,14.25,0],[0,20.35,0],.20,buff,.24);
+  }
+  // The front has three lancets, a round traceried window and a recessed portal.
+  for (const x of [-2.0,0,2.0]) window(x,6.97,15.75,0,1.56,4.1);
+  K.at(0,12.95,15.75).add(Cyl(1.58,1.58,.12,16).rotateX(PI/2),glass)
+    .add(Tor(1.56,.16,4,18),buff,0,0,.16)
+    .add(Tor(.46,.09,4,10),buff,0,0,.20);
+  for(let i=0;i<6;i++) {
+    const a=i*PI/3;
+    K.bar([sin(a)*.48,cos(a)*.48,.18],[sin(a)*1.47,cos(a)*1.47,.18],.12,buff);
+  }
+  for(const x of [-1.1,0,1.1]) window(x,16.0,15.75,0,.45,x?1.1:1.65);
+  K.at(0,20.1,-7.55).add(Cyl(.72,.87,1.7,8),'#675d50',0,.45,0)
+    .add(Cone(1.05,5.25,8),slate,0,3.87,0).add(Ico(.13),GOLD,0,6.6,0);
+  g.add(mesh(S.geo(),M.masonry),mesh(R.geo(),M.roofing),mesh(K.geo(),M.plain));
+  return g;
+}
+
 export function groteKerk() {
-  const M = mats(), S = new Skin(), R = new Skin(), glazing = new Skin(), K = new Kit(), g = new THREE.Group();
-  const stone = '#f1ebdc', hi = '#fcf8ee', lo = '#ddd3bd', base = '#aaa193', brick = '#b5553b', brick2 = '#a54d37', slate = '#74849f', slate2 = '#687891', lead = '#6c7684', tile = '#cf6238', tile2 = '#bf5530', door = '#6a2f24';
-  const kS = 0.3, kB = 0.55, kR = 0.42;
-  const AW = 17.9, NW = 6.5, EA = 10.5, LT = 17, EV = 22.5, RG = 31.5, W0 = -42.45, T0 = -4.55, T1 = 8.95, TN = -28.25, TS = 27.7, TC = 2.2, CH = 31, CN = -14.35, CS = 21.15;
+  const M = mats(), S = new Skin(), B = new Skin(), R = new Skin(), glazing = new Skin(), K = new Kit(), g = new THREE.Group();
+  const stone = '#f1ebdc', hi = '#fcf8ee', lo = '#ddd3bd', base = '#aaa193', brick = '#b5553b', brick2 = '#a54d37', slate = '#858b95', slate2 = '#787f87', lead = '#6c7684', tile = '#cf6238', tile2 = '#bf5530', door = '#6a2f24';
+  const kS = .29, kB = .84, kR = .42;
+  const AW = 17.9, NW = 6.5, EA = 10.5, LT = 15.45, EV = 22.5, RG = 31.5, W0 = -42.45, T0 = -4.55, T1 = 8.95, TN = -28.25, TS = 27.7, TC = 2.2, CH = 31, CN = -14.35, CS = 21.15;
   const A = [[33.4, CN], [39.6, -10.55], [43.4, -3.5], [43.4, 2.9], [39.7, 9.8], [33.8, 13.45], [33.75, 17.6], [32.7, 19.55], [30.8, CS]]; // outer wall of the ambulatory, round to the south-east chapel
   const I = [[CH, -NW], [35.3, -5.28], [37.2, -1.75], [37.2, 1.45], [35.35, 4.9], [CH, NW]]; // the high choir closes in five sides
-  const wall = (ax, az, bx, bz, y0, y1, col = stone, k = kS) => S.wall(ax, az, bx, bz, y0, y1, col, k);
+  // Rows of Belgian limestone interrupt the warm tuff at the west end.
+  // The transept has thinner brick courses between its two stone registers.
+  const wall = (ax, az, bx, bz, y0, y1, col = stone, k = kS) => {
+    if (col !== stone) { (k === kB ? B : S).wall(ax,az,bx,bz,y0,y1,col,k); return; }
+    const transept = ax === T0 && bx === T0 || ax === T1 && bx === T1 || az === TN && bz === TN || az === TS && bz === TS;
+    const west = (ax+bx)*.5 <= T0;
+    if (!west && !transept) { S.wall(ax,az,bx,bz,y0,y1,'#f2ecd8',k); return; }
+    const interval=1.8, stops=[y0,y1];
+    for(let y=0;y<y1;y+=interval) for(const seam of [y,y+.255]) if(seam>y0 && seam<y1) stops.push(seam);
+    for(const seam of [2.4,4.75,19.8]) if(seam>y0 && seam<y1) stops.push(seam);
+    stops.sort((a,b)=>a-b);
+    for(let i=1;i<stops.length;i++) {
+      const low=stops[i-1], high=stops[i], mid=(low+high)/2;
+      const brickField=transept && mid>4.75 && mid<19.8;
+      const course=mid%interval<.255, c=brickField ? (course?'#eee3cf':'#dfd2c1') : mid<2.4 || course ? '#f3eee0' : '#ded4bc';
+      (brickField ? B : S).wall(ax,az,bx,bz,low,high,c,brickField?kB:k);
+    }
+  };
   const gable = (cx, cz, nx, nz, half, y0, y1, th, col = stone, k = kS) => { // a gable wall standing a little above its roof, with a pale coping
     const tx = -nz, tz = nx, a = [cx - tx * half, y0, cz - tz * half], b = [cx + tx * half, y0, cz + tz * half], p = [cx, y1, cz], bk = (q) => [q[0] - nx * th, q[1], q[2] - nz * th];
     S.poly([a, b, p], [nx, 0, nz], col, k).poly([bk(a), bk(b), bk(p)], [-nx, 0, -nz], col, k).poly([a, p, bk(p), bk(a)], [-tx, 1, -tz], hi, k).poly([b, p, bk(p), bk(b)], [tx, 1, tz], hi, k);
@@ -181,14 +270,18 @@ export function groteKerk() {
   gable(TC, TN, 0, -1, 6.75, EV, RG + 0.9, 0.6); gable(TC, TS, 0, 1, 6.75, EV, RG + 0.9, 0.6);
   wall(T1, CN, ...A[0], 0, EA); for (let i = 0; i + 1 < A.length; i++) wall(...A[i], ...A[i + 1], 0, EA); wall(...A[8], T1, CS, 0, EA); // choir aisles and ambulatory
   wall(T1, -18.85, 14.75, -18.85, 0, 8, lo); wall(14.75, -18.85, 14.75, CN, 0, 8, lo); S.poly([[14.75, 8, -18.85], [14.75, 8, CN], [14.75, 9.8, CN]], [1, 0, 0], lo, kS); // sacristy
-  wall(-34.45, -AW, -34.45, -21.15, 0, 5.4); wall(-34.45, -21.15, -31.05, -21.15, 0, 5.4); wall(-31.05, -21.15, -31.05, -AW, 0, 5.4); gable(-32.75, -21.15, 0, -1, 1.7, 5.4, 8.3, 0.4); // north porch
+  const porchStone='#eee6ce';
+  wall(-34.45,-AW,-34.45,-21.15,0,5.4,porchStone);
+  wall(-34.45,-21.15,-31.05,-21.15,0,5.4,porchStone);
+  wall(-31.05,-21.15,-31.05,-AW,0,5.4,porchStone);
+  gable(-32.75,-21.15,0,-1,1.7,5.4,8.3,.4,porchStone); // north porch
   wall(-46.7, -2.4, W0, -2.4, 0, 6); wall(W0, 2.4, -46.7, 2.4, 0, 6); wall(-46.7, 2.4, -46.7, -2.4, 0, 6); gable(-46.7, 0, -1, 0, 2.4, 6, 9.7, 0.45); // west porch
   wall(43.4, -2.2, 47.05, -2.2, 0, 6.2); wall(47.05, -2.2, 47.05, 1.5, 0, 6.2); wall(47.05, 1.5, 43.4, 1.5, 0, 6.2); // east chapel
   for (const w of [-2.2, 1.5]) S.poly([[43.4, 6.2, w], [47.05, 6.2, w], [43.4, 8.8, w]], [0, 0, w], stone, kS);
   // the little brick houses built against the south side
   const house = (u0, u1, w1, eave, top, w0, col, rc, west, east) => {
     wall(u1, w1, u0, w1, 0, eave, col, kB);
-    for (const [u, d, on] of [[u0, -1, west], [u1, 1, east]]) if (on) S.poly([[u, 0, w0], [u, 0, w1], [u, eave, w1], [u, top, w0]], [d, 0, 0], col, kB);
+    for (const [u, d, on] of [[u0, -1, west], [u1, 1, east]]) if (on) B.poly([[u, 0, w0], [u, 0, w1], [u, eave, w1], [u, top, w0]], [d, 0, 0], col, kB);
     R.poly([[u0, eave, w1], [u1, eave, w1], [u1, top, w0], [u0, top, w0]], [0, 1, 1], rc, kR);
     band(u1, w1, u0, w1, eave - 0.18, eave + 0.04, 0.24, WHITE, 0.06); // gutter board
   };
@@ -198,7 +291,17 @@ export function groteKerk() {
   for (const o of [-1, 1]) {
     R.poly([[W0 + 0.6, EV, o * NW], [CH, EV, o * NW], [CH, RG, 0], [W0 + 0.6, RG, 0]], [0, 1, o], o < 0 ? slate : slate2, kR); // nave and choir
     R.poly([[TC + o * 6.75, EV, TN + 0.6], [TC + o * 6.75, EV, TS - 0.6], [TC, RG, TS - 0.6], [TC, RG, TN + 0.6]], [o, 1, 0], o < 0 ? slate2 : slate, kR); // transept
-    R.poly([[W0, EA, o * AW], [T0, EA, o * AW], [T0, LT, o * NW], [W0, LT, o * NW]], [0, 1, o], o < 0 ? slate2 : slate, kR); // lean-to roofs over the aisles
+    // Each northern side chapel has a hipped slate roof across its own bay.
+    const bay=(T0-W0)/6;
+    for(let i=0;i<6;i++) {
+      const a=W0+i*bay, b=a+bay, mid=(a+b)/2;
+      const frontA=[a,EA,o*AW],frontB=[b,EA,o*AW],backA=[a,LT,o*NW],backB=[b,LT,o*NW],tail=[mid,LT,o*NW];
+      const tip=[mid,EA+3.72,o*(AW-3.15)];
+      R.poly([frontA,frontB,tip],[0,1,o],slate,kR)
+        .poly([frontA,tip,backA],[-1,1,o],slate2,kR).poly([tip,tail,backA],[-1,1,o],slate2,kR)
+        .poly([frontB,tip,backB],[1,1,o],slate,kR).poly([tip,tail,backB],[1,1,o],slate,kR);
+      K.at().bar(frontA,tip,.13,lead).bar(frontB,tip,.13,lead);
+    }
     R.poly([[-46.25, 6, o * 2.4], [W0, 6, o * 2.4], [W0, 9.3, 0], [-46.25, 9.3, 0]], [0, 1, o], slate, kR); // west porch
     R.poly([[-32.75 + o * 1.7, 5.4, -20.75], [-32.75 + o * 1.7, 5.4, -AW], [-32.75, 8, -AW], [-32.75, 8, -20.75]], [o, 1, 0], slate, kR); // north porch
   }
@@ -212,19 +315,25 @@ export function groteKerk() {
   K.at().box(CH - W0 - 0.6, 0.3, 0.36, lead, (W0 + 0.6 + CH) / 2, RG + 0.04, 0).box(0.36, 0.3, TS - TN - 1.2, lead, TC, RG + 0.02, (TN + TS) / 2); // lead ridges
 
   // --- stonework: windows, buttresses, parapets ---
-  const win = (w, h, { mull = 1, rose = false, t = 0.28, d = 0.22 } = {}) => { // a pointed window: stone frame standing proud, glass set back in it, mullions and a bar of tracery
-    const s = h - 0.866 * w, opening = arch(w, h);
-    K.add(ring(arch(w + 2 * t, h + 1.6 * t).map(([x, y]) => [x, y - t]), opening, d), hi);
+  const win = (w, h, { mull = 1, rose = false, cusp = false, t = 0.28, d = 0.22 } = {}) => { // a pointed window: stone frame standing proud, glass set back in it, mullions and a bar of tracery
+    const s = h - 0.866 * w, segmentsMain = rose ? 6 : 3, opening = arch(w, h, segmentsMain);
+    K.add(ring(arch(w + 2 * t, h + 1.6 * t, segmentsMain).map(([x, y]) => [x, y - t]), opening, d), hi);
     const pane = new Skin().poly(opening.map(([x, y]) => [x, y, 0.05]), [0, 0, 1], '#ffffff', 0.48);
     glazing.add(pane.geo().applyMatrix4(K.m), '#ffffff');
-    for (let i = 1; i <= mull; i++) { const x = -w / 2 + (i * w) / (mull + 1), top = s + sqrt(max(0, w * w - (abs(x) + w / 2) ** 2)) - 0.03; K.box(0.14, top, 0.1, hi, x, top / 2, 0.1); }
+    const tracery=new Skin(), lights=mull+1, span=w/lights, segments=rose?4:2;
+    for (let i = 1; i <= mull; i++) {
+      const x = -w/2+i*span, top=rose ? s+(i===lights/2?w*.04:0) : cusp ? s+.02 : s+sqrt(max(0,w*w-(abs(x)+w/2)**2))-.03;
+      const r=rose&&i%2===0?.115:.07, l=x-r, h=x+r;
+      tracery.poly([[l,0,.20],[h,0,.20],[h,top,.20],[l,top,.20]],[0,0,1],hi)
+        .poly([[l,0,.065],[l,0,.20],[l,top,.20],[l,top,.065]],[-1,0,0],lo)
+        .poly([[h,0,.065],[h,0,.20],[h,top,.20],[h,top,.065]],[1,0,0],lo);
+    }
     // Bronze bars run across the lead glass behind the lighter stone mullions.
     for (let y=1.32;y<=s+.15;y+=1.40) {
-      K.box(w,.062,.052,'#535c53',0,y,.082);
+      tracery.poly([[-w/2,y-.035,.112],[w/2,y-.035,.112],[w/2,y+.035,.112],[-w/2,y+.035,.112]],[0,0,1],'#5b635a');
     }
     // The little lancets spring between the original mullions. A recessed edge
     // beneath the face of the stone makes their points read in the low-angle shot.
-    const tracery=new Skin(), lights=mull+1, span=w/lights, segments=rose?4:2;
     for(let light=0;light<lights;light++) {
       const mid=-w/2+(light+.5)*span, spring=s-.05;
       for(const dir of [-1,1]) {
@@ -240,15 +349,56 @@ export function groteKerk() {
         }
       }
     }
-    K.skin(tracery);
     if (rose) {
-      const cy = s + w * 0.42;
-      K.add(Tor(w * 0.2, 0.105, 5, 20), hi, 0, cy, 0.22);
-      for (let k = 0; k < 4; k++) {
-        const a = (k + 0.5) * PI / 2;
-        K.add(Tor(w * 0.075, 0.072, 4, 9), lo, cos(a) * w * 0.099, cy + sin(a) * w * 0.099, 0.25);
+      // Paired lancets branch into the two larger arches. Slim curved
+      // mullions enclose three leaves in the head of the great window.
+      const curve=(a,b,c,radius) => {
+        let prev=a;
+        for(let i=1;i<=6;i++) {
+          const t=i/6, f=1-t, next=[f*f*a[0]+2*f*t*b[0]+t*t*c[0],f*f*a[1]+2*f*t*b[1]+t*t*c[1]];
+          const dx=next[0]-prev[0], dy=next[1]-prev[1], len=hypot(dx,dy), nx=-dy/len*radius, ny=dx/len*radius;
+          tracery.poly([[prev[0]-nx,prev[1]-ny,.24],[next[0]-nx,next[1]-ny,.24],[next[0]+nx,next[1]+ny,.24],[prev[0]+nx,prev[1]+ny,.24]],[0,0,1],hi);
+          prev=next;
+        }
+      };
+      for(const d of [-1,1]) {
+        const x=d*w*.25;
+        curve([d*w*.485,s+.05],[d*w*.47,s+w*.28],[x,s+w*.42],.10);
+        curve([0,s+.05],[d*w*.02,s+w*.28],[x,s+w*.42],.10);
+        curve([0,s+.02],[d*w*.035,s+w*.39],[d*w*.265,s+w*.626],.126);
+        curve([0,s+w*.51],[d*w*.12,s+w*.61],[0,s+w*.839],.105);
+        curve([x,s+w*.16],[d*w*.34,s+w*.24],[x,s+w*.36],.08);
+        curve([x,s+w*.16],[d*w*.16,s+w*.24],[x,s+w*.36],.08);
+        curve([d*w*.43,s+w*.035],[d*w*.365,s+w*.09],[d*w*.34,s+w*.205],.065);
+        curve([d*w*.43,s+w*.035],[d*w*.46,s+w*.18],[d*w*.34,s+w*.205],.065);
+      }
+      const transom=s*.56;
+      K.box(w,.20,.14,lo,0,transom,.15);
+      for(let j=0;j<lights;j++) {
+        const x=-w/2+(j+.5)*span;
+        for(const d of [-1,1]) curve([x+d*span*.485,transom-span*.86],[x+d*span*.39,transom-span*.40],[x,transom-.09],.065);
+      }
+      const roll=arch(w+t*3.45,h+t*2.7,segmentsMain).map(([a,b])=>[a,b-t*1.35]);
+      const groove=arch(w+2*t,h+t*1.6,segmentsMain).map(([a,b])=>[a,b-t]);
+      K.add(ring(roll,groove,.14),'#bba98a');
+    }
+    if (cusp) {
+      // Carved cusps in the north aisle lights. The branches spring directly
+      // from the two mullions, meet their side lights and enclose the central leaf.
+      const rib=(path)=>{
+        for(let i=1;i<path.length;i++) {
+          const [x0,y0]=path[i-1], [x1,y1]=path[i], dx=x1-x0, dy=y1-y0, l=hypot(dx,dy);
+          const nx=-dy/l*.065, ny=dx/l*.065, a=[x0*w+nx,s+y0*w+ny,.218], b=[x1*w+nx,s+y1*w+ny,.218];
+          tracery.poly([a,b,[x1*w-nx,s+y1*w-ny,.218],[x0*w-nx,s+y0*w-ny,.218]],[0,0,1],hi);
+        }
+      };
+      for(const d of [-1,1]) {
+        rib([[d/6,0],[d*.145,.19],[d*.18,.34],[d*.32,.54]]);
+        rib([[d/6,.02],[d*.25,.19],[d*.35,.19],[d*.45,.28]]);
+        rib([[0,.24],[d*.10,.37],[d*.105,.50],[0,.70]]);
       }
     }
+    K.skin(tracery);
   };
   const portal = (w,h) => {
     K.add(ring(arch(w+.8,h+.6).map(([x,y])=>[x,y-.02]),arch(w,h),.3),hi)
@@ -267,17 +417,25 @@ export function groteKerk() {
     for(let i=2;i<edge.length;i+=2)K.bar([edge[i][0],edge[i][1],.33],[opening[i][0],opening[i][1],.33],.05,lo,.04);
   };
   const pinnacle = (y, r = 0.3, h = 2.8, z = 0.1) => K.box(r * 1.9, h * 0.5, r * 1.9, hi, 0, y + h * 0.25, z).add(Cone(r * 1.25, h * 0.55, 4).rotateY(PI / 4), lo, 0, y + h * 0.5 + h * 0.275, z);
-  const buttress = (h, d = 1.25, w = 0.95, pin = true) => { // two stages with sloping offsets, a pinnacle above the parapet
-    K.box(w, h * 0.5, d, hi, 0, h * 0.25, d / 2 - 0.1).add(ext([[0, 0], [d * 0.45, 0], [0, 0.7]], w).rotateY(-PI / 2), lo, 0, h * 0.5, d * 0.55 - 0.1);
-    K.box(w * 0.9, h * 0.42, d * 0.55, hi, 0, h * 0.71, d * 0.275 - 0.1).add(ext([[0, 0], [d * 0.55, 0], [0, 0.8]], w * 0.9).rotateY(-PI / 2), lo, 0, h * 0.92, -0.1);
+  const stonePier=(w,height,d,bottom,z,colour)=>{
+    const coords=(arr)=>arr.map(p=>new THREE.Vector3(...p).applyMatrix4(K.m).toArray());
+    for(const [x0,z0,x1,z1] of [[-w/2,z+d/2,w/2,z+d/2],[w/2,z+d/2,w/2,z-d/2],[-w/2,z-d/2,-w/2,z+d/2]]) {
+      const pts=coords([[x0,bottom,z0],[x1,bottom,z1],[x1,bottom+height,z1],[x0,bottom+height,z0]]);
+      const normal=[pts[0][2]-pts[1][2],0,pts[1][0]-pts[0][0]];
+      S.poly(pts,normal,colour,kS);
+    }
+  };
+  const buttress = (h, d = 1.25, w = 0.95, pin = false) => { // two stages with sloping offsets, a pinnacle above the parapet
+    stonePier(w,h*.5,d,0,d/2-.1,'#cbbfa7'); K.add(ext([[0, 0], [d * 0.45, 0], [0, 0.7]], w).rotateY(-PI / 2), lo, 0, h * 0.5, d * 0.55 - 0.1);
+    stonePier(w*.9,h*.42,d*.55,h*.5,d*.275-.1,'#d6cab1'); K.add(ext([[0, 0], [d * 0.55, 0], [0, 0.8]], w * 0.9).rotateY(-PI / 2), lo, 0, h * 0.92, -0.1);
     for(const y of [h*.18,h*.41,h*.69]){
       const lower=y<h*.5, width=lower?w:w*.9, depth=lower?d:d*.55;
       K.box(width+.07,.13,depth+.07,lo,0,y,depth/2-.1);
     }
     if (pin) pinnacle(h - 0.2);
   };
-  const pilaster = (y0, y1) => { K.box(0.7, y1 - y0, 0.5, hi, 0, (y0 + y1) / 2, 0.15); pinnacle(y1 - 0.1, 0.26, 3, 0.12); };
-  const eave = (ax, az, bx, bz, y) => { band(ax, az, bx, bz, y - 0.5, y - 0.18, 0.5, lo, 0, 0.25); band(ax, az, bx, bz, y - 0.18, y + 0.78, 0.3, hi, 0, 0.15); }; // cornice and the balustrade along the gutter
+  const pilaster = (y0,y1) => { stonePier(.72,y1-y0,.56,y0,.17,'#d5c8ae'); K.box(.79,.18,.64,lo,0,y1-.09,.17); };
+  const eave = (ax, az, bx, bz, y) => { band(ax,az,bx,bz,y-.25,y-.10,.36,lo,0,.18); band(ax,az,bx,bz,y-.10,y+.12,.46,'#b6b09f',0,.23); }; // cornice and the balustrade along the gutter
   const plinth = (ax, az, bx, bz) => band(ax, az, bx, bz, 0, 0.9, 0.3, base, 0, 0.15);
   const sash = (w, h) => K.box(w + 0.22, h + 0.22, 0.1, WHITE, 0, 0, 0.03).box(w, h, 0.1, GLASS, 0, 0, 0.06).box(0.06, h, 0.1, WHITE, 0, 0, 0.09).box(w, 0.06, 0.1, WHITE, 0, 0, 0.09);
 
@@ -290,9 +448,9 @@ export function groteKerk() {
 
   // aisles: a window in every bay, a buttress between
   for (const u of [-42.1, -35.85, -29.5, -23.25, -16.9, -10.6]) { K.at(u, 0, -AW, PI); buttress(EA); }
-  for (const u of [-39, -26.4, -20.1, -13.75, -7.6]) { K.at(u, 3, -AW, PI); win(3, 6, { mull: 2 }); }
+  for (const u of [-39, -32.75, -26.4, -20.1, -13.75, -7.6]) { K.at(u, 2.05, -AW, PI); win(3.8, 7.78, { mull: 2, cusp:true }); }
   for (const u of [-42, -35.7, -29.4]) { K.at(u, 0, AW, 0); buttress(EA); }
-  for (const u of [-38.85, -32.55, -26.1]) { K.at(u, 3, AW, 0); win(3, 6, { mull: 2 }); }
+  for (const u of [-38.85, -32.55, -26.1]) { K.at(u, 2.05, AW, 0); win(3.8, 7.78, { mull: 2 }); }
   for (const u of [20.85, 27]) { K.at(u, 0, CN, PI); buttress(EA); }
   for (const u of [17.8, 23.9, 30.2]) { K.at(u, 3, CN, PI); win(2.8, 6, { mull: 2 }); }
   for (const u of [20.2, 25.7]) { K.at(u, 0, CS, 0); buttress(EA, 0.65, 0.55); }
@@ -303,7 +461,7 @@ export function groteKerk() {
   K.at(47.05, 1.6, -0.35, PI / 2); win(1.5, 3.4, { mull: 1 }); band(47.05, -2.2, 47.05, 1.5, 6, 6.3, 0.4, lo, 0, 0.1);
   // clerestory
   for (const o of [-1, 1]) {
-    for (const u of [-39, -32.7, -26.4, -20.1, -13.75, -7.75, 11.75, 17.25, 22.75, 28.25]) { K.at(u, 17.7, o * NW, o < 0 ? PI : 0); win(2.5, 4.2, { mull: 1, t: 0.22 }); }
+    for (const u of [-39, -32.7, -26.4, -20.1, -13.75, -7.75, 11.75, 17.25, 22.75, 28.25]) { K.at(u, 15.95, o * NW, o < 0 ? PI : 0); win(4.05, 6.10, { mull: 2, t: 0.22 }); }
     for (const u of [-35.85, -29.5, -23.25, -16.9, -10.6, 14.5, 20, 25.5]) { K.at(u, 0, o * NW, o < 0 ? PI : 0); pilaster(LT - 0.4, EV); }
     for (const w of [-23.1, 22.8]) { K.at(TC + o * 6.75, 13, w, o * PI / 2); win(2.6, 7.6, { mull: 1 }); } // tall windows in the sides of the transept arms
   }
@@ -311,24 +469,43 @@ export function groteKerk() {
   for (let i = 0; i < 6; i++) { const p = I[i], a = atan2(p[0] - CH + 0.01, p[1]); K.at(p[0], 0, p[1], i === 0 ? PI : i === 5 ? 0 : a); pilaster(LT - 0.4, EV); }
   // transept fronts: a huge window over a door, corner buttresses carried up into pinnacles
   for (const [w, ry, o] of [[TN, PI, -1], [TS, 0, 1]]) {
-    K.at(TC, 6.2, w, ry); win(7.6, 14.7, { mull: 4, rose: true, t: 0.34, d: 0.26 }); K.at(TC, 0, w, ry); portal(2.4, 4.3);
-    // Three blind lancets carved into the gable above the great window.
-    for (const x of [-2.15, 0, 2.15]) {
-      const h = x ? 3.15 : 5.15, shape = arch(1.25, h);
-      K.at(TC + x, 23.6, w, ry).add(slab(shape, 0.055), '#a79c84')
-        .add(ring(arch(1.65, h + 0.33).map(([u, v]) => [u, v - 0.14]), shape, 0.22), hi);
+    K.at(TC,3.25,w,ry); win(8.35,21.60,{mull:7,rose:true,t:.33,d:.24});
+    // North has just the statue of Matthias in its canopy. The southern
+    // counterpart has a rising field of blind niches flanking St Laurens.
+    const niches=o<0?[0]:[-3.55,-2.45,-1.35,0,1.35,2.45,3.55];
+    for(const x of niches) {
+      const height=x?4.0-abs(x)*.72:4.25, floor=x?24.45:25.55, width=x?.61:1.35, shape=arch(width,height);
+      K.at(TC+x,floor,w,ry).add(slab(shape,.084),'#8c816e')
+        .add(ring(arch(width+.32,height+.28).map(([a,b])=>[a,b-.11]),shape,.24),hi);
     }
-    // Small carved figures in the transept gables, as seen from the square.
-    K.at(TC,23.7,w,ry).add(Cyl(.24,.38,.21,6).scale(1,1,.33),lo,0,.17,.13)
-      .add(Lathe([[.29,0],[.33,.19],[.20,1.13],[.27,1.38],[.16,1.66]],7).scale(1,1,.42),'#d0c6ac',0,.28,.14)
-      .add(Ico(.22).scale(1,1,.45),hi,0,2.11,.17).bar([-.18,1.56,.16],[.15,1.29,.20],.14,lo)
-      .bar([.17,1.52,.16],[.21,.82,.19],.13,hi);
-    for (const u of [T0 + 0.45, T1 - 0.45]) { K.at(u, 0, w, ry); buttress(EV, 1.15, 1); }
-    K.at(TC, RG + 0.9, w - o * 0.3).box(0.16, 1.9, 0.16, GOLD, 0, 0.9, 0).box(0.9, 0.16, 0.16, GOLD, 0, 1.25, 0);
+    K.at(TC,25.62,w,ry); K.m.scale(new THREE.Vector3(1,1,.23));
+    K.add(Cyl(.30,.43,.22,6).scale(1,1,.57),lo,0,.05,.25)
+      .add(Lathe([[.35,0],[.39,.19],[.23,1.13],[.30,1.38],[.20,1.66]],7).scale(1,1,.64),'#cabea4',0,.16,.27)
+      .add(Ico(.245).scale(1,1,.63),hi,0,2.03,.30).bar([-.23,1.50,.36],[.16,1.24,.38],.15,lo)
+      .add(Cone(.86,1.17,6),lo,0,3.05,.26).add(Cyl(.83,.70,.23,6),hi,0,2.49,.26);
+    K.box(.74,.13,.26,lo,0,.07,.20);
+    for(const d of [-1,1]) {
+      K.bar([d*.20,1.3,.42],[d*.33,.23,.51],.105,hi,.13)
+        .add(Cone(.13,.48,5),hi,d*.56,2.96,.38).add(Ico(.12),lo,d*.55,2.58,.44);
+    }
+    // The crocket-studded coping reads in silhouette against the sky.
+    for(const sign of [-1,1]) {
+      K.at(TC,0,w,ry).bar([sign*6.67,EV+.13,-.22],[0,RG+1.04,-.22],.23,hi,.34);
+      for(let i=1;i<=6;i++) {
+        const f=i/7, x=sign*(1-f)*6.67, y=EV+.13+f*(RG+.91-EV);
+        K.add(Ico(.24).scale(.85,1.18,.85),lo,x+sign*.12,y+.12,-.21);
+      }
+    }
+    for (const u of [T0 + 0.45, T1 - 0.45]) { K.at(u, 0, w, ry); buttress(EV, 1.15, 1,true); }
+    K.at(TC,RG+.8,w-o*.3).add(Lathe([[.30,0],[.36,.22],[.17,.47],[.25,.80],[.15,1.22],[.03,1.62]],6),lo)
+      .add(Ico(.23),hi,-.22,.80,0).add(Ico(.23),hi,.22,.80,0);
   }
   for (const w of [-27.75, -22.8]) for (const [u, ry] of [[T0, -PI / 2], [T1, PI / 2]]) { K.at(u, 0, w, ry); buttress(EV, 1.4, 1); }
   // west front: porch, the great window, buttresses, a massif at each corner
-  K.at(W0, 10.3, 0, -PI / 2); win(6.2, 11.4, { mull: 3, rose: true, t: 0.34, d: 0.26 }); K.at(-46.7, 0, 0, -PI / 2); portal(2.6, 4.6);
+  // The great west window was blocked when the Hagerbeer organ was built.
+  K.at(W0,0,0,-PI/2).box(12.7,.17,.28,lo,0,20.62,.06);
+  for(const x of [-3.05,0,3.05]) K.box(.19,.72,.08,'#817b69',x,17.35,.06);
+  K.at(-46.7, 0, 0, -PI / 2); portal(2.6, 4.6);
   K.at(W0 + 0.3, RG + 0.9, 0).box(0.16, 1.9, 0.16, GOLD, 0, 0.9, 0).box(0.16, 0.16, 0.9, GOLD, 0, 1.25, 0);
   for (const o of [-1, 1]) {
     K.at(W0, 0, o * 6.55, -PI / 2); buttress(EV, 1.5, 1.1); K.at(W0, 3.2, o * 9.7, -PI / 2); win(2.3, 5.6, { mull: 1 });
@@ -339,7 +516,38 @@ export function groteKerk() {
     K.at(U, 6.5, c, -PI / 2); win(1.5, 3.6, { mull: 1 });
     for (const q of [-2.1, 2.1]) { K.at(W0, 0, o * 15.2 + q, -PI / 2); pinnacle(11.2, 0.3, 3, 0.9); }
   }
-  K.at(-32.75, 0, -21.15, PI); portal(1.7, 3.5);
+  // The north porch presents a boarded return to each side. The front seen
+  // from Canadaplein carries the little barred window and an empty stone niche.
+  const porchArch=(width,height)=>{
+    const r=width/2, spring=height-r*.71, pts=[[-r,0],[r,0]];
+    for(let i=0;i<=8;i++) {const a=i*PI/8;pts.push([r*cos(a),spring+r*.71*sin(a)]);}
+    return pts;
+  };
+  for(const [x,turn] of [[-34.45,-PI/2],[-31.05,PI/2]]) {
+    const width=1.72,height=3.48,inner=porchArch(width,height);
+    K.at(x,0,-19.52,turn).add(slab(inner,.052),'#493a30')
+      .add(ring(porchArch(width+.31,height+.22),inner,.23),lo);
+    // The round head and the boards share a silhouette. Each plank ends at the
+    // actual door curve, leaving its pale hood and stone jambs clear.
+    const plank=new Skin(), r=width/2;
+    for(let i=0;i<10;i++) {
+      const a=-r+i*width/10+.012, b=-r+(i+1)*width/10-.012;
+      const top=u=>height-r*.71+r*.71*sqrt(max(0,1-(u/r)**2))-.04;
+      plank.poly([[a,.055,.083],[b,.055,.083],[b,top(b),.083],[a,top(a),.083]],[0,0,1],i%3?'#795b44':'#70513e');
+    }
+    K.skin(plank).box(.14,.19,.053,'#433c32',.49,1.10,.12);
+    band(x,-21.11,x,-17.95,5.20,5.40,.26,hi,.02);
+  }
+  K.at(-32.75,0,-21.15,PI).box(3.45,.20,.23,lo,0,2.36,.015)
+    .box(.82,1.18,.076,'#857f6e',0,3.10,.072)
+    .box(.66,1.04,.072,'#374749',0,3.10,.121);
+  for(const x of [-.18,0,.18]) K.box(.034,.99,.045,'#252d2b',x,3.10,.17);
+  for(const y of [2.87,3.15,3.43]) K.box(.66,.036,.045,'#252d2b',0,y,.17);
+  const niche=porchArch(.68,1.27);
+  K.at(-32.75,3.94,-21.15,PI).add(slab(niche,.064),'#968c74')
+    .add(ring(porchArch(.90,1.40),niche,.17),'#c8baa0')
+    .box(.88,.13,.19,hi,0,-.03,.08);
+
   // the sacristy and its stair turret; the houses' windows, doors and chimneys
   K.at(15, 0, -19.1).add(Cyl(0.55, 0.55, 12.2, 8), hi, 0, 6.1, 0).add(Cone(0.6, 1.9, 8), slate2, 0, 13.15, 0); K.at(11.8, 4.2, -18.85, PI); sash(1.1, 1.8);
   for (const [u, y, w, s, h] of [[-21.1, 1.9, 25.3, 1, 1.6], [-18.1, 1.9, 25.3, 1, 1.6], [-21.1, 4.5, 25.3, 1, 1.2], [-18.1, 4.5, 25.3, 1, 1.2], [-11.2, 1.9, 27.55, 1.1, 1.6], [-8.4, 1.9, 27.55, 1.1, 1.6], [-5.9, 1.9, 27.55, 1, 1.6], [-12.6, 4.2, 27.55, 0.9, 0.8], [-7.2, 4.2, 27.55, 0.9, 0.8], [12.9, 1.9, 27.5, 1.1, 1.6], [11.6, 4.4, 27.5, 0.9, 0.9]]) { K.at(u, y, w, 0); sash(s, h); }
@@ -351,12 +559,26 @@ export function groteKerk() {
   for (let k = 0; k < 8; k++) { const a = (k + 0.5) * PI / 4; K.at(TC + sin(a) * 1.6, 0, cos(a) * 1.6, a).box(0.3, 3.5, 0.3, hi, 0, 35.5, 0).box(0.9, 0.5, 0.16, hi, 0, 37, -0.05); }
   K.at(TC, 0, 0).add(Cyl(0.4, 0.85, 1.15, 10), GOLD, 0, 35.4, 0).add(Cyl(0.09, 0.09, 1.6, 6), '#3a3f47', 0, 36.5, 0).add(Cyl(1.95, 1.95, 0.4, 8), hi, 0, 37.45, 0);
   for (let k = 0; k < 8; k++) { const a = k * PI / 4; K.at(TC + sin(a) * 1.05, 34.6, cos(a) * 1.05).add(Cyl(0.13, 0.26, 0.42, 6), GOLD); } // the carillon
-  K.at(TC, 0, 0).add(Cyl(1.2, 1.4, 2.3, 8), lead, 0, 38.8, 0).add(Cyl(1.55, 1.55, 0.26, 8), hi, 0, 40.05, 0).add(Sph(1.15, 8, 5), slate2, 0, 40.9, 0).add(Cone(0.8, 8.6, 8), slate2, 0, 45.9, 0).add(Sph(0.36, 8, 6), GOLD, 0, 50.3, 0)
-    .box(0.12, 1.7, 0.12, GOLD, 0, 51.3, 0).box(0.8, 0.12, 0.12, GOLD, 0, 51.5, 0);
-  for (let k = 0; k < 4; k++) K.at(TC, 38.8, 0, k * PI / 4 + PI / 8).box(2.66, 1.3, 0.5, '#252c3d'); // louvres in the upper stage
+  // Two open stages and the little pear-shaped cage above the clock.
+  K.at(TC,0,0).add(Cyl(1.28,1.70,.70,8),lead,0,37.9,0)
+    .add(Cyl(1.42,1.42,.27,8),hi,0,41.48,0)
+    .add(Cyl(1.06,1.38,.46,8),lead,0,41.82,0);
+  for(let i=0;i<8;i++) {
+    const a=(i+.5)*PI/4;
+    K.at(TC,0,0,a).bar([0,38.2,1.30],[0,41.42,1.12],.22,hi)
+      .add(Cone(.14,1.25,4),hi,0,38.12,1.73).add(Ico(.12),GOLD,0,38.77,1.73);
+    const profile=[[.87,41.99],[1.25,42.65],[1.38,43.42],[1.23,44.20],[.71,45.1],[.16,46.0]];
+    for(let j=1;j<profile.length;j++) K.bar([0,profile[j-1][1],profile[j-1][0]],[0,profile[j][1],profile[j][0]],.17,lead,.18);
+  }
+  K.at(TC,0,0).add(Cyl(.22,.32,.34,8),lead,0,46.14,0)
+    .add(Cyl(.06,.13,2.72,6),lead,0,47.60,0).add(Ico(.31),GOLD,0,49.09,0)
+    .box(.105,2.8,.105,GOLD,0,50.75,0).box(.84,.10,.10,GOLD,0,51.15,0)
+    .add(slab([[-.66,0],[-.31,.16],[-.04,.10],[.23,.47],[.42,.40],[.27,.16],[.67,.18],[.48,-.08],[.02,-.08],[-.31,-.28]],.06),GOLD,0,51.62,0);
 
   const fin = (q) => q.rotateY(KERK_TURN).translate(0, 0, KERK_N);
-  g.add(mesh(fin(S.geo()), M.masonry), mesh(fin(R.geo()), M.roofing), mesh(fin(K.geo()), M.plain), mesh(fin(glazing.geo()), M.leaded));
+  const surface = churchMaterials(M);
+  g.add(mesh(fin(weatherStone(S.geo())), surface.stone), mesh(fin(weatherStone(B.geo())), surface.brick),
+    mesh(fin(R.geo()), surface.roof), mesh(fin(K.geo()), M.plain), mesh(fin(glazing.geo()), surface.glass));
   return g;
 }
 
