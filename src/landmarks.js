@@ -129,14 +129,13 @@ const mats = () => MATS || (MATS = (() => {
   }, 1.6);
   const leaded = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.24, metalness: 0.14,
     map: canvasTex(256, 256, (g) => {
-      const panes = ['#416478', '#557c90', '#31526e', '#72939a', '#466b87', '#385a71'];
-      g.fillStyle = '#293847'; g.fillRect(0, 0, 256, 256);
-      for (let row = -1; row < 9; row++) for (let col = -1; col < 5; col++) {
-        const x = 64 * col + (row & 1) * 32, y = 32 * row;
-        const pane = g.createLinearGradient(x - 24, y - 26, x + 22, y + 25);
-        pane.addColorStop(0, panes[(13 + col + row * row) % panes.length]); pane.addColorStop(1, '#334c64');
-        g.fillStyle = pane; g.beginPath(); g.moveTo(x, y - 30); g.lineTo(x + 30, y);
-        g.lineTo(x, y + 30); g.lineTo(x - 30, y); g.closePath(); g.fill();
+      const panes = ['#879e9c','#77938f','#8da5a4','#91a7a5','#829c98','#a0aeac'];
+      g.fillStyle = '#526563'; g.fillRect(0,0,256,256);
+      for (let row=0;row<8;row++) for (let col=0;col<8;col++) {
+        const x=col*32, y=row*32, pane=g.createLinearGradient(x,y,x+26,y+32);
+        pane.addColorStop(0,panes[(13+col*col+row*5)%panes.length]);
+        pane.addColorStop(1,panes[(7+col*5+row*row)%panes.length]);
+        g.fillStyle=pane; g.fillRect(x+1.1,y+1.1,29.8,29.8);
       }
     }) });
   return { plain, masonry, roofing, leaded };
@@ -219,21 +218,62 @@ export function groteKerk() {
     const pane = new Skin().poly(opening.map(([x, y]) => [x, y, 0.05]), [0, 0, 1], '#ffffff', 0.48);
     glazing.add(pane.geo().applyMatrix4(K.m), '#ffffff');
     for (let i = 1; i <= mull; i++) { const x = -w / 2 + (i * w) / (mull + 1), top = s + sqrt(max(0, w * w - (abs(x) + w / 2) ** 2)) - 0.03; K.box(0.14, top, 0.1, hi, x, top / 2, 0.1); }
-    if (mull) K.box(w, 0.16, 0.1, hi, 0, max(s, h * 0.45), 0.1);
+    // Bronze bars run across the lead glass behind the lighter stone mullions.
+    for (let y=1.32;y<=s+.15;y+=1.40) {
+      K.box(w,.062,.052,'#535c53',0,y,.082);
+    }
+    // The little lancets spring between the original mullions. A recessed edge
+    // beneath the face of the stone makes their points read in the low-angle shot.
+    const tracery=new Skin(), lights=mull+1, span=w/lights, segments=rose?4:2;
+    for(let light=0;light<lights;light++) {
+      const mid=-w/2+(light+.5)*span, spring=s-.05;
+      for(const dir of [-1,1]) {
+        const arc=[];
+        for(let step=0;step<=segments;step++) {
+          const f=step/segments;
+          arc.push([mid+dir*(1-f)*span*.48,spring+span*(.89*f-.38*f*f)]);
+        }
+        for(let i=1;i<arc.length;i++) {
+          const [xa,ya]=arc[i-1],[xb,yb]=arc[i], thick=rose?.11:.058;
+          tracery.poly([[xa,ya,.17],[xb,yb,.17],[xb,yb+thick,.17],[xa,ya+thick,.17]],[0,0,1],hi);
+          tracery.poly([[xa,ya,.075],[xa,ya,.17],[xb,yb,.17],[xb,yb,.075]],[0,-1,0],lo);
+        }
+      }
+    }
+    K.skin(tracery);
     if (rose) {
       const cy = s + w * 0.42;
-      K.add(Tor(w * 0.2, 0.105, 5, 20), hi, 0, cy, 0.22).box(w, 0.16, 0.1, hi, 0, s * 0.5, 0.1);
+      K.add(Tor(w * 0.2, 0.105, 5, 20), hi, 0, cy, 0.22);
       for (let k = 0; k < 4; k++) {
         const a = (k + 0.5) * PI / 2;
         K.add(Tor(w * 0.075, 0.072, 4, 9), lo, cos(a) * w * 0.099, cy + sin(a) * w * 0.099, 0.25);
       }
     }
   };
-  const portal = (w, h) => { K.add(ring(arch(w + 0.8, h + 0.6).map(([x, y]) => [x, y - 0.02]), arch(w, h), 0.3), hi).add(slab(arch(w, h), 0.08), door).box(0.07, h - 0.1, 0.06, '#3a1a14', 0, h / 2, 0.08); for (const x of [-0.25, 0.25]) K.add(Ico(0.07), GOLD, x, h * 0.42, 0.13); };
+  const portal = (w,h) => {
+    K.add(ring(arch(w+.8,h+.6).map(([x,y])=>[x,y-.02]),arch(w,h),.3),hi)
+      .add(slab(arch(w,h),.08),door)
+      .box(.07,h-.1,.06,'#3a1a14',0,h/2,.08);
+    for(const dir of [-1,1]) {
+      for(const y of [h*.22,h*.53]) {
+        K.box(w*.35,.13,.072,'#382d29',dir*w*.255,y,.114);
+        K.add(Cyl(.048,.06,.045,6).rotateX(PI/2),'#c69a55',dir*w*.23,y,.172);
+      }
+      for(const y of [h*.27,h*.58])K.box(.15,h*.20,.085,'#825142',dir*w*.25,y+h*.1,.085);
+      K.add(Ico(.07),GOLD,dir*.25,h*.42,.13);
+    }
+    // Joint lines follow the hood mould rather than a square grid around the arch.
+    const edge=arch(w+.76,h+.56,5), opening=arch(w+.03,h+.015,5);
+    for(let i=2;i<edge.length;i+=2)K.bar([edge[i][0],edge[i][1],.33],[opening[i][0],opening[i][1],.33],.05,lo,.04);
+  };
   const pinnacle = (y, r = 0.3, h = 2.8, z = 0.1) => K.box(r * 1.9, h * 0.5, r * 1.9, hi, 0, y + h * 0.25, z).add(Cone(r * 1.25, h * 0.55, 4).rotateY(PI / 4), lo, 0, y + h * 0.5 + h * 0.275, z);
   const buttress = (h, d = 1.25, w = 0.95, pin = true) => { // two stages with sloping offsets, a pinnacle above the parapet
     K.box(w, h * 0.5, d, hi, 0, h * 0.25, d / 2 - 0.1).add(ext([[0, 0], [d * 0.45, 0], [0, 0.7]], w).rotateY(-PI / 2), lo, 0, h * 0.5, d * 0.55 - 0.1);
     K.box(w * 0.9, h * 0.42, d * 0.55, hi, 0, h * 0.71, d * 0.275 - 0.1).add(ext([[0, 0], [d * 0.55, 0], [0, 0.8]], w * 0.9).rotateY(-PI / 2), lo, 0, h * 0.92, -0.1);
+    for(const y of [h*.18,h*.41,h*.69]){
+      const lower=y<h*.5, width=lower?w:w*.9, depth=lower?d:d*.55;
+      K.box(width+.07,.13,depth+.07,lo,0,y,depth/2-.1);
+    }
     if (pin) pinnacle(h - 0.2);
   };
   const pilaster = (y0, y1) => { K.box(0.7, y1 - y0, 0.5, hi, 0, (y0 + y1) / 2, 0.15); pinnacle(y1 - 0.1, 0.26, 3, 0.12); };
@@ -275,9 +315,14 @@ export function groteKerk() {
     // Three blind lancets carved into the gable above the great window.
     for (const x of [-2.15, 0, 2.15]) {
       const h = x ? 3.15 : 5.15, shape = arch(1.25, h);
-      K.at(TC + x, 23.6, w, ry).add(slab(shape, 0.055), '#b4ae9e')
+      K.at(TC + x, 23.6, w, ry).add(slab(shape, 0.055), '#a79c84')
         .add(ring(arch(1.65, h + 0.33).map(([u, v]) => [u, v - 0.14]), shape, 0.22), hi);
     }
+    // Small carved figures in the transept gables, as seen from the square.
+    K.at(TC,23.7,w,ry).add(Cyl(.24,.38,.21,6).scale(1,1,.33),lo,0,.17,.13)
+      .add(Lathe([[.29,0],[.33,.19],[.20,1.13],[.27,1.38],[.16,1.66]],7).scale(1,1,.42),'#d0c6ac',0,.28,.14)
+      .add(Ico(.22).scale(1,1,.45),hi,0,2.11,.17).bar([-.18,1.56,.16],[.15,1.29,.20],.14,lo)
+      .bar([.17,1.52,.16],[.21,.82,.19],.13,hi);
     for (const u of [T0 + 0.45, T1 - 0.45]) { K.at(u, 0, w, ry); buttress(EV, 1.15, 1); }
     K.at(TC, RG + 0.9, w - o * 0.3).box(0.16, 1.9, 0.16, GOLD, 0, 0.9, 0).box(0.9, 0.16, 0.16, GOLD, 0, 1.25, 0);
   }
@@ -323,16 +368,21 @@ export function molen() {
   const M = mats(), g = new THREE.Group(), K = new Kit(), T = new Skin(), CAP = new Skin(), SK = new Kit();
   const white = WHITE, dark = '#3a2c22', thatch = '#51483b', iron = '#2b2f36';
   const HT = 16.4, rad = (y) => 5.7 - (2.8 * y) / HT, LEAN = -atan2(2.8, HT), GY = 7.2, GR = 6.5, TILT = 0.262;
-  const b0 = C('#8c4b2c'), b1 = C('#b8713f');
+  const b0 = C('#bea47e'), b1 = C('#d8c4a2');
   T.add(new THREE.CylinderGeometry(rad(HT), rad(0), HT, 20, 4, true).translate(0, HT / 2, 0), (x, y) => b0.clone().lerp(b1, y / HT), 14, 8.2);
-  K.at().add(Cyl(5.72, 5.82, 0.8, 20), '#7a432c', 0, 0.4, 0).add(Cyl(3.06, 3, 0.5, 20), white, 0, HT + 0.2, 0);
+  K.at().add(Cyl(5.72, 5.82, 0.8, 20), '#9b876e', 0, 0.4, 0).add(Cyl(3.06, 3, 0.5, 20), white, 0, HT + 0.2, 0);
   // the gallery: deck on radial beams, struts down to the tower, a railing all round
-  K.add(Cyl(GR + 0.05, GR + 0.05, 0.26, 16), white, 0, GY - 0.13, 0).add(Cyl(GR - 0.1, GR - 0.1, 0.2, 16), '#a07a4c', 0, GY - 0.08, 0);
+  K.add(Cyl(GR + 0.05, GR + 0.05, 0.26, 16), '#4c493f', 0, GY - 0.13, 0).add(Cyl(GR - 0.1, GR - 0.1, 0.2, 16), '#a07a4c', 0, GY - 0.08, 0);
   for (let k = 0; k < 16; k++) {
     const a = ((k + 0.5) * PI) / 8, a2 = ((k + 1.5) * PI) / 8, P = (r, y) => [sin(a) * r, y, cos(a) * r], Q = (r, y) => [sin(a2) * r, y, cos(a2) * r];
-    K.bar(P(rad(3.4) - 0.12, 3.4), P(6.15, GY - 0.3), 0.17, white).bar(P(rad(GY) - 0.1, GY - 0.36), P(GR - 0.02, GY - 0.36), 0.18, dark, 0.14).bar(P(6.36, GY), P(6.36, GY + 1.08), 0.1, white);
+    K.bar(P(rad(3.4) - 0.12, 3.4), P(6.15, GY - 0.3), 0.17, '#50483c').bar(P(rad(GY) - 0.1, GY - 0.36), P(GR - 0.02, GY - 0.36), 0.18, dark, 0.14).bar(P(6.36, GY), P(6.36, GY + 1.08), 0.1, white);
     K.bar(P(6.36, GY + 1.06), Q(6.36, GY + 1.06), 0.09, white, 0.11).bar(P(6.36, GY + 0.56), Q(6.36, GY + 0.56), 0.06, white);
     K.bar(P(6.32, GY + 0.15), Q(6.32, GY + 0.97), 0.072, '#ddd7c4');
+    const mid=(a+a2)/2;
+    K.bar([sin(mid)*6.25,GY,cos(mid)*6.25],[sin(mid)*6.25,GY+.54,cos(mid)*6.25],.075,white);
+    const post=P(6.36,GY+1.09);
+    K.add(Cyl(.10,.085,.09,6),'#bfaa84',...post);
+    K.bar(P(rad(3.4)-.05,3.60),P(rad(3.4)+.12,3.78),.30, '#735940',.23);
   }
   const on = (y, a) => K.at(sin(a) * rad(y), y, cos(a) * rad(y), a, LEAN); // stand on the tower wall, leaning with it
   for (const [y, a] of [[3.3, PI / 2], [3.3, -PI / 2], [10, 0.62], [10, 0.62 + PI], [12.5, PI / 2 + 0.3], [12.5, -PI / 2 + 0.3], [14.7, 0], [14.7, PI]]) {
@@ -344,7 +394,17 @@ export function molen() {
   }
   for (const a of [0, PI]) {
     on(1.5, a); K.box(2.1, 2.9, 0.5, white).box(1.7, 2.6, 0.5, GREEN, 0, -0.1, 0.04).box(0.05, 2.6, 0.5, '#123a26', 0, -0.1, 0.07);
-    for (const x of [-0.2, 0.2]) K.add(Ico(0.06), GOLD, x, -0.2, 0.34);
+    for(const dir of [-1,1]) {
+      for(const y of [-.84,.74]) {
+        K.box(.65,.11,.055,'#283b32',dir*.44,y,.322);
+        K.add(Cyl(.055,.06,.047,6).rotateX(PI/2),'#a38851',dir*.66,y,.379);
+      }
+      K.add(Ico(.06),GOLD,dir*.20,-.20,.34);
+      for(const y of [-.59,.30])K.box(.58,.55,.075,'#326249',dir*.44,y,.308);
+    }
+    // A modest limestone plaque above the doors recalls the mill's foundation stone.
+    K.box(.8,.5,.16,'#af9e81',0,2.87,.10).box(.67,.39,.12,'#e4d9bd',0,2.87,.20);
+    K.add(Ico(.095),'#b39a71',0,2.9,.284);
     const archStones = new Skin(), point = (t, r, z = 0.21) => [r * cos(t), 1.44 + 0.64 * r * sin(t), z];
     for (let k = 0; k < 9; k++) {
       const t = PI * k / 9, u = PI * (k + 1) / 9, c = k % 2 ? '#b36a43' : '#e3c4a0', mid = (t + u) / 2;
@@ -355,6 +415,11 @@ export function molen() {
       }
     }
     K.skin(archStones);
+  }
+  // Soldier courses and narrow stringers follow the taper of the tower.
+  for(const y of [3.96,8.74,14.05]) {
+    const hh=.17, r0=rad(y), r1=rad(y+hh);
+    T.add(new THREE.CylinderGeometry(r1+.04,r0+.04,hh,20,1,true).translate(0,y+hh/2,0),'#bca88b',16,.6);
   }
   for (const a of [PI / 2, -PI / 2]) { on(GY + 1.12, a); K.box(1.2, 2.1, 0.3, white).box(0.95, 1.9, 0.3, GREEN, 0, -0.06, 0.03).box(0.5, 0.4, 0.3, GLASS, 0, 0.45, 0.06); }
   // the cap, the beard under the wind shaft, and a flag for a festive day
@@ -808,6 +873,9 @@ export function dormerGeo(want) {
   T.add(ext([[-0.8, 1.22], [0, 1.76], [0.8, 1.22], [0.8, 1.3], [0, 1.84], [-0.8, 1.3]], 2), '#ffffff', 0, 0, -0.88);
   R.box(1.3, 1.45, 1.5, '#d9d2c2', 0, 0.525, -0.75).add(ext([[-0.72, 1.25], [0.72, 1.25], [0, 1.76]], 0.1), wood, 0, 0, -0.05)
     .box(1.1, 0.95, 0.12, wood, 0, 0.72, 0).box(0.94, 0.79, 0.06, GLASS, 0, 0.72, 0.06).box(0.05, 0.79, 0.06, wood, 0, 0.72, 0.09).box(0.94, 0.05, 0.06, wood, 0, 0.86, 0.09).box(1.26, 0.06, 0.2, wood, 0, 0.21, 0.07);
+  // Folded lead sill and a moulded bargeboard surround the original dormer opening.
+  R.box(1.28,.055,.22,'#85908c',0,.16,.06);
+  for(const dir of [-1,1])R.bar([dir*.7,1.26,.035],[0,1.73,.035],.065,wood,.11);
   return part(T, R, want);
 }
 // A chimney 0.6 x 0.6, 1.4 tall (1.82 with its pots), carried 0.6 m down below the origin so it can stand on any slope. Brick white for tinting; stone cap and band, two pots.
@@ -815,7 +883,8 @@ export function chimneyGeo(want) {
   const T = new Kit(), R = new Kit();
   T.box(0.6, 2, 0.6, '#ffffff', 0, 0.4, 0);
   R.box(0.72, 0.1, 0.72, '#cfc8b8', 0, 1.45, 0).box(0.66, 0.08, 0.66, '#cfc8b8', 0, 1.12, 0);
-  for (const x of [-0.14, 0.14]) R.add(Cyl(0.09, 0.11, 0.3, 6), '#c96a3d', x, 1.65, 0).add(Cyl(0.065, 0.065, 0.02, 6), '#22262d', x, 1.805, 0);
+  for (const x of [-0.14, 0.14]) R.add(Lathe([[.115,0],[.105,.06],[.079,.21],[.105,.23],[.105,.285],[.072,.302],[.062,.252]],7),'#bd714b',x,1.51,0)
+    .add(Cyl(.065,.065,.025,7),'#393932',x,1.752,0);
   return part(T, R, want);
 }
 // A roof window lying in the local xz plane (turn it to the slope): 1.36 x 1.16 over its lead flashing, 0.15 high

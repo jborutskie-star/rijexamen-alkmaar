@@ -24,8 +24,8 @@ function churchOutline() {
 // [min x, min y, min z, max x, max y, max z] the model has to stay inside (null = no limit), and its triangle budget
 const B = (x, y0, y1, z) => [-x, y0, -z, x, y1, z];
 const GROUPS = {
-  groteKerk: { tris: [6000, 14000], box: [-48, -0.05, -30, 48, 53, 33] },
-  molen: { tris: [0, 5000], box: B(13, -0.01, 31, 13) },
+  groteKerk: { tris: [6000, 18600], box: [-48, -0.05, -30, 48, 53, 33] },
+  molen: { tris: [0, 6400], box: B(13, -0.01, 31, 13) },
   rondvaartboot: { tris: [0, 2500], box: B(4.6, -0.35, 1.0, 1.3) },
   sloep: { tris: [0, 1500], box: B(3.0, -0.35, 1.5, 1.05) },
   roeiboot: { tris: [0, 1500], box: B(2.3, -0.35, 0.6, 1.25) },

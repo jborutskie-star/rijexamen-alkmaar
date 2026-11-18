@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { streetFinish } from './street-finish.js';
 import * as Street from './street-props.js';
 import { canalReflections, sunOffset } from './atmosphere.js';
-import { FACADES, pantiles, recessedBay, bricks } from './facade-detail.js';
+import { FACADES, ROWS, pantiles, recessedBay, bricks, rampart } from './facade-detail.js';
 import { inPoly, lerp } from './drive.js';
 import { placeProps, planBridges } from './props.js';
 import * as LM from './landmarks.js'; // (landmarks.js imports this file too: fine, as long as neither calls the other while loading)
@@ -464,7 +464,7 @@ export function buildWorld(scene, map, drive, multiDraw = false) {
   // the ground goes darker towards the foot of every wall. Painted on by multiplying, straight after the streets, so it lies on whatever paving is there
   const aoMat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, fog: false, depthTest: false, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.DstColorFactor, blendDst: THREE.ZeroFactor, ...cut });
   const TILE = 200, tiles = new Map();
-  const tileOf = (x, z) => { const k = floor(x / TILE) + ':' + floor(z / TILE); if (!tiles.has(k)) tiles.set(k, { a: new Soup(), b: new Soup(), shop: new Soup(), church: new Soup(), trim: new Soup(), flat: new Soup(1 / 3), roofs: new Soup(), ao: new Soup() }); return tiles.get(k); };
+  const tileOf = (x, z) => { const k = floor(x / TILE) + ':' + floor(z / TILE); if (!tiles.has(k)) tiles.set(k, { a: new Soup(), b: new Soup(), shop: new Soup(), waag: new Soup(), church: new Soup(), trim: new Soup(), flat: new Soup(1 / 3), roofs: new Soup(), ao: new Soup() }); return tiles.get(k); };
   const CELL = 60, cells = new Map(), extra = []; // lookup grid for "is this point inside a building"
   const B = map.buildings.map((b, i) => { let p = b.p; if (area(p) > 0) { const q = []; for (let k = p.length - 2; k >= 0; k -= 2) q.push(p[k], p[k + 1]); p = q; } return { ...b, p, i, bb: bbox(p), c: centroid(p), H: b.h }; });
   for (const b of B) for (let gx = floor(b.bb[0] / CELL); gx <= floor(b.bb[2] / CELL); gx++) for (let gz = floor(b.bb[1] / CELL); gz <= floor(b.bb[3] / CELL); gz++) { const k = gx + ':' + gz; if (!cells.has(k)) cells.set(k, []); cells.get(k).push(b); }
@@ -565,7 +565,14 @@ export function buildWorld(scene, map, drive, multiDraw = false) {
       t.trim.quad(pt(ring[i]),pt(ring[j]),q,p,normal,C(i%2?'#e3d5b9':'#f3e7d1'));
       t.trim.tri(p,q,centre,normal,C(i<4?'#526f7d':'#364d5a'));
     }
-    tally('attic oculi',1,34);
+    // Each louvre has a projecting bevel. Its ends meet the two vertical reveals.
+    const at=(x,y,d)=>pt(new THREE.Vector2(.5+rx*x,.36+ry*y),d);
+    for(const y of [-.20,.18]) {
+      const half=.73*Math.cos(PI/8);
+      t.trim.quad(at(-half,y+.06,.13),at(half,y+.06,.13),at(half,y-.03,.075),at(-half,y-.03,.075),normal,C('#a4aaa0'));
+      t.trim.quad(at(-half,y-.03,.075),at(half,y-.03,.075),at(half,y-.12,.13),at(-half,y-.12,.13),normal,C('#556963'));
+    }
+    tally('attic oculi',1,42);
   }
 
   const dim = (c, k) => c.clone().multiplyScalar(k), aoDark = C('#8a8a8a'), AO = 1.7, SK = 1.2, pitched = [], tops = []; // AO: width of the shading at the foot of a wall; SK: metres of roof to one repeat of the tile picture
@@ -575,7 +582,7 @@ export function buildWorld(scene, map, drive, multiDraw = false) {
     let h = b.h + (Rb() - 0.5) * 0.36, wall = C(WALLS[floor(Rb() * WALLS.length)]), roof = C(ROOFS[floor(Rb() * ROOFS.length)]); // no two roofs at exactly the same height
     const soup = Rb() < 0.42 ? t.b : t.a;
     if (church) { h = big ? 32 : max(b.h, 11); wall = C('#d8c7a4'); roof = C('#7a8492'); } // the big one is a model of its own (LM.groteKerk): only its footprint and the shading round its foot are made here
-    if (b.n === 'Waag') { h = 13; wall = C('#c9573f'); roof = C('#3f4656'); }
+    if (b.n === 'Waag') { h = 13; wall = C('#b78665'); roof = C('#3f4656'); }
     if (b.n === 'Accijnstoren') { h = 12; wall = C('#f6f1e4'); roof = C('#3f4656'); }
     b.H = b.W = h; // W: top of the wall, H: top of the roof
     const gf = !church && h >= 5.5 ? 3.3 : 0, plinth = wall.clone().lerp(white, 0.4), foot = dim(wall, 0.72), low = dim(wall, 0.9), pfoot = dim(plinth, 0.72); let inWater = false;
@@ -594,27 +601,50 @@ export function buildWorld(scene, map, drive, multiDraw = false) {
       const y0 = plain ? 0 : gf, floors = max(1, round((h - y0) / 3.1));
       const bw = len / bays, fh = (h-y0) / floors;
       const detailed = !plain && free && !layout.clear(mx+nx*3, mz+nz*3, 12);
+      const upperStyle = mix(b.i,19+i)%ROWS.a;
+      const shopStyle = (pair) => mix(b.i,47+i*7+pair*101)%ROWS.shop;
+      const rowUV = (points,row,rows) => points.map(([u,v]) => [u,(v+row)/rows]);
       const roomForRebate = detailed && [.08,.3,.5,.7,.92].every(f => inPoly(p,ax+ux*len*f-nx*.19,az+uz*len*f-nz*.19));
-      if (roomForRebate && !special) {
+      if (b.n==='Waag' && !plain) {
+        if (gf) t.waag.wall(ax,az,bx,bz,0,gf,want,C('#aa9f83'),[[0,0],[bays/2,0],[bays/2,.5],[0,.5]],C('#e1d8bc'));
+        for(let f=0;f<floors;f++)t.waag.wall(ax,az,bx,bz,y0+f*fh,y0+(f+1)*fh,want,wall,[[0,.5],[bays/2,.5],[bays/2,1],[0,1]]);
+      } else if (roomForRebate && !special) {
         // The rebates go into the shell; the original street-side wall plane stays the outer edge.
         const startSize = soup.p.length + t.shop.p.length;
         let openings = 0;
-        const skin = (geo, bottom, height, width, base, top) => (uv, depths) => {
+        const skin = (geo, bottom, height, width, base, top, row, rows) => (uv, depths) => {
           const points = uv.map(([u,v],k) => [ax+ux*u*width-nx*depths[k], bottom+v*height, az+uz*u*width-nz*depths[k]]);
           const colours = points.map((pt) => base.clone().lerp(top,(pt[1]-bottom)/(geo===t.shop ? gf : h-y0)));
-          geo.quad(...points,want,colours,uv);
+          geo.quad(...points,want,colours,rowUV(uv,row,rows));
         };
-        const upper = skin(soup,y0,fh,bw,y0 ? low : foot,wall);
+        const upper = skin(soup,y0,fh,bw,y0 ? low : foot,wall,upperStyle,ROWS.a);
         const [left,bottom,right,top] = soup===t.a ? [72,52,184,204] : [86,60,170,188];
         for (let bay=0;bay<bays;bay++) for(let f=0;f<floors;f++) {
           recessedBay(upper,[bay,f,bay+1,f+1],[bay+left/256,f+bottom/256,bay+right/256,f+top/256],0.14);
           openings++;
         }
         if (y0) {
-          const ground = skin(t.shop,0,gf,2*bw,pfoot,plinth);
           for (let bay=0;bay<bays;bay+=2) {
-            const u=bay/2;
+            const u=bay/2, style=shopStyle(u);
+            const ground=skin(t.shop,0,gf,2*bw,pfoot,plinth,style,ROWS.shop);
             recessedBay(ground,[u,0,u+.5,1],[u+32/512,56/256,u+224/512,176/256],0.16);
+            // The timber glazing bars have a bevel of their own, 5 cm forward of the glass,
+            // and stay behind the original wall plane. Re-use the atlas to colour the mouldings.
+            const insetBar = (l,bot,r,top) => {
+              const a = [l,bot], b = [r,bot], c = [r,top], d = [l,top];
+              const bevelX = Math.min((r-l)*.25,.004), bevelY = Math.min((top-bot)*.25,.006);
+              const inner = [[l+bevelX,bot+bevelY],[r-bevelX,bot+bevelY],[r-bevelX,top-bevelY],[l+bevelX,top-bevelY]];
+              const edge = [a,b,c,d];
+              for(let i=0;i<4;i++){const j=(i+1)%4;ground([edge[i],edge[j],inner[j],inner[i]],[.16,.16,.105,.105]);}
+              ground(inner,[.105,.105,.105,.105]);
+            };
+            const split = 1-(80+120*.2)/256;
+            insetBar(u+38/512,split-.012,u+218/512,split+.006);
+            for(const f of (style%2 ? [.34,.67] : [.50])) {
+              const mid=u+(32+192*f)/512;
+              insetBar(mid-.004,60/256,mid+.005,split-.012);
+              insetBar(mid-.004,split+.006,mid+.005,171/256);
+            }
             openings++;
             if (bay+1===bays) continue;
             recessedBay(ground,[u+.5,0,u+390/512,1],[u+292/512,8/256,u+368/512,184/256],0.16);
@@ -624,8 +654,8 @@ export function buildWorld(scene, map, drive, multiDraw = false) {
         }
         tally('recessed window and door detail',openings,(soup.p.length+t.shop.p.length-startSize)/9-2-(y0 ? 2 : 0));
       } else {
-        if (y0) t.shop.wall(ax, az, bx, bz, 0, gf, want, pfoot, [[0, 0], [bays / 2, 0], [bays / 2, 1], [0, 1]], plinth);
-        soup.wall(ax, az, bx, bz, y0, h, want, y0 ? low : foot, plain ? undefined : [[0, 0], [bays, 0], [bays, floors], [0, floors]], wall);
+        if (y0) t.shop.wall(ax, az, bx, bz, 0, gf, want, pfoot, rowUV([[0,0],[bays/2,0],[bays/2,1],[0,1]],shopStyle(0),ROWS.shop), plinth);
+        soup.wall(ax, az, bx, bz, y0, h, want, y0 ? low : foot, plain ? undefined : rowUV([[0,0],[bays,0],[bays,floors],[0,floors]],upperStyle,ROWS.a), wall);
       }
       if (!detailed) continue;
       const ang = atan2(uz, ux), sw = bw * (soup === t.a ? 0.6 : 0.5), put = (list, d, y, out, sx, sy, sz, c) => list.push({ x: ax + ux * d + nx * out, y, z: az + uz * d + nz * out, a: ang, sx, sy, sz, c });
@@ -848,7 +878,7 @@ export function buildWorld(scene, map, drive, multiDraw = false) {
   }
   { // the Waag: stepped gables, a steep slate roof with dormers, the porters' canopy on the market side, and the clock tower with its carillon
     const [x, z] = map.pois.Waag, A = 0.55, g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = -A; // local x runs along the hall, -z faces the cheese market
-    const brick = '#c9573f', stone = '#efe2c4', slate = '#3f4656', green = '#1f5a3c', dark = '#1d2a44', red = '#c8102e', gold = '#f2c230', copper = '#2f7f78';
+    const brick = '#b78767', stone = '#eee3c7', slate = '#3f4656', green = '#1f5a3c', dark = '#1d2a44', red = '#c8102e', gold = '#f2c230', copper = '#55635d';
     const P = [], add = (w, h, d, c, px, py, pz) => P.push([Box(w, h, d), c, px, py, pz]), oct = (r, h, c, py) => P.push([Cyl(r, r, h, 8), c, 0, py, 0]);
     const ridge = (len, h, half) => { const q = new THREE.CylinderGeometry(1, 1, len, 3, 1, false, PI / 2).rotateZ(PI / 2).scale(1, h / 1.5, half / 0.866).translate(0, h / 3, 0).toNonIndexed(); q.computeVertexNormals(); return q; };
     const onion = (py, k, c) => { let y = py; for (const [rb, rt, h] of [[2.4, 2.9, 0.9], [2.9, 2.6, 1.1], [2.6, 1.6, 1], [1.6, 0.8, 0.8], [0.8, 0.5, 0.8]]) { P.push([Cyl(rt * k, rb * k, h * k, 12), c, 0, y + (h * k) / 2, 0]); y += h * k; } };
@@ -863,6 +893,23 @@ export function buildWorld(scene, map, drive, multiDraw = false) {
     for (const ex of [-12.25, 20.35]) { // both end walls: a slab just proud of the old wall, stepping up to a pinnacle. Every trim piece sticks out a few cm further than the one behind it
       add(0.7, 13.1, 15.5, brick, ex, 6.55, -1.15); add(0.86, 0.14, 15.66, stone, ex, 13.08, -1.15);
       for (let k = 1; k <= 6; k++) { add(0.7, 1.3, 16 - k * 2.3, brick, ex, 13 + (k - 0.5) * 1.3, -1.15); add(0.86, 0.14, 16.16 - k * 2.3, stone, ex, 12.95 + k * 1.3, -1.15); }
+      // Alternating pale and charcoal stone at the canal-facing end.
+      if(ex<0) {
+        for(const wz of [-8.3,6.0]) for(let j=0;j<10;j++) {
+          add(.85,.59,j%2?.81:1.04,j%2?'#817866':stone,ex,4.9+j*.73,wz);
+        }
+        for(const wz of [-6.9,-3.95,1.65,4.6]) {
+          add(.84,5.8,.26,'#c6b799',ex,8.75,wz);
+          add(.91,.25,.62,stone,ex,11.60,wz);
+        }
+        for(const wz of [-4.0,1.70]) {
+          add(.84,2.5,.37,stone,ex,15.62,wz);
+          P.push([new THREE.ConeGeometry(.33,.88,4),stone,ex,17.21,wz]);
+        }
+        const crest = new THREE.CylinderGeometry(1.05,1.05,.16,12).rotateZ(PI/2);
+        P.push([crest,'#9b8660',ex-.43,16.54,-1.15]);
+        P.push([new THREE.CylinderGeometry(.84,.84,.16,12).rotateZ(PI/2),'#ded0ac',ex-.53,16.54,-1.15]);
+      }
       add(0.5, 1.5, 0.5, stone, ex, 21.5, -1.15); P.push([new THREE.SphereGeometry(0.34, 10, 8), gold, ex, 22.5, -1.15]);
       for (const y of [3.95, 7.3, 10.6]) add(0.74, 0.24, 15.54, stone, ex, y, -1.15); // bands of pale stone through the brick
       for (const y of [5.6, 8.95]) for (const wz of [-5.95, -2.75, 0.45, 3.65]) {
@@ -876,7 +923,14 @@ export function buildWorld(scene, map, drive, multiDraw = false) {
       add(0.74, 3.5, 3.2, stone, ex, 1.75, -1.15); add(0.78, 3.2, 2.7, green, ex, 1.6, -1.15); add(0.74, 1.6, 1.1, stone, ex, 15, -1.15); add(0.78, 1.3, 0.8, dark, ex, 15, -1.15);
     }
     for (const dx of [-8.5, 6.5, 11.5, 16.5]) { add(1.5, 3, 2.4, brick, dx, 15.7, -5.6); add(1.8, 0.16, 2.7, stone, dx, 17.28, -5.6); add(1, 1.3, 0.1, dark, dx, 16.3, -6.82); } // dormers
-    add(27, 0.16, 4.9, slate, 4, 4.1, -9.45); add(27, 0.45, 0.1, green, 4, 3.95, -11.92); // the canopy the cheese is carried under
+    for(const px of [-8.5,6.5,11.5,16.5]) {
+      add(.09,1.22,.11,stone,px,16.3,-6.90);add(1.0,.10,.12,stone,px,16.41,-6.92);
+      add(1.28,.12,.25,stone,px,15.59,-6.88);
+    }
+    for(const px of [-9,-4.5,0,4.5,9,13.5,17]){
+      add(.33,.22,.37,stone,px,3.78,-11.61);add(.46,.09,.46,green,px,3.9,-11.62);
+    }
+    add(27, 0.16, 4.9, slate, 4, 4.1, -9.45); add(27, 0.45, 0.1, '#d2c6a4', 4, 3.95, -11.92); // the canopy the cheese is carried under
     for (const px of [-9, -4.5, 0, 4.5, 9, 13.5, 17]) {
       for (const dir of [-1, 1]) if (px + dir > -9.5 && px + dir < 17.5) {
         P.push([Box(1.24, 0.16, 0.14).rotateZ(dir * 0.63), green, px + dir * 0.47, 3.59, -11.59]);
@@ -895,11 +949,32 @@ export function buildWorld(scene, map, drive, multiDraw = false) {
       const a = k * PI / 2;
       P.push([new THREE.TorusGeometry(2.34, 0.13, 6, 32).rotateY(a), gold, sin(a) * 3.35, 23.8, cos(a) * 3.35]);
     }
-    g.add(new THREE.Mesh(fuse(...P), tinted));
+    // The clock sits in its own light-painted stage with gold corner spandrels.
+    for(let k=0;k<4;k++) {
+      const a=k*PI/2, dx=sin(a),dz=cos(a);
+      const panel=(w,h,d,c,xx,y,r)=>P.push([Box(w,h,d).rotateY(a),c,dx*r+dz*xx,y,dz*r-dx*xx]);
+      // The face ends at r=3.32, behind the existing enamel dial at r=3.36.
+      panel(6.62,5.34,.10,'#d1c9ac',0,23.8,3.27);
+      for(const side of [-1,1]) {
+        panel(.26,5.22,.16,stone,side*3.05,23.8,3.32);
+        for(const y of [21.6,25.93])
+          P.push([Box(.40,.40,.12).rotateZ(PI/4).rotateY(a),gold,dx*3.37+dz*side*2.67,y,dz*3.37-dx*side*2.67]);
+      }
+      for(let j=-3;j<=3;j++)panel(.28,.36,.43,stone,j*.89,26.79,3.39);
+    }
+    const brickParts=P.filter(part=>part[1]===brick);
+    const dressed=fuse(...brickParts), bp=dressed.attributes.position, bn=dressed.attributes.normal, uv=[];
+    for(let i=0;i<bp.count;i++) {
+      uv.push((bp.getX(i)*bn.getZ(i)-bp.getZ(i)*bn.getX(i))/2.4, (Math.abs(bn.getY(i))>.6?bp.getZ(i):bp.getY(i))/2.4);
+    }
+    dressed.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+    g.add(new THREE.Mesh(dressed,mat('#ffffff',{vertexColors:true,map:canvasTex(128,128,g=>brickPic(g,false)),normalMap:reliefTex(128,128,g=>brickPic(g,true),1.3)})));
+    const trimParts=P.filter(part=>part[1]!==brick);
+    g.add(new THREE.Mesh(fuse(...trimParts), tinted));
     const clock = canvasTex(256, 256, (c) => {
       c.translate(128, 128);
       const enamel = c.createRadialGradient(-40, -50, 4, 0, 0, 127);
-      enamel.addColorStop(0, '#38506a'); enamel.addColorStop(1, '#111e34');
+      enamel.addColorStop(0, '#313c3e'); enamel.addColorStop(1, '#172020');
       c.fillStyle = enamel; c.fillRect(-128, -128, 256, 256);
       c.strokeStyle = c.fillStyle = '#f7d372'; c.lineWidth = 2;
       for (const r of [79, 119]) { c.beginPath(); c.arc(0, 0, r, 0, 2 * PI); c.stroke(); }
@@ -930,9 +1005,33 @@ export function buildWorld(scene, map, drive, multiDraw = false) {
   }
   { // Molen van Piet. The real one stands on the old city rampart; here it is a round brick bastion with a stone terrace on top and steps up to it
     const [x, z] = map.pois['Molen van Piet'], MOUND = 2.2, A = MILL_FACE, { group: g, sails } = LM.molen(), sa = sin(STAIR), ca = cos(STAIR), P = [];
-    P.push([Cyl(7.9, 8.3, MOUND + 0.3, 28), '#9a5a3c', 0, MOUND / 2 - 0.25, 0], [Cyl(8.12, 8.12, 0.2, 28), '#d6cfc0', 0, MOUND - 0.1, 0], [Cyl(8.4, 8.4, 0.5, 28), '#7a432c', 0, 0.05, 0]);
+    P.push([Cyl(7.9, 8.3, MOUND + 0.3, 28), '#a78261', 0, MOUND / 2 - 0.25, 0], [Cyl(8.12, 8.12, 0.2, 28), '#d6cfc0', 0, MOUND - 0.1, 0], [Cyl(8.4, 8.4, 0.5, 28), '#86694f', 0, 0.05, 0]);
     for (let k = 0; k < 7; k++) { const h = (MOUND * (k + 1)) / 8, d = 11.2 - 0.42 * (k + 0.5); P.push([Box(k === 6 ? 1.0 : 0.42, h + 0.3, 1.9).rotateY(-STAIR), k % 2 ? '#cfc7b6' : '#c2b9a6', ca * (d - (k === 6 ? 0.29 : 0)), h / 2 - 0.15, sa * (d - (k === 6 ? 0.29 : 0))]); } // the last step runs on into the wall
-    const base = new THREE.Mesh(fuse(...P), tinted); base.position.set(x, 0, z); base.castShadow = base.receiveShadow = true; scene.add(base);
+    const masonry = fuse(P[0],P[2]), pos = masonry.attributes.position, normal = masonry.attributes.normal, uv=[];
+    for(let i=0;i<pos.count;i+=3) {
+      const u0=atan2(pos.getX(i),pos.getZ(i))/(2*PI);
+      for(let j=i;j<i+3;j++) {
+        const px=pos.getX(j), pz=pos.getZ(j);
+        if(Math.abs(normal.getY(j))>.8) uv.push(px/3,pz/3);
+        else {
+          const turn=atan2(px,pz)/(2*PI);
+          uv.push((turn+Math.round(u0-turn))*8,(pos.getY(j)+.05)/2.25);
+        }
+      }
+    }
+    masonry.setAttribute('uv', new THREE.Float32BufferAttribute(uv,2));
+    const rMap=canvasTex(512,256,ctx=>rampart(ctx,false)), rNormal=reliefTex(512,256,ctx=>rampart(ctx,true),1.6);
+    const barrel=new THREE.Mesh(masonry,mat('#ffffff',{vertexColors:true,map:rMap,normalMap:rNormal,roughness:.89}));
+    const stones=fuse(P[1],...P.slice(3)), sp=stones.attributes.position, sn=stones.attributes.normal, su=[];
+    for(let i=0;i<sp.count;i++) {
+      const px=sp.getX(i),pz=sp.getZ(i);
+      su.push((Math.abs(sn.getY(i))>.65?px:(px*sn.getZ(i)-pz*sn.getX(i)))/2.6,(Math.abs(sn.getY(i))>.65?pz:sp.getY(i))/2.6);
+    }
+    stones.setAttribute('uv',new THREE.Float32BufferAttribute(su,2));
+    const coping=new THREE.Mesh(stones,mat('#ffffff',{vertexColors:true,map:canvasTex(128,128,ctx=>brickPic(ctx,false)),roughness:.87}));
+    const base=new THREE.Group();base.add(barrel,coping);base.position.set(x,0,z);
+    for(const part of base.children)part.castShadow=part.receiveShadow=true;
+    scene.add(base);
     g.position.set(x, MOUND - 0.03, z); g.rotation.y = A; scene.add(g); tallyGroup('windmill', g); tallyGroup('windmill', base);
     world.solid(x, z, 8.6, MOUND + 0.4); world.solid(x, z, 7, MOUND + 31); world.solid(x + ca * 9.8, z + sa * 9.8, 1.6, MOUND);
     world.windmill = { x, z, sails, y: MOUND, face: A, hub: [x + 4.5 * sin(A), MOUND - 0.03 + 18.5, z + 4.5 * cos(A)] }; // hub: the middle of the sail cross; the sails look along (sin face, cos face)
