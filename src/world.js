@@ -204,17 +204,6 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
   world.city = CITY; world.cut = cut;
 
   // --- canals: the water lies 1.2 m below the street, between brick quay walls ---
-  const swell = (g, bump) => { // long soft ripples; each is drawn nine times over, so the picture repeats across its edges
-    g.fillStyle = bump ? '#808080' : '#eef5fa'; g.fillRect(0, 0, 128, 128); const r = rnd(3); g.lineCap = 'round';
-    for (let i = 0; i < (bump ? 80 : 22); i++) {
-      const x = r() * 128, y = r() * 128, l = 12 + r() * 30, up = r() < 0.5;
-      for (const [w, a] of bump ? [[6, 0.14], [3.5, 0.2], [1.6, 0.28]] : [[1.5 + r() * 1.5, 1]]) { // in the height picture a ripple is three strokes, wide to narrow: a soft ridge or trough
-        g.lineWidth = w; g.strokeStyle = bump ? `rgba(${up ? '255,255,255' : '0,0,0'},${a})` : i % 3 ? 'rgba(255,255,255,.5)' : 'rgba(30,70,130,.12)';
-        for (const dx of [-128, 0, 128]) for (const dy of [-128, 0, 128]) { g.beginPath(); g.moveTo(x + dx, y + dy); g.quadraticCurveTo(x + dx + l / 2, y + dy - 5, x + dx + l, y + dy); g.stroke(); }
-      }
-    }
-  };
-  const ripple = canvasTex(128, 128, (g) => swell(g, false)), rippleN = reliefTex(128, 128, (g) => swell(g, true), 1.4); rippleN.repeat.set(2.3, 2.3);
   const quayWall = (g, bump) => { // 2.56 m of quay, street level at the top: a stone coping, brick courses, and the dark band the water leaves
     g.fillStyle = bump ? '#5a5a5a' : '#6d4a3c'; g.fillRect(0, 0, 256, 128);
     for (let y = 18, row = 0; y < 128; y += 7, row++) for (let x = -1; x < 9; x++) { const v = hash(row * 31 + ((x + 9) % 8)); g.fillStyle = bump ? grey(150 + v * 70) : `hsl(${13 + v * 9},${25 + v * 10}%,${33 + v * 12}%)`; g.fillRect(x * 32 + (row % 2) * 16 + 1, y + 1, 30, 5.5); }
@@ -225,7 +214,7 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
   const sea = new Soup(1 / 9), hole = new Soup(), quay = new Soup(), coping = new Soup(), shade = new Soup(), dusk = C('#738a76'), clear = C('#ffffff');
   for (const { p } of waters) {
     let run = 0;
-    try { sea.flat(p, -1.2, C('#328fa1')); hole.flat(p, Y0, C('#000000')); } catch { continue; }
+    try { sea.flat(p, -1.2, C('#476959')); hole.flat(p, Y0, C('#000000')); } catch { continue; }
     for (let i = 0, j = p.length - 2; i < p.length; j = i, i += 2) {
       const ax = p[j], az = p[j + 1], bx = p[i], bz = p[i + 1], l = hypot(bx - ax, bz - az); if (l < 0.05) continue;
       let nx = -(bz - az) / l, nz = (bx - ax) / l; const mx = (ax + bx) / 2, mz = (az + bz) / 2;
@@ -236,7 +225,7 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
     }
     coping.ribbon([...p, p[0], p[1]], 1.0, Y0, C('#c9c2b4'), 4.4);
   }
-  const seaMesh = sea.mesh(new THREE.MeshStandardMaterial({ vertexColors: true, map: ripple, normalMap: rippleN, normalScale: new THREE.Vector2(0.25, 0.25), roughness: 0.16, metalness: 0.36 }));
+  const seaMesh = sea.mesh(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.23, metalness: 0.18 }));
   const banks = canalReflections(seaMesh.material, CITY);
   world.canalMaterial = seaMesh.material;
   world.setBankReflections = banks.setDetail;
@@ -1077,17 +1066,22 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
     const solid = (geo) => { const me = new THREE.Mesh(geo, tinted); me.castShadow = me.receiveShadow = true; return me; };
     lf.add(solid(fuse(...railing(.05,len-.05,4,.13,.90,-2.7), ...railing(.05,len-.05,4,.13,.90,2.7))));
     g.add(lf);
-    const top = 7.2, arm = 0.62, tip = [cos(r.angle) * len, sin(r.angle) * len];
+    const top = 7.2, arm = 0.62, rear = 2.35, tip = [cos(r.angle) * len, sin(r.angle) * len];
     for (const z of [-3.3, 3.3]) {
       g.add(box(0.45, top, 0.45, '#f6f1e4', -0.8, top / 2, z));
-      const front = [-0.8 + cos(arm) * 8.2, top + sin(arm) * 8.2], back = [-0.8 - cos(arm) * 4, top - sin(arm) * 4];
+      const front = [-0.8 + cos(arm) * 8.2, top + sin(arm) * 8.2], back = [-0.8 - cos(arm) * rear, top - sin(arm) * rear];
       g.add(beam([back[0], back[1], z], [front[0], front[1], z], 0.34, '#f6f1e4'), beam([front[0], front[1], z], [tip[0], tip[1], z * 0.84], 0.09, '#30343c'));
-      g.add(box(1.6, 1.1, 0.9, '#3f4656', back[0], back[1], z));
+      // A compact stacked counterweight keeps the lifted rear arms inside the narrow bridgehead.
+      const plates = [];
+      for (let plate = 0; plate < 3; plate++) {
+        plates.push([Box(1.02, 0.32, 0.82), plate === 1 ? '#666e70' : '#3f4656', back[0], back[1] - 0.36 + plate * 0.35, z]);
+      }
+      g.add(solid(fuse(...plates)));
     }
     g.add(box(0.4, 0.4, 6.15, '#f6f1e4', -0.8, top - 0.03, 0));
     { // the balance: a cross beam and a pair of braces in each bay between the arms, all well above anything the car does; tarred feet on the portal posts
-      const A = (t) => [-0.8 + cos(arm) * (12.2 * t - 4), top + sin(arm) * (12.2 * t - 4)], P = [], bar = (a, b, th) => { const u = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]), l = u.length(); return [Box(l, th, th).applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), u.normalize())), '#f6f1e4', (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]; };
-      for (const [t0, t1] of [[4 / 12.2, 0.66], [0.66, 1]]) { P.push([Box(0.22, 0.22, 6.6), '#f6f1e4', ...A(t1), 0], bar([...A(t0), -3.3], [...A(t1), 3.3], 0.14), bar([...A(t0), 3.3], [...A(t1), -3.3], 0.1)); }
+      const A = (t) => [-0.8 + cos(arm) * ((8.2 + rear) * t - rear), top + sin(arm) * ((8.2 + rear) * t - rear)], P = [], bar = (a, b, th) => { const u = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]), l = u.length(); return [Box(l, th, th).applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), u.normalize())), '#f6f1e4', (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]; };
+      for (const [t0, t1] of [[rear / (8.2 + rear), 0.66], [0.66, 1]]) { P.push([Box(0.22, 0.22, 6.6), '#f6f1e4', ...A(t1), 0], bar([...A(t0), -3.3], [...A(t1), 3.3], 0.14), bar([...A(t0), 3.3], [...A(t1), -3.3], 0.1)); }
       for (const z of [-3.3, 3.3]) {
         const out = Math.sign(z);
         P.push([Box(0.62, 0.9, 0.62), '#26282d', -0.8, 0.45, z],
@@ -1327,7 +1321,6 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
     const moor = (o) => { (audit.boats ||= []).push([TYPES[o.ty][0][0], round(o.x), round(o.z), round(o.g)].join(' ')); moored.push(o); lists[o.ty].push({ x: o.x, y: WATER, z: o.z, a: o.a, c: TINT[o.h % 6] }); };
     for (const o of cand.filter((o) => o.g < 75).sort((a, b) => a.g - b.g)) if ((o.h >>> 12) % 10 > 2 && lists[o.ty].length < TYPES[o.ty][4] && fits(o, 0)) moor(o);
     let far = 0; for (const o of cand.filter((o) => o.g >= 75 && o.g < 520).sort((a, b) => (a.h >>> 3) - (b.h >>> 3))) if (far < 16 && fits(o, 38)) { moor(o); far++; }
-    TYPES.forEach(([name, make], i) => { if (!lists[i].length) return; const g = make().children[0]; afloat.push({ im: mine(name, g.geometry, lists[i], g.material), list: lists[i] }); });
     const offBoats = (x, z, d) => moored.every((m) => hypot(m.x - x, m.z - z) > m.L / 2 + d);
 
     // a mooring post beyond each end of the boats a camera can get near
@@ -1386,6 +1379,46 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
     }
     mine('quay ladders', fuse([Box(0.05, 1.26, 0.05), iron, -0.19, -0.69, 0.07], [Box(0.05, 1.26, 0.05), iron, 0.19, -0.69, 0.07], ...[-1.12, -0.86, -0.6, -0.34].map((y) => [Box(0.38, 0.04, 0.04), iron, 0, y, 0.07]), [Box(0.05, 0.05, 0.07), iron, -0.19, -0.14, 0.035], [Box(0.05, 0.05, 0.07), iron, 0.19, -0.14, 0.035]), ladders, tinted, false);
     mine('mooring rings', fuse([new THREE.TorusGeometry(0.1, 0.022, 5, 10), iron, 0, -0.5, 0.028], [Box(0.07, 0.08, 0.05), iron, 0, -0.38, 0.025]), rings, tinted, false);
+
+    // Fill four otherwise empty moorings after all original boats and water life have been placed.
+    const additions = [], waterFittings = [...posts, ...lilies, ...reeds];
+    for (const o of cand.filter(o => o.ty < 2 && o.g < 85).sort((a, b) => a.g - b.g)) {
+      if (additions.length === 4) break;
+      if (!fits(o, 8) || !offPaddlers(o.x,o.z,o.L / 2 + 1.2) ||
+          additions.some(q => hypot(q.x-o.x, q.z-o.z) < 35) ||
+          waterFittings.some(q => hypot(q.x-o.x, q.z-o.z) < o.L / 2 + 1.2) ||
+          [...ladders, ...rings].some(q => hypot(q.x-o.x, q.z-o.z) < o.L / 2 + 0.75)) continue;
+      additions.push(o); moor(o);
+    }
+    TYPES.forEach(([name, make], i) => { if (!lists[i].length) return; const g = make().children[0]; afloat.push({ im: mine(name, g.geometry, lists[i], g.material), list: lists[i] }); });
+
+    // The short pale guardrails return around bridge landings. Retain access beside boats,
+    // rings and ladders on the open quays of Luttik Oudorp and Verdronkenoord.
+    const landings = [], fittings = [...ladders, ...rings, ...posts, ...props];
+    for (const o of cand.filter(o => o.g < 60).sort((a, b) => a.g - b.g)) {
+      if (landings.length === 6) break;
+      const x = o.qx - o.nx * .38, z = o.qz - o.nz * .38;
+      if (!bank(o) || bridgeGap(x,z) > 7.5 || jumpGap(x,z) < 20 ||
+          landings.some(q => hypot(q.x-x,q.z-z) < 18)) continue;
+      const safe = [-2.1,-1,0,1,2.1].every(d => {
+        const px = x + d*o.ux, pz = z + d*o.uz;
+        return !wet(px,pz) && !hitB(px,pz) && wet(px+o.nx*.80,pz+o.nz*.80) &&
+          bridgeGap(px,pz) > .75 && carGap(px,pz) > 3.2 && duckGap(px,pz) > 3.1 &&
+          offBoats(px,pz,1.25) && fittings.every(q => hypot(px-q.x,pz-q.z) > 1.15) &&
+          extra.every(q => hypot(px-q.x,pz-q.z) > q.r+.35);
+      });
+      if (safe) landings.push({x,y:GROUND,z,a:atan2(o.uz,o.ux)});
+    }
+    if (landings.length) {
+      const rail = [], ivory = '#e3e0cd';
+      for (const x of [-2,0,2]) {
+        rail.push([Cyl(.075,.105,.13,8),'#7c7b70',x,.065,0],
+          [Cyl(.045,.065,.84,8),ivory,x,.51,0], [Cyl(.081,.065,.07,8),ivory,x,.93,0]);
+      }
+      for (const y of [.45,.86]) rail.push([Cyl(.029,.029,4,8).rotateZ(PI/2),ivory,0,y,0]);
+      const mesh = mine('quay landing rails',fuse(...rail),landings);
+      mesh.name = 'Quay parapets';
+    }
   }
   audit.where = { lanes: cruisers.map((l) => [l.ax, l.az, l.ax + l.ux * l.len, l.az + l.uz * l.len].map(round)), paddlers: paddlers.map((p) => [round(p.x), round(p.z), p.set.im === undefined ? '' : p.n]), gulls: gulls.map((g) => [round(g.x), round(g.y), round(g.z)]) };
   const setAt = (im, i, x, y, z, a, rx, s = 1) => im.setMatrixAt(i, M.compose(V.set(x, y, z), Q.setFromEuler(E.set(rx, -a, 0, 'YXZ')), S.set(s, s, s)));
@@ -1404,7 +1437,7 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
 
   world.update = (t) => {
     world.windmill.sails.rotation.z = t * 0.9;
-    clouds.position.x = t * 1.6; ripple.offset.set(t * 0.012, t * 0.007); rippleN.offset.set(-t * 0.021, t * 0.016);
+    clouds.position.x = t * 1.6; banks.setTime(t);
     life(t);
     flags.forEach((f, i) => { f.rotation.y = sin(t * 2.2 + i) * 0.35; });
     const on = floor(t * 2.5) % 2; world.lamps.forEach((l, i) => { l.material.emissiveIntensity = (i % 2 === on) ? 3 : 0; });

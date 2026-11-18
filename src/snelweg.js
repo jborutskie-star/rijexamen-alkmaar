@@ -1,6 +1,7 @@
 // De snelweg: the A9 south of town. First half of this file is the plan (plain numbers and pure functions of time, runs under node
 // for tools/check-snelweg.mjs); the second half builds the meshes from that plan.
 import * as THREE from 'three';
+import { waterWaves } from './atmosphere.js';
 import { asphaltGrain } from './street-finish.js';
 import { GROUND, mat, canvasTex } from './world.js';
 
@@ -330,16 +331,8 @@ const box = (l, h, w) => new THREE.BoxGeometry(l, h, w), cyl = (a, b, h, s = 10)
 let waterMaterial;
 export function countryWater() {
   if (waterMaterial) return waterMaterial;
-  const size = 64, data = new Uint8Array(size * size * 4);
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    const u = x / size * 2 * PI, v = y / size * 2 * PI, i = (y * size + x) * 4;
-    const nx = 0.17 * cos(2 * u + 3 * v) + 0.09 * cos(3 * u - v);
-    const ny = 0.28 * cos(2 * u + 3 * v) - 0.04 * cos(3 * u - v) + 0.19 * cos(5 * v + sin(u));
-    const len = hypot(nx, ny, 1); data.set([128 + nx / len * 127, 128 + ny / len * 127, 128 + 127 / len, 255], i);
-  }
-  const ripple = new THREE.DataTexture(data, size, size); ripple.wrapS = ripple.wrapT = THREE.RepeatWrapping;
-  ripple.magFilter = THREE.LinearFilter; ripple.minFilter = THREE.LinearMipmapLinearFilter; ripple.generateMipmaps = true; ripple.needsUpdate = true;
-  waterMaterial = mat('#ffffff', { vertexColors: true, normalMap: ripple, normalScale: new THREE.Vector2(0.54, 0.54), roughness: 0.26, metalness: 0.12 });
+  waterMaterial = mat('#c0c8b4', { vertexColors: true, roughness: 0.30, metalness: 0.15 });
+  waterMaterial.onBeforeCompile = shader => waterWaves(shader);
   return waterMaterial;
 }
 // a box rounded off in side view (length along x, standing on y = 0, width along z): everything on the road is a toy
