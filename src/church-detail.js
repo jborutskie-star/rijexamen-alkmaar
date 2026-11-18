@@ -40,6 +40,20 @@ function paintCourses(ctx, size, type, relief) {
       x += w;
     }
   }
+  if (type === masonry && !relief) {
+    // Soft patches of patina and lime bloom cross block boundaries. The same
+    // patch is painted across each wrapped edge so no tile border appears.
+    for (let i = 0; i < 64; i++) {
+      const x = 512 * r(), y = 512 * r(), radius = 6 + 23 * r();
+      const ink = i % 3 ? 'rgba(72,83,68,.12)' : 'rgba(250,247,231,.23)';
+      for (const tx of [x - 512, x, x + 512]) for (const ty of [y - 512, y, y + 512]) {
+        if (tx + radius < 0 || ty + radius < 0 || tx - radius > 512 || ty - radius > 512) continue;
+        const wash = ctx.createRadialGradient(tx, ty, 0, tx, ty, radius);
+        wash.addColorStop(0, ink); wash.addColorStop(1, 'rgba(128,136,119,0)');
+        ctx.fillStyle = wash; ctx.fillRect(tx-radius, ty-radius, 2*radius, 2*radius);
+      }
+    }
+  }
   // Uneven grain on cut stone and thin mineral streaks on cleft slates.
   for (let i = 0; i < 6800; i++) {
     const v = r();

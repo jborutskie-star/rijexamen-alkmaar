@@ -272,7 +272,14 @@ export function groteKerk() {
   wall(T1, -18.85, 14.75, -18.85, 0, 8, lo); wall(14.75, -18.85, 14.75, CN, 0, 8, lo); S.poly([[14.75, 8, -18.85], [14.75, 8, CN], [14.75, 9.8, CN]], [1, 0, 0], lo, kS); // sacristy
   const porchStone='#eee6ce';
   wall(-34.45,-AW,-34.45,-21.15,0,5.4,porchStone);
-  wall(-34.45,-21.15,-31.05,-21.15,0,5.4,porchStone);
+  // Rain darkens the low stonework and the course sheltered by the ledge.
+  const porchCourses = [[.34,'#b4b3a7'],[1.62,'#d3d0bd'],[2.20,'#dfdccd'],
+    [2.31,'#abac99'],[2.54,'#c7c8b6'],[5.4,'#dbd8c6']];
+  let courseBase = 0;
+  for (const [top, colour] of porchCourses) {
+    wall(-34.45,-21.15,-31.05,-21.15,courseBase,top,colour);
+    courseBase = top;
+  }
   wall(-31.05,-21.15,-31.05,-AW,0,5.4,porchStone);
   gable(-32.75,-21.15,0,-1,1.7,5.4,8.3,.4,porchStone); // north porch
   wall(-46.7, -2.4, W0, -2.4, 0, 6); wall(W0, 2.4, -46.7, 2.4, 0, 6); wall(-46.7, 2.4, -46.7, -2.4, 0, 6); gable(-46.7, 0, -1, 0, 2.4, 6, 9.7, 0.45); // west porch
@@ -547,6 +554,19 @@ export function groteKerk() {
   K.at(-32.75,3.94,-21.15,PI).add(slab(niche,.064),'#968c74')
     .add(ring(porchArch(.90,1.40),niche,.17),'#c8baa0')
     .box(.88,.13,.19,hi,0,-.03,.08);
+  // The masonry survey shows an iron anchor above the empty niche. Its
+  // retaining tongues stand off the tie, proud of the front of the house.
+  K.at(-32.75,0,-21.15,PI).box(.055,.98,.047,'#524f44',0,6.04,.050)
+    .box(.20,.045,.048,'#5b594a',0,5.76,.091)
+    .box(.17,.045,.048,'#5b594a',0,6.26,.091);
+  const flashing = new Skin();
+  for (const side of [-1,1]) {
+    flashing.poly([[0,8.30,.056],[side*1.7,5.4,.056],[side*1.7,5.32,.056],[0,8.17,.056]],
+      [0,0,1],'#74796a');
+  }
+  K.skin(flashing);
+  K.at(-32.75,8.30,-21.0).add(Cyl(.10,.13,.23,5),'#9d9f88',0,.11,0)
+    .add(Cone(.12,.28,5),'#8f9581',0,.37,0);
 
   // the sacristy and its stair turret; the houses' windows, doors and chimneys
   K.at(15, 0, -19.1).add(Cyl(0.55, 0.55, 12.2, 8), hi, 0, 6.1, 0).add(Cone(0.6, 1.9, 8), slate2, 0, 13.15, 0); K.at(11.8, 4.2, -18.85, PI); sash(1.1, 1.8);
