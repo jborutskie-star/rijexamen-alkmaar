@@ -2,7 +2,7 @@
 // The ground is one patchwork of rectangles that never overlap (so nothing can flicker); the town and the motorway each keep their own hole.
 import * as THREE from 'three';
 import { GROUND, mat, canvasTex, fuse } from './world.js';
-import { CORRIDOR, Z0, getPlan } from './snelweg.js';
+import { CORRIDOR, Z0, countryWater, getPlan } from './snelweg.js';
 
 const { PI, sin, cos, min, max, abs, floor } = Math;
 const rnd = (seed) => { let s = seed >>> 0; return () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296); };
@@ -18,10 +18,21 @@ export function buildPolder(scene, { rect = [-1090, -730, 860, 760] } = {}) {
   const group = new THREE.Group(); scene.add(group);
 
   // ---- the patchwork: bands running east-west, each cut into parcels ----
-  const land = { p: [], c: [], u: [] }, wet = { p: [], c: [], u: [] }, bulbs = { p: [], c: [], u: [] }, K = new THREE.Color(), cells = [];
+  const land = new Map(), wet = new Map(), bulbs = new Map(), K = new THREE.Color(), cells = [];
   const quad = (o, x0, z0, x1, z1, col, uv) => {
-    o.p.push(x0, GROUND, z0, x0, GROUND, z1, x1, GROUND, z1, x0, GROUND, z0, x1, GROUND, z1, x1, GROUND, z0); K.set(col); for (let i = 0; i < 6; i++) o.c.push(K.r, K.g, K.b);
-    const q = uv(x0, z0), r = uv(x0, z1), s = uv(x1, z1), t = uv(x1, z0); o.u.push(...q, ...r, ...s, ...q, ...s, ...t);
+    const nx = Math.max(1, Math.ceil((x1 - x0) / 120)), nz = Math.max(1, Math.ceil((z1 - z0) / 120));
+    K.set(col);
+    for (let row = 0; row < nz; row++) for (let column = 0; column < nx; column++) {
+      const a = x0 + (x1 - x0) * column / nx, b = x0 + (x1 - x0) * (column + 1) / nx;
+      const l = z0 + (z1 - z0) * row / nz, r = z0 + (z1 - z0) * (row + 1) / nz;
+      const tile = floor((a + b) / 4400) + ',' + floor((l + r) / 4400);
+      if (!o.has(tile)) o.set(tile, { p: [], c: [], u: [] });
+      const out = o.get(tile);
+      for (const [x, z] of [[a, l], [a, r], [b, r], [a, l], [b, r], [b, l]]) {
+        out.p.push(x, GROUND, z); out.c.push(K.r, K.g, K.b);
+        if (o === wet) out.u.push(x / 12, z / 12); else out.u.push(...uv(x, z));
+      }
+    }
   };
   const greens = ['#7cc152', '#6db247', '#8acb5a', '#62a640', '#93cf66', '#74b84e', '#58a23f'];
   const fixedZ = [RZ0, RZ1, CORRIDOR.z0, CORRIDOR.z1, EXT];
@@ -51,13 +62,17 @@ export function buildPolder(scene, { rect = [-1090, -730, 860, 760] } = {}) {
     }
   }
   quad(land, SEA, -EXT, DUNE, EXT, '#ecdcab', (px, pz) => [px / 64, pz / 64]); quad(wet, -EXT, -EXT, SEA, EXT, '#3f7fc4', () => [0, 0]);
-  const fieldTex = canvasTex(256, 256, (g, w, h) => { g.fillStyle = '#f6f6f2'; g.fillRect(0, 0, w, h); const r = rnd(5); for (let y = 0; y < h; y += 16) { g.fillStyle = `rgba(0,40,0,${(y / 16) % 2 ? 0.07 : 0.02})`; g.fillRect(0, y, w, 16); g.fillStyle = 'rgba(0,30,0,.1)'; g.fillRect(0, y, w, 1.5); } for (let i = 0; i < 2600; i++) { g.fillStyle = r() < 0.5 ? `rgba(0,50,0,${0.03 + r() * 0.08})` : `rgba(255,255,210,${0.04 + r() * 0.1})`; g.fillRect(r() * w, r() * h, 2 + r() * 4, 1 + r() * 3); } });
+  const fieldTex = canvasTex(256, 256, (g, w, h) => { g.fillStyle = '#f6f6f2'; g.fillRect(0, 0, w, h); const r = rnd(5); for (let y = 0; y < h; y += 16) { g.fillStyle = `rgba(0,40,0,${(y / 16) % 2 ? 0.07 : 0.02})`; g.fillRect(0, y, w, 16); g.fillStyle = 'rgba(0,30,0,.1)'; g.fillRect(0, y, w, 1.5); g.fillStyle = 'rgba(255,250,208,.16)'; g.fillRect(0, y + 2, w, 1.7); } for (let i = 0; i < 2600; i++) { g.fillStyle = r() < 0.5 ? `rgba(0,50,0,${0.03 + r() * 0.08})` : `rgba(255,255,210,${0.04 + r() * 0.1})`; g.fillRect(r() * w, r() * h, 2 + r() * 4, 1 + r() * 3); } });
   const tulipTex = canvasTex(256, 64, (g, w, h) => { g.fillStyle = '#3f8f3a'; g.fillRect(0, 0, w, h); const r = rnd(8), cols = ['#e8222e', '#ffd21f', '#ff6fae', '#8d3fc4', '#fbfbf2', '#ff8a1e'], bw = w / cols.length;
-    cols.forEach((c, i) => { g.fillStyle = c; g.fillRect(i * bw + 3, 0, bw - 6, h); for (let x = 5; x < bw - 6; x += 5) { g.fillStyle = 'rgba(0,60,0,.22)'; g.fillRect(i * bw + 3 + x, 0, 1.2, h); } }); for (let i = 0; i < 500; i++) { g.fillStyle = r() < 0.5 ? 'rgba(255,255,255,.12)' : 'rgba(0,70,0,.14)'; g.fillRect(r() * w, r() * h, 2, 2 + r() * 3); } });
-  const flat = (o, material, order) => { const g = new THREE.BufferGeometry(), n = new Float32Array(o.p.length); for (let i = 1; i < n.length; i += 3) n[i] = 1;
+    cols.forEach((c, i) => { g.fillStyle = c; g.fillRect(i * bw + 3, 0, bw - 6, h); for (let x = 5; x < bw - 6; x += 5) { g.fillStyle = 'rgba(0,60,0,.22)'; g.fillRect(i * bw + 3 + x, 0, 1.2, h);
+        for (let y = (x % 3) * 3; y < h; y += 9) {
+          g.fillStyle = 'rgba(255,247,204,.48)'; g.fillRect(i * bw + 1 + x, y, 2, 2.5);
+          g.fillStyle = 'rgba(35,65,23,.32)'; g.fillRect(i * bw + 3 + x, y + 2, 1.5, 2.8);
+        } } }); for (let i = 0; i < 500; i++) { g.fillStyle = r() < 0.5 ? 'rgba(255,255,255,.12)' : 'rgba(0,70,0,.14)'; g.fillRect(r() * w, r() * h, 2, 2 + r() * 3); } });
+  const flat = (tiles, material) => { for (const o of tiles.values()) { const g = new THREE.BufferGeometry(), n = new Float32Array(o.p.length); for (let i = 1; i < n.length; i += 3) n[i] = 1;
     g.setAttribute('position', new THREE.Float32BufferAttribute(o.p, 3)); g.setAttribute('normal', new THREE.BufferAttribute(n, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(o.c, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(o.u, 2));
-    const m = new THREE.Mesh(g, material); m.receiveShadow = true; group.add(m); return m; };
-  flat(land, mat('#ffffff', { map: fieldTex, vertexColors: true, roughness: 0.95 })); flat(bulbs, mat('#ffffff', { map: tulipTex, roughness: 0.9 })); flat(wet, mat('#ffffff', { vertexColors: true, roughness: 0.25 }));
+    const m = new THREE.Mesh(g, material); m.receiveShadow = true; group.add(m); } };
+  flat(land, mat('#ffffff', { map: fieldTex, bumpMap: fieldTex, bumpScale: 0.15, vertexColors: true, roughness: 0.95 })); flat(bulbs, mat('#ffffff', { map: tulipTex, bumpMap: tulipTex, bumpScale: 0.12, roughness: 0.87 })); flat(wet, countryWater());
 
   // ---- the dunes along the coast: one lumpy ridge, its feet below the ground so the join is a clean line ----
   { const nx = 8, nz = 132, g = new THREE.PlaneGeometry(1, 1, nx, nz).rotateX(-PI / 2), P = g.attributes.position;
@@ -73,6 +88,16 @@ export function buildPolder(scene, { rect = [-1090, -730, 860, 760] } = {}) {
     const im = new THREE.InstancedMesh(geo, tinted, list.length);
     list.forEach((o, i) => { im.setMatrixAt(i, M.compose(V.set(o.x, o.y ?? GROUND, o.z), Q.setFromEuler(E.set(0, -(o.a || 0), 0)), S.set(o.sx ?? o.s ?? 1, o.sy ?? o.s ?? 1, o.sz ?? o.sx ?? o.s ?? 1))); if (o.c) im.setColorAt(i, K.set(o.c)); });
     group.add(im); return im;
+  };
+  // Keep distant herds and tree belts outside the camera frustum out of the draw entirely.
+  const regional = (geo, list, width = 2100) => {
+    const cells = new Map();
+    for (const o of list) {
+      const id = floor(o.x / width) + ',' + floor(o.z / width);
+      if (!cells.has(id)) cells.set(id, []);
+      cells.get(id).push(o);
+    }
+    for (const batch of cells.values()) inst(geo, batch);
   };
   const free = (x, z, m = 8) => !(x > RX0 - m && x < RX1 + m && z > RZ0 - m && z < RZ1 + m) && !(z > CORRIDOR.z0 - m && z < CORRIDOR.z1 + m) && x > DUNE + 30 && abs(x) < EXT - 50 && abs(z) < EXT - 50
     && roads.every(([rx, a, b]) => abs(x - rx) > m + 4 || z < a - m || z > b + m) && !(abs(x - XV) < 26 && abs(z - Z0) < 260);
@@ -103,15 +128,50 @@ export function buildPolder(scene, { rect = [-1090, -730, 860, 760] } = {}) {
     for (let i = 0; i < n; i++) { const x = cx + (R() - 0.5) * 34, z = cz + (R() - 0.5) * 40; if (x > c.x0 + 4 && x < c.x1 - 4 && z > c.z0 + 4 && z < c.z1 - 4 && free(x, z, 5)) cows.push({ x, z, a: R() * 6.3, s: 1.25 + R() * 0.2 }); } }
   for (const c of pick((c) => grassy(c) && c.near, 16, 9)) { const cx = (c.x0 + c.x1) / 2, cz = (c.z0 + c.z1) / 2; for (let i = 0; i < 9; i++) { const x = cx + (R() - 0.5) * (c.x1 - c.x0 - 12), z = cz + (R() - 0.5) * min(60, c.z1 - c.z0 - 12); if (free(x, z, 5)) sheep.push({ x, z, a: R() * 6.3, s: 1.2 + R() * 0.3 }); } }
 
-  const treeGeo = fuse([new THREE.CylinderGeometry(0.13, 0.18, 1.1, 4, 1, true), '#7a5a3c', 0, 0.55, 0], [new THREE.IcosahedronGeometry(1, 0), '#ffffff', 0, 2, 0]);
-  inst(treeGeo, trees);
+  // A five-sided crown with staggered rings gives both the low orchard trees and stretched poplars a stepped canopy.
+  const rings = [[0, 1.05], [0.7, 1.26], [0.98, 1.82], [0.79, 2.38], [0, 3.0]];
+  const hull = new THREE.LatheGeometry(rings.map(([r, y]) => new THREE.Vector2(r, y)), 5);
+  // The ends of a lathe collapse to a point: omit their zero-area triangles across all 3,000 instances.
+  const ix = hull.index.array, faces = [];
+  for (let i = 0; i < ix.length; i += 3) {
+    const ids = [ix[i], ix[i + 1], ix[i + 2]], tips = ids.filter(j => rings[j % rings.length][0] === 0);
+    if (tips.length < 2) faces.push(...ids);
+  }
+  hull.setIndex(faces); const crown = hull.toNonIndexed();
+  const cp = crown.attributes.position;
+  for (let i = 0; i < cp.count; i++) {
+    const x = cp.getX(i), y = cp.getY(i), z = cp.getZ(i), twist = y > 2.2 ? 0.47 : y < 1.5 ? -0.32 : 0;
+    cp.setXYZ(i, x * cos(twist) - z * sin(twist), y, x * sin(twist) + z * cos(twist));
+  }
+  crown.computeVertexNormals();
+  const treeGeo = fuse([new THREE.CylinderGeometry(0.13, 0.18, 1.1, 4, 1, true), '#7a5a3c', 0, 0.55, 0], [crown, '#ffffff']);
+  const tp = treeGeo.attributes.position, tc = treeGeo.attributes.color;
+  for (let i = 0; i < tc.count; i++) if (tc.getX(i) === 1) {
+    const light = (tp.getY(i) - 1) * 0.12;
+    tc.setXYZ(i, 0.68 + light, 0.73 + light, 0.59 + light);
+  }
+  regional(treeGeo, trees, 850);
   const leg = (x, z, h, c) => [Box(0.2, h, 0.2), c, x, h / 2, z];
-  inst(fuse([Box(2.0, 1.0, 0.84), '#fbfaf2', 0, 1.25, 0], [Box(0.7, 0.75, 0.9), '#22232a', -0.35, 1.32, 0], [Box(0.5, 0.5, 0.9), '#22232a', 0.5, 1.2, 0], [Box(0.6, 0.55, 0.5), '#22232a', 1.25, 1.5, 0], [Box(0.22, 0.26, 0.4), '#f3a6a0', 1.6, 1.36, 0],
+  regional(fuse([Box(2.0, 1.0, 0.84), '#fbfaf2', 0, 1.25, 0], [Box(0.7, 0.75, 0.9), '#22232a', -0.35, 1.32, 0], [Box(0.5, 0.5, 0.9), '#22232a', 0.5, 1.2, 0], [Box(0.6, 0.55, 0.5), '#22232a', 1.25, 1.5, 0], [Box(0.22, 0.26, 0.4), '#f3a6a0', 1.6, 1.36, 0],
     leg(0.78, 0.26, 0.8, '#fbfaf2'), leg(0.78, -0.26, 0.8, '#fbfaf2'), leg(-0.78, 0.26, 0.8, '#fbfaf2'), leg(-0.78, -0.26, 0.8, '#22232a')), cows);
-  inst(fuse([Box(1.15, 0.72, 0.74), '#f4efe0', 0, 0.78, 0], [Box(0.34, 0.32, 0.34), '#3a3530', 0.72, 0.95, 0], leg(0.4, 0.2, 0.45, '#3a3530'), leg(0.4, -0.2, 0.45, '#3a3530'), leg(-0.4, 0.2, 0.45, '#3a3530'), leg(-0.4, -0.2, 0.45, '#3a3530')), sheep);
+  regional(fuse([Box(1.15, 0.72, 0.74), '#f4efe0', 0, 0.78, 0], [Box(0.34, 0.32, 0.34), '#3a3530', 0.72, 0.95, 0], leg(0.4, 0.2, 0.45, '#3a3530'), leg(0.4, -0.2, 0.45, '#3a3530'), leg(-0.4, 0.2, 0.45, '#3a3530'), leg(-0.4, -0.2, 0.45, '#3a3530')), sheep);
   // the stolp: a square farm under one big pyramid roof
-  inst(fuse([Box(15, 3.6, 15), '#f3ead8', 0, 1.8, 0], [new THREE.ConeGeometry(11.6, 8.5, 4).rotateY(PI / 4), '#b5532e', 0, 7.85, 0], [Box(0.12, 3.0, 3.4), '#2f7f4a', 7.53, 1.5, 0], [Box(0.12, 1.2, 1.0), '#fbfbf6', 7.53, 2.0, 4.6], [Box(0.12, 1.2, 1.0), '#fbfbf6', 7.53, 2.0, -4.6],
-    [Box(1.0, 1.2, 0.12), '#fbfbf6', -3.5, 2.0, 7.53], [Box(1.0, 1.2, 0.12), '#fbfbf6', 3.5, 2.0, 7.53], [Box(1.0, 2.2, 0.12), '#2f7f4a', 0, 1.1, 7.53], [Box(0.9, 1.6, 0.9), '#8a4a34', 2.4, 9.3, 0], [Box(9, 3.2, 5), '#3d342c', -3, 1.6, -11], [gable(9.6, 2.6, 5.4).rotateY(PI / 2), '#b5532e', -3, 3.2, -11]), farms);
+  const farm = [
+    [Box(15, 3.6, 15), '#f3ead8', 0, 1.8, 0], [new THREE.ConeGeometry(11.6, 8.5, 4).rotateY(PI / 4), '#b5532e', 0, 7.85, 0],
+    [Box(0.12, 3, 3.4), '#2f7f4a', 7.53, 1.5, 0], [Box(0.9, 1.6, 0.9), '#8a4a34', 2.4, 9.3, 0],
+    [Box(0.99, 0.25, 0.99), '#744635', 2.4, 10.13, 0], [Box(9, 3.2, 5), '#3d342c', -3, 1.6, -11],
+    [gable(5.4, 2.6, 9.6).rotateY(PI / 2), '#b5532e', -3, 3.2, -11],
+    [Box(15.5, 0.22, 15.5), '#eadbbf', 0, 3.51, 0], [Box(1.3, 2.3, 0.15), '#285e47', 0, 1.15, 7.54]
+  ];
+  for (const sign of [-1, 1]) for (const offset of [-4.6, 4.6]) {
+    const z = sign * 7.54;
+    farm.push([Box(1.42, 1.54, 0.16), '#fbfaf2', offset, 2, z], [Box(1.14, 1.22, 0.11), '#587782', offset, 2, z + sign * 0.09],
+      [Box(1.55, 0.16, 0.28), '#c4b6a2', offset, 1.18, z], [Box(0.12, 1.42, 0.05), '#e9e6cd', offset, 2, z + sign * 0.15]);
+    for (const dx of [-1, 1]) farm.push([Box(0.39, 1.5, 0.1), '#38724f', offset + dx * 0.93, 2, z]);
+  }
+  for (const z of [-4.6, 4.6]) farm.push([Box(0.16, 1.42, 1.25), '#fbfaf2', 7.55, 2, z], [Box(0.08, 1.13, 0.94), '#577783', 7.63, 2, z]);
+  for (const z of [-0.7, 0.7]) farm.push([Box(0.07, 0.12, 1.25), '#8eac85', 7.6, 2.2, z]);
+  inst(fuse(...farm), farms);
   // glasshouses, in two clusters
   { const list = []; for (const c of cells) { if (c.kind === 'road' || c.kind === 'tulip' || !c.near) continue; const cx = (c.x0 + c.x1) / 2, cz = (c.z0 + c.z1) / 2; if (!((cx > 1250 && cx < 2100 && cz > 950 && cz < 1650) || (cx > -2500 && cx < -1750 && cz > 2350 && cz < 2950))) continue;
       for (let x = c.x0 + 20; x + 16 < c.x1; x += 34) for (let z = c.z0 + 36; z + 34 < c.z1; z += 66) if (free(x, z, 30) && !farms.some((f) => abs(f.x - x) < 40 && abs(f.z - z) < 50)) list.push({ x, z }); }

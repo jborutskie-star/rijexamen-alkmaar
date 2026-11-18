@@ -325,6 +325,22 @@ let cached; export const getPlan = () => (cached ||= makePlan());
 
 // ================================================================ the meshes ================================================================
 const box = (l, h, w) => new THREE.BoxGeometry(l, h, w), cyl = (a, b, h, s = 10) => new THREE.CylinderGeometry(a, b, h, s);
+// Ditches, drainage channels and the sea all use the same tiny repeating wave field.
+let waterMaterial;
+export function countryWater() {
+  if (waterMaterial) return waterMaterial;
+  const size = 64, data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const u = x / size * 2 * PI, v = y / size * 2 * PI, i = (y * size + x) * 4;
+    const nx = 0.17 * cos(2 * u + 3 * v) + 0.09 * cos(3 * u - v);
+    const ny = 0.28 * cos(2 * u + 3 * v) - 0.04 * cos(3 * u - v) + 0.19 * cos(5 * v + sin(u));
+    const len = hypot(nx, ny, 1); data.set([128 + nx / len * 127, 128 + ny / len * 127, 128 + 127 / len, 255], i);
+  }
+  const ripple = new THREE.DataTexture(data, size, size); ripple.wrapS = ripple.wrapT = THREE.RepeatWrapping;
+  ripple.magFilter = THREE.LinearFilter; ripple.minFilter = THREE.LinearMipmapLinearFilter; ripple.generateMipmaps = true; ripple.needsUpdate = true;
+  waterMaterial = mat('#ffffff', { vertexColors: true, normalMap: ripple, normalScale: new THREE.Vector2(0.54, 0.54), roughness: 0.26, metalness: 0.12 });
+  return waterMaterial;
+}
 // a box rounded off in side view (length along x, standing on y = 0, width along z): everything on the road is a toy
 function rb(len, h, wid, r = 0.25, b = 0.06) {
   const w = len / 2 - b, t = h - 2 * b; r = min(r, w, t / 2);
@@ -342,7 +358,7 @@ function kit(uv) {
     return k;
   };
   const k = {
-    part: (g, color, x = 0, y = 0, z = 0) => add(g, color, x, y, z),
+    part: (g, color, x = 0, y = 0, z = 0, tile) => add(g, color, x, y, z, uv[tile]),
     decal: (name, w, h, x, y, z, face = 'z+') => add(TURN[face](new THREE.PlaneGeometry(w, h)), '#ffffff', x, y, z, uv[name]),
     both: (name, w, h, x, y, z) => k.decal(name, w, h, x, y, z, 'z+').decal(name, w, h, x, y, -z, 'z-'), // the same panel on both flanks
     geo: () => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(n, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(c, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(t, 2)); return g; },
@@ -379,9 +395,39 @@ function makeAtlas() {
   put('kaasrek', 128, 128, (g) => { g.fillStyle = '#2b1d12'; g.fillRect(0, 0, 128, 128); for (const y of [31, 63, 95, 127]) { g.fillStyle = '#7a5530'; g.fillRect(0, y - 3, 128, 4); for (const x of [10, 68]) for (const d of [16, 30]) { g.fillStyle = '#e39a1c'; rr(g, x, y - 3 - d + 2, 50, 13, 6); g.fill(); g.fillStyle = '#ffd84a'; g.fillRect(x + 5, y - 3 - d + 3, 40, 3); } } }); // the inside of the cheese trailer: shelves of Gouda
   put('afstand', 256, 128, (g, w, h) => { panel(g, w, h); text(g, 'Alkmaar', 24, 42, 34, '#fff'); text(g, '3', 232, 42, 34, '#fff', 'right'); text(g, 'Den Helder', 24, 90, 34, '#fff'); text(g, '38', 232, 90, 34, '#fff', 'right'); });
   put('succes', 256, 64, (g, w, h) => { g.fillStyle = '#fbf7ea'; g.fillRect(0, 0, w, h); g.strokeStyle = '#e6dfc8'; g.lineWidth = 2; for (const x of [64, 128, 192]) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x + 3, 64); g.stroke(); } g.save(); g.translate(128, 34); g.rotate(-0.03); text(g, 'SUCCES!', 0, 0, 50, '#d81e28', 'center'); g.restore(); });
+  // Printed enamel and glass share the existing sign atlas, including the ordinary traffic instances.
+  const glazing = (g, w, h, panes) => {
+    const sky = g.createLinearGradient(0, 0, 0, h);
+    for (const [a, c] of [[0, '#7793a3'], [0.36, '#536b7a'], [0.64, '#334550'], [0.68, '#283b49'], [1, '#334754']]) sky.addColorStop(a, c);
+    g.fillStyle = '#24333d'; g.fillRect(0, 0, w, h); g.fillStyle = sky; g.fillRect(2, 2, w - 4, h - 4);
+    g.strokeStyle = '#8ca4ad'; g.lineWidth = 2;
+    for (let i = 0; i < panes; i++) {
+      const x = i * w / panes;
+      if (i) { g.fillStyle = '#25343b'; g.fillRect(x - 2, 0, 4, h); }
+      g.beginPath(); g.moveTo(x + 5, 6); g.lineTo(x + w / panes * 0.76, 6); g.stroke();
+    }
+  };
+  put('glass', 96, 48, (g, w, h) => glazing(g, w, h, 1));
+  put('coachGlass', 256, 48, (g, w, h) => glazing(g, w, h, 7));
+  put('grille', 96, 48, (g, w, h) => {
+    g.fillStyle = '#6b787e'; g.fillRect(0, 0, w, h); g.fillStyle = '#24333d'; g.fillRect(3, 3, w - 6, h - 6);
+    g.fillStyle = '#a1b0b6'; for (let y = 8; y < h - 5; y += 8) g.fillRect(8, y, w - 16, 2);
+  });
+  put('hub', 64, 64, (g) => {
+    g.translate(32, 32);
+    const ring = (r, c) => { g.fillStyle = c; g.beginPath(); g.arc(0, 0, r, 0, PI * 2); g.fill(); };
+    ring(47, '#8c9699'); ring(28, '#d8dedc'); ring(24, '#555e63');
+    for (let i = 0; i < 6; i++) { g.rotate(PI / 3); g.fillStyle = '#c9d0d0'; g.fillRect(-4, -25, 7, 24); }
+    ring(10, '#afb9ba'); ring(5, '#71797c');
+  });
   const tex = canvasTex(W, W, (g) => {
     g.fillStyle = '#fff'; g.fillRect(0, 0, W, W); let x = 0, y = 0, row = 0;
-    for (const [name, w, h, draw] of jobs) { if (x + w > W) { x = 0; y += row + 6; row = 0; } g.save(); g.translate(x, y); g.beginPath(); g.rect(0, 0, w, h); g.clip(); draw(g, w, h); g.restore(); uv[name] = [(x + 0.5) / W, 1 - (y + h - 0.5) / W, (x + w - 0.5) / W, 1 - (y + 0.5) / W]; x += w + 6; row = max(row, h); }
+    for (const [name, w, h, draw] of jobs) { if (x + w > W) { x = 0; y += row + 6; row = 0; } g.save(); g.translate(x, y); g.beginPath(); g.rect(0, 0, w, h); g.clip(); draw(g, w, h);
+      if (['kaas', 'tulp', 'transport'].includes(name)) {
+        for (let u = 7; u < w; u += 16) { g.fillStyle = 'rgba(70,45,30,.1)'; g.fillRect(u, 0, 1.5, h); g.fillStyle = 'rgba(255,255,245,.24)'; g.fillRect(u + 2, 0, 1, h); }
+        g.fillStyle = 'rgba(54,57,53,.4)'; for (let u = 8; u < w; u += 32) { g.fillRect(u, 4, 2, 2); g.fillRect(u, h - 6, 2, 2); }
+      }
+      g.restore(); uv[name] = [(x + 0.5) / W, 1 - (y + h - 0.5) / W, (x + w - 0.5) / W, 1 - (y + 0.5) / W]; x += w + 6; row = max(row, h); }
   }, false);
   uv.white = [(uv.white[0] + uv.white[2]) / 2, (uv.white[1] + uv.white[3]) / 2];
   return { tex, uv };
@@ -392,8 +438,17 @@ class Flat {
   constructor() { this.p = []; this.u = []; this.c = []; this.k = new THREE.Color(); }
   quad(x0, x1, a0, b0, a1, b1, col = '#ffffff', uv) {
     if (b0 - a0 < 1e-4 && b1 - a1 < 1e-4) return;
-    const v = [[x0, a0], [x0, b0], [x1, b1], [x1, a1]], k = this.k.set(col);
-    for (const i of [0, 1, 2, 0, 2, 3]) { this.p.push(v[i][0], GROUND, Z0 + v[i][1]); this.c.push(k.r, k.g, k.b); if (uv) this.u.push(uv[i][0], uv[i][1]); else this.u.push(v[i][0] / 9, v[i][1] / 9); }
+    const count = Math.max(1, Math.ceil((x1 - x0) / 85)), k = this.k.set(col);
+    // Split long straights without changing their painted lane markings or shoulder edges.
+    for (let n = 0; n < count; n++) {
+      const points = [[n / count, 0], [n / count, 1], [(n + 1) / count, 1], [(n + 1) / count, 0]];
+      for (const i of [0, 1, 2, 0, 2, 3]) {
+        const [v, upper] = points[i], x = lerp(x0, x1, v), z = upper ? lerp(b0, b1, v) : lerp(a0, a1, v);
+        this.p.push(x, GROUND, Z0 + z); this.c.push(k.r, k.g, k.b);
+        if (uv) { const a = uv[upper ? 1 : 0], b = uv[upper ? 2 : 3]; this.u.push(lerp(a[0], b[0], v), lerp(a[1], b[1], v)); }
+        else this.u.push(x / 9, z / 9);
+      }
+    }
   }
   mesh(material) {
     const g = new THREE.BufferGeometry(), n = new Float32Array(this.p.length); for (let i = 1; i < n.length; i += 3) n[i] = 1;
@@ -443,14 +498,20 @@ export function buildSnelweg(scene) {
     verge.quad(a, b, N, -EDGE, N, -EDGE, greens[1]); verge.quad(a, b, -1.5, 1.5, -1.5, 1.5, '#8a9a6a'); }
   const grass = canvasTex(128, 128, (g, w, h) => { g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); const r = rnd(4); for (let i = 0; i < 900; i++) { g.fillStyle = r() < 0.5 ? `rgba(20,70,10,${0.05 + r() * 0.12})` : `rgba(255,255,200,${0.05 + r() * 0.1})`; g.fillRect(r() * w, r() * h, 2 + r() * 3, 2 + r() * 5); } });
   const rampTex = canvasTex(64, 128, (g, w, h) => { g.fillStyle = '#474a51'; g.fillRect(0, 0, w, h); grain(g, w, h, 700, 9); g.fillStyle = '#f4f3ea'; g.fillRect(0, 7, w, 4); g.fillRect(0, h - 11, w, 4); });
-  [[roadA, asphalt(EDGE - 1.5, false)], [roadB, asphalt(WIDE - 1.5, true)], [roadC, rampTex], [verge, grass]].forEach(([f, map], i) => still.add(f.mesh(mat('#ffffff', { map, roughness: 0.92, vertexColors: i === 3 }))));
+  [[roadA, asphalt(EDGE - 1.5, false)], [roadB, asphalt(WIDE - 1.5, true)], [roadC, rampTex], [verge, grass]].forEach(([f, map], i) => still.add(f.mesh(mat('#ffffff', { map, bumpMap: map, bumpScale: 0.023, roughness: 0.89, vertexColors: i === 3 }))));
 
   // ---- everything that stands still ----
   const solid = kit(uv), light = kit(uv), steel = '#aeb6bd', concrete = '#c9c5bb';
   for (const g of Y.gantries) {
     const zc = Z0 + (g.z0 + g.z1) / 2, span = g.z1 - g.z0;
     for (const z of [g.z0, g.z1]) solid.part(box(0.5, 5.4, 0.5), steel, g.x, 2.7, Z0 + z);
-    solid.part(box(0.8, 1.0, span + 1.2), steel, g.x, 5.7, zc).part(box(0.86, 0.12, span + 0.4), '#7f8890', g.x, 5.7, zc);
+    for (const y of [5.29, 6.11]) solid.part(box(0.8, 0.18, span + 1.2), steel, g.x, y, zc);
+    const bays = Math.ceil(span / 1.8), step = span / bays;
+    for (let n = 0; n < bays; n++) for (const side of [-1, 1]) {
+      const brace = box(0.11, 0.11, hypot(step, 0.82)).rotateX((n % 2 ? -1 : 1) * atan2(0.82, step));
+      solid.part(brace, '#84939b', g.x + side * 0.32, 5.7, Z0 + g.z0 + (n + 0.5) * step);
+    }
+    for (const z of [g.z0, g.z1]) solid.part(box(0.58, 0.28, 0.58), '#74818b', g.x, 0.14, Z0 + z);
     g.signs.forEach((name, i) => { const z = Z0 + (i ? 14.2 : 5.6); for (const o of [-2.6, 2.6]) solid.part(box(0.2, 3.3, 0.2), steel, g.x - 0.3, 7.8, z + o); solid.part(box(0.16, 3.0, 7.8), '#0f3f8c', g.x - 0.5, 7.9, z).decal(name.replace('2', ''), 7.8, 3.0, g.x - 0.62, 7.9, z, 'x-'); });
     for (const l of [L1, L2, L3, SH]) solid.part(box(0.25, 1.0, 1.0), '#16171a', g.x - 0.52, 5.7, Z0 + l).decal('matrix', 0.9, 0.9, g.x - 0.685, 5.7, Z0 + l, 'x-');
   }
@@ -492,41 +553,51 @@ export function buildSnelweg(scene) {
     for (const [[a, b], z] of Y.ditches) { water.part(new THREE.PlaneGeometry(b - a, 2, Math.ceil((b - a) / 40)).rotateX(-PI / 2), '#4f8aa3', (a + b) / 2, GROUND + 0.04, Z0 + z);
       for (let x = a; x < b; x += 2.2 + r() * 2.5) if (!nearFarm(x) && r() < 0.8) reeds.push([x, GROUND, Z0 + z + (r() < 0.5 ? -1.2 : 1.2) + (r() - 0.5) * 0.4, r() * 6, 0.8 + r() * 0.5, 0.8 + r() * 0.6, 0.8 + r() * 0.5]); }
     for (const [a, b, z] of Y.rows) for (let x = a; x < b; x += 11) if (!nearFarm(x)) trees.push([x + (r() - 0.5) * 2, GROUND, Z0 + z + (r() - 0.5) * 1.5, r() * 6, 0.9 + r() * 0.25, 0.85 + r() * 0.35, 0.9 + r() * 0.25]);
-    still.add(new THREE.Mesh(water.geo(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.2 }))); // lifted 4 cm, no polygon offset: seen edge-on, a sloped offset pulled the ditches in front of everything
+    const ditch = water.geo(), pos = ditch.attributes.position;
+    for (let i = 0; i < pos.count; i++) ditch.attributes.uv.setXY(i, pos.getX(i) / 12, pos.getZ(i) / 12);
+    still.add(new THREE.Mesh(ditch, countryWater())); // lifted 4 cm, no polygon offset: seen edge-on, a sloped offset pulled the ditches in front of everything
     const reed = kit(uv); [[0, 0, 1.9, 0.12, '#9bab55'], [0.12, 0.08, 1.6, -0.15, '#b3b86a'], [-0.1, 0.1, 1.75, 0.2, '#8a9a48'], [0.05, -0.12, 1.45, -0.1, '#a5b45c'], [-0.08, -0.06, 1.3, 0.25, '#b3b86a']].forEach(([x, z, h, lean, c]) => reed.part(new THREE.ConeGeometry(0.045, h, 3).translate(0, h / 2, 0).rotateZ(lean), c, x, 0, z));
     reed.part(cyl(0.045, 0.045, 0.26, 5), '#6b4a2a', -0.02, 1.7, 0).part(cyl(0.04, 0.04, 0.22, 5), '#6b4a2a', 0.27, 1.55, 0.08); // two bulrush heads
     many(reed.geo(), paint, reeds, false);
     const poplar = kit(uv).part(cyl(0.12, 0.18, 2.6, 5), '#6b4f35', 0, 1.3, 0).part(new THREE.IcosahedronGeometry(1, 0).scale(1.35, 3.4, 1.35), '#3f7f3a', 0, 5.4, 0);
+    for (const [x, z, h, c] of [[-0.46, 0.23, 4.52, '#528d40'], [0.44, -0.17, 5.85, '#61984a']])
+      poplar.part(new THREE.IcosahedronGeometry(1, 0).scale(0.78, 1.95, 0.8), c, x, h, z);
     const pm = many(poplar.geo(), paint, trees, true), k = new THREE.Color(); trees.forEach((t, i) => pm.setColorAt(i, k.set(['#ffffff', '#e2f2d6', '#f2ffe8', '#d6ead0'][i % 4])));
     const farm = kit(uv), brick = '#b5523b', trim = '#f2efe6', slate = '#4a4f57';
     for (const [x, z, bx, bz] of Y.farms) { const zc = Z0 + z, gable = new THREE.Shape([new THREE.Vector2(-3.2, 0), new THREE.Vector2(3.2, 0), new THREE.Vector2(0, 2.4)]);
       farm.part(box(11, 4, 11), brick, x, 2, zc).part(box(11.3, 0.3, 11.3), trim, x, 4.1, zc).part(new THREE.ConeGeometry(8.6, 8.4, 4, 1).rotateY(PI / 4), slate, x, 8.45, zc).part(box(0.8, 1.6, 0.8), brick, x + 2, 11.5, zc + 1.5); // the stolp: square walls, a pyramid roof
       for (const s of [-1, 1]) farm.part(box(11.06, 1.1, 1.0), trim, x, 2.4, zc + s * 2.6).part(box(11.08, 0.8, 0.7), '#2b3a4a', x, 2.4, zc + s * 2.6); // windows all round
+      for (const side of [-1, 1]) for (const dx of [-3.4, 0, 3.4]) {
+        const z = zc + side * 5.5;
+        farm.part(box(1.28, 1.44, 0.14), trim, x + dx, 2.12, z);
+        farm.part(box(0.99, 1.16, 0.1), '#6792a1', x + dx, 2.12, z + side * 0.08);
+        farm.part(box(1.38, 0.13, 0.28), '#d6cec0', x + dx, 1.34, z);
+      }
       farm.part(box(0.2, 2.1, 1.3), '#2f6b45', x - 5.55, 1.05, zc).part(box(10, 4.4, 6), '#8a3a2a', x + bx, 2.2, zc + bz).part(new THREE.ExtrudeGeometry(gable, { depth: 10.4, bevelEnabled: false }).translate(0, 0, -5.2).rotateY(PI / 2), slate, x + bx, 4.4, zc + bz).part(box(0.2, 3, 2.6), trim, x + bx + (bx > 0 ? 5.05 : -5.05), 1.5, zc + bz); }
     const s = Y.sign, sz = Z0 + s.z; farm.part(box(0.12, 3.4, 0.12), steel, s.x, 1.7, sz - 0.8).part(box(0.12, 3.4, 0.12), steel, s.x, 1.7, sz + 0.8).part(box(0.1, 1.3, 2.6), '#9aa3ad', s.x - 0.02, 2.65, sz).decal('afstand', 2.6, 1.3, s.x - 0.08, 2.65, sz, 'x-');
     const fm = new THREE.Mesh(farm.geo(), paint); fm.castShadow = fm.receiveShadow = true; still.add(fm); }
 
   // ---- the vehicles: each kind is one geometry ----
-  const glass = '#22303f', tyre = '#1b1c20', dark = '#2c3038';
+  const tyre = '#1b1c20', dark = '#2c3038';
   const truck = (cab, body, sign) => { const k = kit(uv);
-    k.part(box(16.2, 0.36, 2.2), dark, -0.1, 0.82, 0).part(rb(2.5, 2.95, 2.5, 0.4), cab, 7.0, 0.6, 0).part(box(0.06, 1.0, 2.1), glass, 8.26, 2.55, 0).part(box(1.1, 0.8, 2.56), glass, 7.35, 2.6, 0).part(box(0.06, 0.7, 1.7), dark, 8.26, 1.4, 0).part(box(0.34, 0.36, 2.54), '#d9dde0', 8.14, 0.62, 0);
+    k.part(box(16.2, 0.36, 2.2), dark, -0.1, 0.82, 0).part(rb(2.5, 2.95, 2.5, 0.4), cab, 7.0, 0.6, 0).part(box(0.06, 1.0, 2.1), '#ffffff', 8.26, 2.55, 0, 'glass').part(box(1.1, 0.8, 2.56), '#ffffff', 7.35, 2.6, 0, 'glass').part(box(0.06, 0.7, 1.7), '#ffffff', 8.26, 1.4, 0, 'grille').part(box(0.34, 0.36, 2.54), '#d9dde0', 8.14, 0.62, 0);
     for (const z of [-0.95, 0.95]) k.part(box(0.06, 0.2, 0.34), '#fff3b8', 8.27, 0.98, z).part(box(0.06, 0.24, 0.3), '#e02630', -8.23, 1.22, z);
     k.part(rb(13.7, 3.0, 2.56, 0.22), body, -1.35, 1.0, 0).part(box(13.0, 0.2, 2.4), dark, -1.35, 0.98, 0).both(sign, 11.2, sign === 'transport' ? 2.8 : 2.6, -1.35, 2.5, 1.31).decal(sign, 10, sign === 'transport' ? 2.4 : 2.3, -1.35, 4.03, 0, 'y+').decal('plate', 0.6, 0.15, -8.24, 0.8, 0, 'x-');
     if (sign === 'kaas') k.decal('kaasrek', 2.4, 2.5, -8.212, 2.65, 0, 'x-'); // behind her rear doors
     return k.geo(); };
-  const carParts = (k, x, body) => { k.part(rb(4.2, 0.85, 1.8, 0.28), body, x, 0.3, 0).part(rb(2.4, 0.6, 1.62, 0.26), body, x - 0.3, 0.9, 0).part(box(2.0, 0.34, 1.68), glass, x - 0.3, 1.2, 0).part(box(2.46, 0.3, 1.3), glass, x - 0.3, 1.2, 0);
+  const carParts = (k, x, body) => { k.part(rb(4.2, 0.85, 1.8, 0.28), body, x, 0.3, 0).part(rb(2.4, 0.6, 1.62, 0.26), body, x - 0.3, 0.9, 0).part(box(2.0, 0.34, 1.68), '#ffffff', x - 0.3, 1.2, 0, 'glass').part(box(2.46, 0.3, 1.3), '#ffffff', x - 0.3, 1.2, 0, 'glass');
     for (const z of [-0.6, 0.6]) k.part(box(0.06, 0.16, 0.34), '#fff3b8', x + 2.1, 0.78, z).part(box(0.06, 0.14, 0.34), '#e02630', x - 2.1, 0.8, z); return k.decal('plate', 0.52, 0.13, x - 2.115, 0.52, 0, 'x-'); };
   const bike = (k, x, c) => { const wheel = () => new THREE.TorusGeometry(0.33, 0.04, 5, 12).rotateY(PI / 2); k.part(wheel(), tyre, x, 1.45, -0.52).part(wheel(), tyre, x, 1.45, 0.52).part(box(0.05, 0.06, 1.0), c, x, 1.62, 0).part(box(0.05, 0.5, 0.06), c, x, 1.72, -0.18).part(box(0.05, 0.42, 0.06), c, x, 1.68, 0.4).part(box(0.1, 0.06, 0.26), tyre, x, 1.98, -0.18).part(box(0.4, 0.05, 0.05), tyre, x, 1.9, 0.4); };
   const GEO = {
     truck: truck('#f2f2ee', '#f6f6f2', 'transport'), kaas: truck('#d3202c', '#ffd43a', 'kaas'), tulp: truck('#2f9a4a', '#ff7fb2', 'tulp'),
     car: carParts(kit(uv), 0, '#f4f4f0').geo(),
-    caravan: (() => { const k = carParts(kit(uv), 3.7, '#f4f4f0'); k.part(box(1.5, 0.1, 0.12), dark, 0.9, 0.55, 0).part(rb(7.2, 2.3, 2.24, 0.55), '#fbf8ee', -2.1, 0.5, 0).part(box(6.3, 0.2, 2.3), '#ff7a1a', -2.1, 1.25, 0).part(box(6.3, 0.08, 2.3), '#19a0c9', -2.1, 1.05, 0).part(box(1.4, 0.6, 2.3), glass, -0.6, 1.95, 0).part(box(1.2, 0.6, 2.3), glass, -3.6, 1.95, 0).part(box(0.5, 0.08, 1.5), dark, -5.95, 1.05, 0).part(box(0.06, 0.9, 0.06), dark, -5.76, 1.5, -0.3).part(box(0.06, 0.9, 0.06), dark, -5.76, 1.5, 0.3); bike(k, -5.95, '#e02630'); bike(k, -6.25, '#19a0c9'); return k.decal('plate', 0.52, 0.13, -5.72, 0.75, 0.6, 'x-').geo(); })(),
-    bus: (() => { const k = kit(uv); k.part(rb(12.6, 3.15, 2.56, 0.55), '#fdfdf8', 0, 0.4, 0).part(box(11.0, 0.95, 2.62), glass, -0.2, 2.6, 0).part(box(0.06, 1.5, 2.2), glass, 6.3, 2.3, 0).part(box(11.6, 0.2, 2.62), '#19a0c9', 0, 0.75, 0).both('bus', 7.5, 1.44, -0.2, 1.48, 1.34).decal('plate', 0.6, 0.15, -6.33, 0.9, 0, 'x-');
+    caravan: (() => { const k = carParts(kit(uv), 3.7, '#f4f4f0'); k.part(box(1.5, 0.1, 0.12), dark, 0.9, 0.55, 0).part(rb(7.2, 2.3, 2.24, 0.55), '#fbf8ee', -2.1, 0.5, 0).part(box(6.3, 0.2, 2.3), '#ff7a1a', -2.1, 1.25, 0).part(box(6.3, 0.08, 2.3), '#19a0c9', -2.1, 1.05, 0).part(box(1.4, 0.6, 2.3), '#ffffff', -0.6, 1.95, 0, 'glass').part(box(1.2, 0.6, 2.3), '#ffffff', -3.6, 1.95, 0, 'glass').part(box(0.5, 0.08, 1.5), dark, -5.95, 1.05, 0).part(box(0.06, 0.9, 0.06), dark, -5.76, 1.5, -0.3).part(box(0.06, 0.9, 0.06), dark, -5.76, 1.5, 0.3); bike(k, -5.95, '#e02630'); bike(k, -6.25, '#19a0c9'); return k.decal('plate', 0.52, 0.13, -5.72, 0.75, 0.6, 'x-').geo(); })(),
+    bus: (() => { const k = kit(uv); k.part(rb(12.6, 3.15, 2.56, 0.55), '#fdfdf8', 0, 0.4, 0).part(box(11.0, 0.95, 2.62), '#ffffff', -0.2, 2.6, 0, 'coachGlass').part(box(0.06, 1.5, 2.2), '#ffffff', 6.3, 2.3, 0, 'glass').part(box(11.6, 0.2, 2.62), '#19a0c9', 0, 0.75, 0).both('bus', 7.5, 1.44, -0.2, 1.48, 1.34).decal('plate', 0.6, 0.15, -6.33, 0.9, 0, 'x-');
       for (const z of [-0.95, 0.95]) k.part(box(0.06, 0.2, 0.36), '#fff3b8', 6.3, 0.95, z).part(box(0.06, 0.3, 0.24), '#e02630', -6.3, 1.3, z); return k.geo(); })(),
-    tractor: (() => { const k = kit(uv), green = '#3d9a3a'; k.part(box(3.7, 0.5, 0.7), dark, 0.2, 0.85, 0).part(rb(2.1, 0.9, 0.92, 0.25), green, 1.2, 1.0, 0).part(rb(1.6, 1.62, 1.5, 0.3), green, -0.75, 1.15, 0).part(box(1.1, 0.8, 1.56), glass, -0.75, 2.1, 0).part(box(1.66, 0.75, 1.1), glass, -0.75, 2.1, 0).part(cyl(0.07, 0.07, 1.0, 6), dark, 1.7, 2.3, 0.28).part(cyl(0.13, 0.13, 0.2, 8), '#ff8a1e', -0.75, 2.86, 0).part(box(0.06, 0.24, 0.6), '#ffd21f', 2.26, 1.45, 0);
+    tractor: (() => { const k = kit(uv), green = '#3d9a3a'; k.part(box(3.7, 0.5, 0.7), dark, 0.2, 0.85, 0).part(rb(2.1, 0.9, 0.92, 0.25), green, 1.2, 1.0, 0).part(rb(1.6, 1.62, 1.5, 0.3), green, -0.75, 1.15, 0).part(box(1.1, 0.8, 1.56), '#ffffff', -0.75, 2.1, 0, 'glass').part(box(1.66, 0.75, 1.1), '#ffffff', -0.75, 2.1, 0, 'glass').part(cyl(0.07, 0.07, 1.0, 6), dark, 1.7, 2.3, 0.28).part(cyl(0.13, 0.13, 0.2, 8), '#ff8a1e', -0.75, 2.86, 0).part(box(0.06, 0.24, 0.6), '#ffd21f', 2.26, 1.45, 0);
       for (const z of [-0.84, 0.84]) k.part(box(1.5, 0.12, 0.56), green, -0.95, 1.9, z); return k.geo(); })(),
     blade: (() => { const k = kit(uv), white = '#f4f4f0';
-      k.part(box(6.4, 0.4, 2.2), dark, 15.25, 0.9, 0).part(rb(3.2, 2.9, 2.5, 0.4), '#ff8a1e', 16.85, 0.6, 0).part(box(0.06, 1.0, 2.1), glass, 18.46, 2.55, 0).part(box(1.2, 0.8, 2.56), glass, 17.4, 2.6, 0).part(box(2.2, 1.9, 1.7), '#6d747c', 13.4, 2.05, 0);
+      k.part(box(6.4, 0.4, 2.2), dark, 15.25, 0.9, 0).part(rb(3.2, 2.9, 2.5, 0.4), '#ff8a1e', 16.85, 0.6, 0).part(box(0.06, 1.0, 2.1), '#ffffff', 18.46, 2.55, 0, 'glass').part(box(1.2, 0.8, 2.56), '#ffffff', 17.4, 2.6, 0, 'glass').part(box(2.2, 1.9, 1.7), '#6d747c', 13.4, 2.05, 0);
       k.part(new THREE.CylinderGeometry(0.22, 1.0, 34, 12).rotateZ(-PI / 2).scale(1, 1, 0.8), white, -2, 3.47, 0).part(new THREE.CylinderGeometry(0.03, 0.26, 2.2, 12).rotateZ(-PI / 2).scale(1, 1, 0.8), '#e02630', -20.1 + 1.1, 3.47, 0).part(cyl(1.08, 1.08, 0.5, 12).rotateZ(PI / 2), '#8d959c', 14.9, 3.47, 0);
       k.part(box(4.5, 0.5, 2.3), dark, -14.75, 1.0, 0).part(box(2.4, 1.95, 1.5), '#6d747c', -14.75, 2.2, 0).part(box(0.08, 0.6, 2.3), '#ffd21f', -17.02, 1.6, 0).decal('lang', 2.24, 0.56, -17.1, 1.6, 0, 'x-');
       for (const z of [-0.8, 0.8]) k.part(cyl(0.12, 0.12, 0.22, 8), '#ff8a1e', -16.6, 1.36, z).part(box(0.06, 0.2, 0.34), '#fff3b8', 18.46, 0.98, z); return k.geo(); })(),
@@ -535,10 +606,10 @@ export function buildSnelweg(scene) {
       for (let i = 0; i <= N; i++) lip[i ? 'lineTo' : 'moveTo'](DECK.foot + i, DECK.y(i) + 0.14); for (let i = N; i >= 0; i--) lip.lineTo(DECK.foot + i, max(0.03, DECK.y(i) - 0.2));
       const ex = (sh, d) => new THREE.ExtrudeGeometry(sh, { depth: d, bevelEnabled: false }).translate(0, 0, -d / 2);
       k.part(ex(s, DECK.half * 2), '#ffb21f', 0, 0, 0).part(ex(lip, 0.12), '#d3202c', 0, 0, DECK.half + 0.06).part(ex(lip, 0.12), '#d3202c', 0, 0, -DECK.half - 0.06);
-      k.part(box(15.5, 0.4, 2.3), dark, 8.25, 0.75, 0).part(rb(3.0, 2.72, 2.5, 0.4), '#2d7fd1', 14.5, 0.58, 0).part(box(0.06, 1.0, 2.1), glass, 16.01, 2.4, 0).part(box(1.2, 0.8, 2.56), glass, 15.0, 2.45, 0).both('auto', 2.3, 0.43, 14.4, 1.4, 1.285).part(box(2.2, 0.2, 2.3), dark, -4, 0.34, 0);
+      k.part(box(15.5, 0.4, 2.3), dark, 8.25, 0.75, 0).part(rb(3.0, 2.72, 2.5, 0.4), '#2d7fd1', 14.5, 0.58, 0).part(box(0.06, 1.0, 2.1), '#ffffff', 16.01, 2.4, 0, 'glass').part(box(1.2, 0.8, 2.56), '#ffffff', 15.0, 2.45, 0, 'glass').both('auto', 2.3, 0.43, 14.4, 1.4, 1.285).part(box(2.2, 0.2, 2.3), dark, -4, 0.34, 0);
       for (const u of [11.5, 15, 18.5]) for (const z of [-1.1, 1.1]) k.part(box(0.16, DECK.y(u) - 0.18 - 0.93, 0.16), '#6d747c', DECK.foot + u, (DECK.y(u) - 0.18 + 0.95) / 2, z);
       for (const z of [-0.95, 0.95]) k.part(box(0.06, 0.2, 0.34), '#fff3b8', 16.01, 0.98, z); return k.geo(); })(),
-    wheel: (() => { const k = kit(uv); k.part(cyl(1, 1, 1, 10).rotateX(PI / 2), tyre).part(cyl(0.58, 0.58, 1.2, 6).rotateX(PI / 2), '#cfd4d8').part(box(1.0, 0.2, 1.3), '#70777e'); return k.geo(); })(),
+    wheel: (() => { const k = kit(uv); k.part(cyl(1, 1, 1, 12).rotateX(PI / 2), tyre).part(cyl(0.58, 0.58, 1.2, 10).rotateX(PI / 2), '#ffffff', 0, 0, 0, 'hub'); return k.geo(); })(),
     // Dutch police: white, the blue and yellow band, POLITIE on the doors and the bonnet, a light bar (its two lamps are separate meshes so they can flash)
     police: (() => { const k = carParts(kit(uv), 0, '#f7f7f2'); k.both('stripes', 3.5, 0.26, 0, 0.62, 0.906).both('politie', 1.04, 0.26, 0.1, 0.95, 0.906).decal('politie', 1.1, 0.27, 1.3, 1.156, 0, 'y+').part(box(0.42, 0.06, 1.38), '#30343c', -0.3, 1.53, 0).part(box(0.36, 0.06, 0.2), '#e9eef2', -0.3, 1.59, 0);
       for (const x of [-1.3, 1.3]) for (const z of [-0.8, 0.8]) k.part(cyl(0.36, 0.36, 0.26, 12).rotateX(PI / 2), tyre, x, 0.36, z).part(cyl(0.2, 0.2, 0.28, 8).rotateX(PI / 2), '#cfd4d8', x, 0.36, z);
@@ -549,32 +620,45 @@ export function buildSnelweg(scene) {
       return k.geo().rotateX(PI / 2); })(), // the axle along z: it stands on its edge and rolls along x
   };
   const tints = ['#ffffff', '#ffe3a1', '#bfe3ff', '#ffc2c2', '#d1f5c8', '#e7d2ff', '#ffd9b0', '#c9f2ee'], carTints = ['#e63b3b', '#3f7fe0', '#f4f4f0', '#ffc928', '#2f2f36', '#3fae5a', '#ff8a1e', '#9aa3ad', '#8d3fc4'];
+  const enamel = paint.clone(); enamel.roughness = 0.39; enamel.metalness = 0.16;
   const batch = {}, lone = [], wheels = [];
   const sorted = { truck: [], car: [], caravan: [] };
   for (const o of plan.traffic) {
     const special = { 'tulip truck': 'tulp', 'cheese truck': 'kaas', 'tour bus': 'bus', tractor: 'tractor', 'blade transport': 'blade', transporter: 'transporter' }[o.name];
-    if (special) { const m = new THREE.Mesh(GEO[special], paint); m.castShadow = m.receiveShadow = true; m.position.set(0, GROUND, o.z); m.frustumCulled = false; moving.add(m); lone.push([o, m]); } else sorted[o.kind].push(o);
+    if (special) { const m = new THREE.Mesh(GEO[special], enamel); m.castShadow = m.receiveShadow = true; m.position.set(0, GROUND, o.z); m.frustumCulled = false; moving.add(m); lone.push([o, m]); } else sorted[o.kind].push(o);
     for (const [wx, r, w, tr] of KINDS[o.kind].wheels) for (const s of [-1, 1]) wheels.push([o, wx * o.dir, r, w, o.z + s * tr]);
   }
   for (const kind in sorted) {
-    const list = sorted[kind], im = new THREE.InstancedMesh(GEO[kind], paint, list.length), pal = kind === 'car' ? carTints : kind === 'truck' ? tints : ['#ffffff', '#ffe9c4'], k = new THREE.Color();
+    const list = sorted[kind], im = new THREE.InstancedMesh(GEO[kind], enamel, list.length), pal = kind === 'car' ? carTints : kind === 'truck' ? tints : ['#ffffff', '#ffe9c4'], k = new THREE.Color();
     list.forEach((o, i) => im.setColorAt(i, k.set(pal[(i * 5 + 1) % pal.length]))); im.castShadow = im.receiveShadow = true; im.frustumCulled = false; moving.add(im); batch[kind] = [list, im];
   }
   const wheelMesh = new THREE.InstancedMesh(GEO.wheel, paint, wheels.length); wheelMesh.castShadow = true; wheelMesh.frustumCulled = false; moving.add(wheelMesh);
 
   // ---- the helicopters ----
   const heliBody = (body, belly, sign, news) => { const k = kit(uv);
-    k.part(rb(5.0, 2.4, 2.2, 1.0), body, 0.4, -1.1, 0).part(rb(1.5, 1.3, 2.27, 0.6), glass, 2.2, -0.35, 0).part(box(5.2, 0.42, 0.42), body, -4.6, 0.6, 0).part(box(0.9, 1.6, 0.14), belly, -7.0, 1.1, 0).part(box(1.2, 0.12, 1.4), belly, -6.9, 0.62, 0).part(cyl(0.16, 0.2, 0.5, 8), dark, 0.3, 1.5, 0).part(box(2.2, 0.5, 2.26), belly, -0.3, -0.75, 0);
+    k.part(rb(5.0, 2.4, 2.2, 1.0), body, 0.4, -1.1, 0).part(rb(1.5, 1.3, 2.27, 0.6), '#455b6a', 2.2, -0.35, 0).part(box(5.2, 0.42, 0.42), body, -4.6, 0.6, 0).part(box(0.9, 1.6, 0.14), belly, -7.0, 1.1, 0).part(box(1.2, 0.12, 1.4), belly, -6.9, 0.62, 0).part(cyl(0.16, 0.2, 0.5, 8), dark, 0.3, 1.5, 0).part(box(2.2, 0.5, 2.26), belly, -0.3, -0.75, 0);
     for (const z of [-0.95, 0.95]) { k.part(box(3.6, 0.1, 0.14), dark, 0.5, -1.6, z); for (const x of [-0.6, 1.6]) k.part(box(0.1, 0.5, 0.1), dark, x, -1.33, z); }
+    k.part(box(1.95, 0.56, 2.19), '#ffffff', 0.22, 0.83, 0, 'glass');
+    for (const z of [-1.095, 1.095]) {
+      k.part(box(0.09, 0.58, 0.045), body, 0.09, 0.83, z);
+      k.part(box(0.34, 0.07, 0.055), '#778389', -1.33, 0.09, z);
+    }
+    for (const x of [-3.55, -5.45]) k.part(box(0.24, 0.45, 0.47), belly, x, 0.6, 0);
     k.both(sign, 2.2, 0.55, -0.3, 0.42, 1.14).decal(sign, 2.2, 0.55, 0.2, -1.14, 0, 'y-');
     if (news) k.part(new THREE.IcosahedronGeometry(0.4, 1), dark, 2.3, -1.42, 0).part(cyl(0.16, 0.16, 0.12, 10).rotateZ(PI / 2), '#7fd4ff', 2.68, -1.5, 0).part(box(0.5, 0.3, 0.3), dark, 2.3, -1.1, 0);
     else k.both('stripes', 2.2, 0.42, -0.3, -0.75, 1.165).part(cyl(0.3, 0.22, 0.3, 10), '#fff6c9', HELI.lamp[0], HELI.lamp[1] + 0.2, 0).part(cyl(0.1, 0.1, 0.2, 8), '#3f7fe0', -1.0, 1.4, 0);
     return k.geo(); };
-  const rotorGeo = kit(uv).part(box(2 * HELI.rotor, 0.06, 0.34), dark).part(box(0.34, 0.06, 2 * HELI.rotor), dark).part(cyl(0.3, 0.3, 0.2, 8), '#8d959c').geo();
+  const rotor = kit(uv);
+  for (const sign of [-1, 1]) for (const axis of [0, 1]) {
+    const len = HELI.rotor - 0.45, along = (d) => axis ? [0, 0, sign * d] : [sign * d, 0, 0];
+    rotor.part(axis ? box(0.34, 0.06, len) : box(len, 0.06, 0.34), dark, ...along(len / 2));
+    rotor.part(axis ? box(0.34, 0.06, 0.45) : box(0.45, 0.06, 0.34), '#d9b64b', ...along(len + 0.225));
+  }
+  const rotorGeo = rotor.part(cyl(0.3, 0.3, 0.2, 8), '#8d959c').geo();
   const tailGeo = kit(uv).part(box(1.7, 0.2, 0.05), dark).part(box(0.2, 1.7, 0.05), dark).geo();
   const discMat = new THREE.MeshBasicMaterial({ color: '#30343c', transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide });
   const helis = [['#fbfbf6', '#12409a', 'politie', false], ['#e02630', '#fbfbf6', 'nieuws', true]].map(([a, b, sign, news]) => {
-    const g = new THREE.Group(), body = new THREE.Mesh(heliBody(a, b, sign, news), paint), rotor = new THREE.Mesh(rotorGeo, paint), tail = new THREE.Mesh(tailGeo, paint), disc = new THREE.Mesh(new THREE.CircleGeometry(HELI.rotor, 28).rotateX(-PI / 2), discMat);
+    const g = new THREE.Group(), body = new THREE.Mesh(heliBody(a, b, sign, news), enamel), rotor = new THREE.Mesh(rotorGeo, paint), tail = new THREE.Mesh(tailGeo, paint), disc = new THREE.Mesh(new THREE.CircleGeometry(HELI.rotor, 28).rotateX(-PI / 2), discMat);
     rotor.position.set(0.3, 1.74, 0); disc.position.set(0.3, 1.72, 0); tail.position.set(-7.15, 1.1, 0.14); body.castShadow = rotor.castShadow = true; g.add(body, rotor, tail, disc); moving.add(g); return { g, rotor, tail };
   });
   // the rope ladder with the traffic cop on it, his stop paddle on a separate arm so it can wave
@@ -600,14 +684,14 @@ export function buildSnelweg(scene) {
   // ---- the police cars, the cheese truck's doors and her Gouda ----
   const lit = new THREE.MeshBasicMaterial({ color: '#4d94ff' }), unlit = mat('#1b2c66', { roughness: 0.4 }), halo = new THREE.SpriteMaterial({ map: glow, color: '#3f86ff', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }), lampGeo = box(0.34, 0.14, 0.52);
   const cops = [0, 1].map(() => {
-    const g = new THREE.Group(), body = new THREE.Mesh(GEO.police, paint); body.castShadow = body.receiveShadow = true; g.add(body);
+    const g = new THREE.Group(), body = new THREE.Mesh(GEO.police, enamel); body.castShadow = body.receiveShadow = true; g.add(body);
     const lamps = [-1, 1].map((s) => { const m = new THREE.Mesh(lampGeo, unlit); m.position.set(-0.3, 1.63, s * 0.4); g.add(m); return m; });
     const halos = [-1, 1].map((s) => { const sp = new THREE.Sprite(halo); sp.position.set(-0.3, 1.75, s * 0.4); sp.scale.setScalar(2.4); g.add(sp); return sp; });
     moving.add(g); return { g, lamps, halos };
   });
   const kaasTruck = lone.find(([o]) => o.name === 'cheese truck')[1], doors = [-1, 1].map((s) => { // hinged at her rear corners, closed over the shelves of cheese
     const k = kit(uv).part(box(0.05, 2.5, 1.26), '#ffd43a', 0, 0, -s * 0.63).part(box(0.07, 2.3, 0.05), '#d9a21c', -0.01, 0, -s * 1.2).part(box(0.08, 0.06, 0.46), '#8d959c', -0.03, 0.1, -s * 0.95);
-    const g = new THREE.Group(), m = new THREE.Mesh(k.geo(), paint); m.castShadow = true; g.add(m); g.position.set(-8.245, 2.65, s * 1.28); kaasTruck.add(g); return g;
+    const g = new THREE.Group(), m = new THREE.Mesh(k.geo(), enamel); m.castShadow = true; g.add(m); g.position.set(-8.245, 2.65, s * 1.28); kaasTruck.add(g); return g;
   });
   const goudas = Array.from({ length: plan.cheeses }, () => { const m = new THREE.Mesh(GEO.gouda, paint); m.castShadow = true; m.rotation.order = 'YXZ'; moving.add(m); return m; });
 
