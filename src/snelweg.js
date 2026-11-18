@@ -906,8 +906,28 @@ export function buildSnelweg(scene, rubber) {
   });
   const goudas = Array.from({ length: plan.cheeses }, () => { const m = new THREE.Mesh(GEO.gouda, paint); m.castShadow = true; m.rotation.order = 'YXZ'; moving.add(m); return m; });
 
+  // A high-wing touring aircraft crosses the A9 establishing shot in the far field.
+  const planeKit=kit(uv), pearl='#ece9dc', blue='#365e78', nose='#d87036';
+  const ellipsoid=(x,y,z)=>new THREE.SphereGeometry(1,12,7).scale(x,y,z);
+  planeKit.part(ellipsoid(2.8,.57,.67),pearl,.12,0,0)
+    .part(ellipsoid(1.28,.59,.61),blue,.37,.28,0)
+    .part(cyl(.20,.50,3.5,10).rotateZ(PI/2),pearl,-2.98,.1,0)
+    .part(ellipsoid(.57,.48,.54),nose,2.70,0,0)
+    .part(ellipsoid(.98,.09,5.64),pearl,.42,.78,0)
+    .part(ellipsoid(.59,.075,2.0),blue,-4.22,.35,0)
+    .part(ellipsoid(.72,1.12,.12).rotateZ(.30),blue,-4.08,.87,0);
+  for (const side of [-1,1]) {
+    planeKit.part(cyl(.045,.045,2.92,5).rotateX(side*1.19),'#797979',.45,.16,side*1.9)
+      .part(ellipsoid(.66,.085,.32),nose,.40,.77,side*5.35)
+      .part(ellipsoid(.32,.31,.12),'#292b2f',.6,-.74,side*.73)
+      .part(cyl(.065,.065,.63,5).rotateX(side*.66),pearl,.6,-.49,side*.56);
+  }
+  const airplane=new THREE.Mesh(planeKit.geo(),paint); airplane.name='touring aircraft';
+  airplane.rotation.set(-.10,1.34,.035); moving.add(airplane);
+
   const H = {}, T = {}, tF = plan.T.flash, PC = {}, KC = {};
   function frame(t, now = 0) {
+    airplane.position.set(-965+4.1*t,49+.10*t,Z0+82-17*t);
     for (const [o, m] of lone) m.position.x = plan.vx(o, t);
     for (const { kind, rows, mesh, pad } of fleets.values()) {
       let lo = Infinity, hi = -Infinity;

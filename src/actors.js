@@ -473,7 +473,7 @@ function toyCar(world, color) {
 
 // ---------- particles ----------
 let puffMap;
-function smokeTexture() {
+export function smokeTexture() {
   if (puffMap) return puffMap;
   puffMap = tex(128, 128, (ctx) => {
     // Overlapping tufts catch a little light at the top and fray toward the edge.
@@ -487,6 +487,16 @@ function smokeTexture() {
       grad.addColorStop(1, 'rgba(237,234,226,0)');
       ctx.fillStyle = grad; ctx.fillRect(x-r,y-r,2*r,2*r);
     }
+    const image = ctx.getImageData(0,0,128,128), data = image.data;
+    for (let y=0;y<128;y++) for (let x=0;x<128;x++) {
+      const i=(y*128+x)*4;
+      const swirl = sin(x*.145+sin(y*.18)*1.5) * cos(y*.13+sin(x*.085)*2.1);
+      const wisps = swirl*.7 + sin(x*.39+y*.17)*cos(y*.34-x*.23)*.21;
+      const shade = 0.96 + .10*wisps;
+      for (let c=0;c<3;c++) data[i+c] *= shade;
+      data[i+3] = Math.max(0,data[i+3]*(1+.20*wisps)-4);
+    }
+    ctx.putImageData(image,0,0);
   });
   return puffMap;
 }
@@ -522,10 +532,10 @@ export function puffs(scene, n, color = '#f6f6f2') {
 function confetti(scene, n) {
   const mesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.13, 0.2), new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }), n);
   const P = Array.from({ length: n }, () => ({ on: false })), D = new THREE.Object3D(), COL = ['#ff6a13', '#ffffff', '#1f5fd0', '#e0202a', '#f7c400', '#3fbf6a', '#ff5fa8'];
-  D.scale.setScalar(0); D.updateMatrix(); for (let i = 0; i < n; i++) { mesh.setMatrixAt(i, D.matrix); mesh.setColorAt(i, new THREE.Color(pick(COL, i))); }
+  mesh.count = 0; for (let i = 0; i < n; i++) mesh.setColorAt(i, new THREE.Color(pick(COL, i)));
   mesh.frustumCulled = false; scene.add(mesh);
   return {
-    burst(x, y, z, spread = 5) { P.forEach((p) => Object.assign(p, { on: true, x: x + (random() - 0.5) * 2, y: y + random(), z: z + (random() - 0.5) * 2, vx: (random() - 0.5) * spread, vy: 4 + random() * 6, vz: (random() - 0.5) * spread, a: random() * 6, b: random() * 6, w: 3 + random() * 8 })); },
+    burst(x, y, z, spread = 5) { mesh.count = n; P.forEach((p) => Object.assign(p, { on: true, x: x + (random() - 0.5) * 2, y: y + random(), z: z + (random() - 0.5) * 2, vx: (random() - 0.5) * spread, vy: 4 + random() * 6, vz: (random() - 0.5) * spread, a: random() * 6, b: random() * 6, w: 3 + random() * 8 })); },
     update(dt, t) {
       P.forEach((p, i) => {
         if (!p.on) return;
@@ -535,7 +545,7 @@ function confetti(scene, n) {
       });
       mesh.instanceMatrix.needsUpdate = true;
     },
-    clear() { D.scale.setScalar(0); D.updateMatrix(); P.forEach((p, i) => { p.on = false; mesh.setMatrixAt(i, D.matrix); }); mesh.instanceMatrix.needsUpdate = true; },
+    clear() { mesh.count = 0; for (const p of P) p.on = false; },
   };
 }
 

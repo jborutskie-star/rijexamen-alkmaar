@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { mat, canvasTex, reliefTex, GROUND } from './world.js';
 import { clamp, smooth } from './drive.js';
-import { person, puffs, FONT } from './actors.js';
+import { person, puffs, smokeTexture, FONT } from './actors.js';
 
 const { PI, sin, cos, random, hypot, sqrt, exp, atan2 } = Math;
 const ramp = (t, a, b) => smooth((t - a) / (b - a));
@@ -11,24 +11,48 @@ const tex = (w, h, draw) => canvasTex(w, h, draw, false);
 const COLS = ['#ff4d6d', '#ffd23f', '#4dd6ff', '#7dff7a', '#ff8a3d', '#d58bff', '#ffffff'];
 const glow = (color, o = {}) => new THREE.MeshBasicMaterial({ color, fog: false, toneMapped: false, ...o });
 
-// bright dots: rocket trails, bursts, sparks. One draw call for all of them.
+// Tapered embers show a short streak in the direction of travel. Only live sparks enter the draw.
 function sparks(scene, n) {
-  const mesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.16, 0), glow('#ffffff'), n);
-  const P = Array.from({ length: n }, () => ({ life: 0 })), M = new THREE.Matrix4(), ZERO = new THREE.Matrix4().makeScale(0, 0, 0), C = new THREE.Color(); let next = 0;
-  for (let i = 0; i < n; i++) { mesh.setMatrixAt(i, ZERO); mesh.setColorAt(i, C.set('#ffffff')); }
-  mesh.frustumCulled = false; scene.add(mesh);
+  const profile = [[0,-.38],[.048,-.13],[.091,.07],[.066,.14],[0,.18]];
+  const shape = new THREE.LatheGeometry(profile.map(([r,y])=>new THREE.Vector2(r,y)),5);
+  const pigment = [], color = new THREE.Color();
+  for (let i=0;i<shape.attributes.position.count;i++) {
+    const t = (shape.attributes.position.getY(i)+.38)/.56;
+    pigment.push(.48+.52*t,.27+.73*t,.16+.84*t);
+  }
+  shape.setAttribute('color',new THREE.Float32BufferAttribute(pigment,3));
+  const mesh = new THREE.InstancedMesh(shape,glow('#ffffff',{vertexColors:true}),n);
+  const particles = Array.from({length:n},()=>({life:0}));
+  const pose = new THREE.Object3D(), velocity = new THREE.Vector3(), up = new THREE.Vector3(0,1,0);
+  let next = 0, active = 0;
+  mesh.frustumCulled = false; mesh.count = 0; scene.add(mesh);
   return {
-    emit(x, y, z, vx, vy, vz, life, size, col, g = 6) { Object.assign(P[next], { x, y, z, vx, vy, vz, age: 0, life, size, g }); mesh.setColorAt(next, C.set(col)); mesh.instanceColor.needsUpdate = true; next = (next + 1) % n; },
-    update(dt) {
-      P.forEach((p, i) => {
-        if (p.life <= 0) return;
-        p.age += dt; if (p.age >= p.life) { p.life = 0; mesh.setMatrixAt(i, ZERO); return; }
-        const drag = 1 - 1.3 * dt; p.vy -= p.g * dt; p.vx *= drag; p.vy *= drag; p.vz *= drag; p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
-        const s = p.size * (1 - (p.age / p.life) ** 2); mesh.setMatrixAt(i, M.makeScale(s, s, s).setPosition(p.x, p.y, p.z));
-      });
-      mesh.instanceMatrix.needsUpdate = true;
+    emit(x,y,z,vx,vy,vz,life,size,col,g=6) {
+      if (particles[next].life===0) active++;
+      Object.assign(particles[next],{x,y,z,vx,vy,vz,life,size,col,g,age:0});
+      next=(next+1)%n;
     },
-    clear() { P.forEach((p, i) => { p.life = 0; mesh.setMatrixAt(i, ZERO); }); mesh.instanceMatrix.needsUpdate = true; },
+    update(dt) {
+      if (!active) return;
+      let count=0;
+      for (const p of particles) {
+        if (!p.life) continue;
+        p.age+=dt;
+        if (p.age>=p.life) { p.life=0; active--; continue; }
+        const drag=1-1.3*dt;
+        p.vy=(p.vy-p.g*dt)*drag; p.vx*=drag; p.vz*=drag;
+        p.x+=p.vx*dt; p.y+=p.vy*dt; p.z+=p.vz*dt;
+        const size=p.size*(1-(p.age/p.life)**2);
+        velocity.set(p.vx,p.vy,p.vz);
+        pose.position.set(p.x,p.y,p.z);
+        pose.scale.set(size,size*(.52+Math.min(1.5,velocity.length()*.12)),size);
+        pose.quaternion.setFromUnitVectors(up,velocity.normalize()); pose.updateMatrix();
+        mesh.setMatrixAt(count,pose.matrix); mesh.setColorAt(count++,color.set(p.col));
+      }
+      mesh.count=count; mesh.instanceMatrix.needsUpdate=true;
+      if (count) mesh.instanceColor.needsUpdate=true;
+    },
+    clear() { for (const p of particles) p.life=0; active=mesh.count=0; },
   };
 }
 
@@ -36,11 +60,11 @@ function sparks(scene, n) {
 function debris(scene, world, n) {
   const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mat('#ffffff', { roughness: 0.85 }), n), D = new THREE.Object3D(), C = new THREE.Color();
   const P = Array.from({ length: n }, () => ({ on: false })), WOOD = ['#b5834f', '#8a5a3a', '#2a2522', '#e0202a', '#f4f1e6', '#3a3330'];
-  const hide = () => { D.scale.setScalar(0); D.updateMatrix(); P.forEach((p, i) => { p.on = false; mesh.setMatrixAt(i, D.matrix); }); mesh.instanceMatrix.needsUpdate = true; };
+  const hide = () => { mesh.count = 0; D.scale.setScalar(0); D.updateMatrix(); P.forEach((p, i) => { p.on = false; mesh.setMatrixAt(i, D.matrix); }); mesh.instanceMatrix.needsUpdate = true; };
   P.forEach((_, i) => mesh.setColorAt(i, C.set(WOOD[i % WOOD.length]))); hide(); mesh.castShadow = true; mesh.frustumCulled = false; scene.add(mesh);
   return {
     clear: hide,
-    burst(x, z, ax, az) { // ax, az: the way to the open street; most of it flies that way
+    burst(x, z, ax, az) { mesh.count = n; // ax, az: the way to the open street; most of it flies that way
       P.forEach((p, i) => {
         const a = random() * 2 * PI, v = 2 + random() * 6, plank = i % 3;
         Object.assign(p, { on: true, x: x + cos(a) * 0.5, y: GROUND + 0.6 + random() * 1.2, z: z + sin(a) * 0.5, vx: cos(a) * v + ax * 3, vy: 5 + random() * 8, vz: sin(a) * v + az * 3,
@@ -244,13 +268,24 @@ export function buildStunts(scene, world, drive) {
 
   // ---- what an explosion is made of ----
   const fx = sparks(scene, 1100), bits = debris(scene, world, 54), soot = puffs(scene, 150, '#3a3836');
-  const balls = [['#fff6c8', 1.5], ['#ffb11f', 2.5], ['#ff5a10', 3.3]].map(([c, r], i) => { const me = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 2), glow(c, { transparent: true, depthWrite: false })); me.userData.r = r; me.renderOrder = 3 - i; me.visible = false; me.position.set(E.x, GROUND + 1.3, E.z); scene.add(me); return me; }); // the white-hot core is drawn last, so it shows through the orange
-  // a fireball is not a ball: lobes bulge out of it, mostly towards the open street, then cool to dark smoke that hangs and climbs
-  const lobes = Array.from({ length: 8 }, (_, i) => {
-    const a = i * 2.4, u = 0.1 + (i % 4) * 0.24, q = sqrt(1 - u * u), me = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 2), mat('#6a645e', { roughness: 1, emissive: '#ff6410', flatShading: true }));
-    Object.assign(me.userData, { dx: cos(a) * q + ax * 0.7, dy: u, dz: sin(a) * q + az * 0.7, r: 0.8 + (i % 3) * 0.3, up: 0.9 + (i % 4) * 0.45 }); me.visible = false; scene.add(me); return me;
+  // Fire, tyre smoke and cooling soot share a tufted edge. The rising outer billows cool first.
+  const plume = (color,order,rotation) => {
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({map:smokeTexture(),color,transparent:true,depthWrite:false,rotation,toneMapped:false}));
+    sprite.renderOrder=order; sprite.visible=false; scene.add(sprite); return sprite;
+  };
+  const balls = [['#fff5c0',2.0],['#ffaf30',3.0],['#ff5a14',3.9]].map(([color,r],i)=>{
+    const o=plume(color,5-i,i*2.28); o.userData.r=r;
+    if (i===0) o.material.blending=THREE.AdditiveBlending;
+    o.material.color.multiplyScalar(i===0?1.6:1.15); o.position.set(E.x,GROUND+1.3,E.z); return o;
   });
-  const ring = new THREE.Mesh(new THREE.RingGeometry(0.82, 1, 40), glow('#fff1cc', { transparent: true, depthWrite: false, side: THREE.DoubleSide })); ring.rotation.x = -PI / 2; ring.position.set(E.x, GROUND + 0.08, E.z); ring.visible = false; scene.add(ring);
+  const hot = new THREE.Color('#ff7c21'), sootColor = new THREE.Color('#514b49');
+  const lobes=Array.from({length:10},(_,i)=>{
+    const a=i*2.4,u=.12+i%4*.22,q=sqrt(1-u*u),o=plume('#ff8434',2,i*1.46);
+    Object.assign(o.userData,{dx:cos(a)*q+ax*.7,dy:u,dz:sin(a)*q+az*.7,r:.8+i%3*.25,up:.78+i%4*.42});
+    return o;
+  });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(.94,1,48),glow('#ffdea2',{transparent:true,depthWrite:false,side:THREE.DoubleSide}));
+  ring.rotation.x=-PI/2; ring.position.set(E.x,GROUND+.08,E.z); ring.visible=false; scene.add(ring);
   const flash = new THREE.PointLight('#ffb060', 0, 70, 1.7); flash.position.set(E.x, GROUND + 3, E.z); scene.add(flash); // made now, switched on later: adding a light mid-film would stall a frame
 
   const rockets = []; let age = -1, fuse = 0, left = 0, show = 0, showAt = null, lastS = 0;
@@ -273,11 +308,18 @@ export function buildStunts(scene, world, drive) {
     }
     if (age >= 0) {
       age += dt; const k = 1 - (1 - Math.min(1, age / 0.45)) ** 3, fade = 1 - ramp(age, 0.2, 1.0);
-      balls.forEach((o) => { o.visible = fade > 0; o.scale.setScalar(0.3 + o.userData.r * k); o.material.opacity = fade; o.position.y = GROUND + 1.3 + age * 1.6; });
-      ring.visible = age < 0.9; ring.scale.setScalar(1 + age * 14); ring.material.opacity = 0.8 * (1 - age / 0.9);
+      balls.forEach((o) => { o.visible = fade > 0; o.scale.setScalar(0.4 + 2.6 * o.userData.r * k); o.material.opacity = fade; o.position.y = GROUND + 1.3 + age * 1.6; });
+      ring.visible = age < .45; ring.scale.setScalar(1+age*13); ring.material.opacity=.19*(1-age/.45);
       flash.intensity = 900 * exp(-age * 5);
       const cool = ramp(age, 0.2, 0.9), gone = 1 - ramp(age, 1.8, 3.6);
-      lobes.forEach((o) => { const u = o.userData, d = 0.5 + 2.2 * k + age * 0.45; o.visible = gone > 0; o.position.set(E.x + u.dx * d, GROUND + 1.3 + u.dy * d + age * u.up, E.z + u.dz * d); o.scale.setScalar(u.r * (0.35 + k) * (1 + age * 0.15) * gone); o.material.emissiveIntensity = 1 - cool; }); // solid toon puffs: they shrink away instead of fading
+      lobes.forEach((o,i) => {
+        const u=o.userData, d=.5+2.1*k+age*.42;
+        o.visible=gone>0; o.position.set(E.x+u.dx*d,GROUND+1.3+u.dy*d+age*u.up,E.z+u.dz*d);
+        const scale=u.r*(.45+k)*(2.45+age*.8);
+        o.scale.set(scale,scale*(.91+i%3*.09),1);
+        o.material.color.copy(hot).lerp(sootColor,Math.min(1,cool*(1.04+.04*(i%3))));
+        o.material.opacity=gone*(.85-.22*cool); o.material.rotation=i*1.46+age*(i%2?.22:-.18);
+      });
       for (const [t, c] of [[0.3, 1], [0.55, 2], [0.85, 0], [1.2, 3]]) if (age - dt < t && age >= t) { // the crates of fireworks go off one after another
         const x = E.x + (random() - 0.5) * 3 + ax * 1.5, y = GROUND + 2 + random() * 2.5, z = E.z + (random() - 0.5) * 3 + az * 1.5; events?.pop?.();
         for (let j = 0; j < 45; j++) { const a = random() * 2 * PI, u = random() * 2 - 1, q = sqrt(1 - u * u), v = 4.5 + random() * 3; fx.emit(x, y, z, cos(a) * q * v, u * v, sin(a) * q * v, 0.8 + random() * 0.6, 2.2, j % 6 ? COLS[c] : '#ffffff', 4.5); }
@@ -294,6 +336,14 @@ export function buildStunts(scene, world, drive) {
       fx.emit(r.x, r.y, r.z, (random() - 0.5) * 1.5, -2, (random() - 0.5) * 1.5, 0.4, 0.75, '#ffd9a0', 2);
       if (r.fuse > 0) continue;
       rockets.splice(i, 1); events?.pop?.();
+      // A golden inner ring or a drooping willow inside the coloured shell.
+      // Use the launch position for variation so the soundtrack retains its original random sequence.
+      const tilt = r.x*.013+r.z*.031, willow = Math.sin(tilt) > 0;
+      for (let j=0;j<28;j++) {
+        const a=j*2*PI/28, v=willow?4.5:6.8;
+        fx.emit(r.x,r.y,r.z,cos(a)*v,willow?2.5+sin(j*1.72):sin(a)*v*.78,sin(a)*v*(willow?1:.62),
+          willow?1.75:1.12,willow?1.35:1.7,j%4?'#ffd389':'#fff5d4',willow?5:2.4);
+      }
       for (let j = 0; j < 60; j++) { const a = random() * 2 * PI, u = random() * 2 - 1, q = sqrt(1 - u * u), v = 6.5 + random() * 3; fx.emit(r.x, r.y, r.z, cos(a) * q * v, u * v, sin(a) * q * v, 1.1 + random() * 0.8, 2.6, j % 7 ? r.col : '#ffffff', 4.5); }
     }
     fx.update(dt); bits.update(dt); soot.update(dt);
