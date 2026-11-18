@@ -1,7 +1,7 @@
 // The set pieces: the roadworks and plank ramp on the Langestraat, the fireworks stall on the Zoutstraat,
 // and everything that goes bang. Where things stand comes from drive.js, so tools/check.mjs tests the same layout.
 import * as THREE from 'three';
-import { mat, canvasTex, reliefTex, GROUND } from './world.js';
+import { mat, canvasTex, reliefTex, fuse as fuseGeometry, GROUND } from './world.js';
 import { clamp, smooth } from './drive.js';
 import { person, puffs, smokeTexture, FONT } from './actors.js';
 
@@ -210,6 +210,21 @@ export function buildStunts(scene, world, drive) {
   const rampG = put(H, hd), tilt = (me) => { me.rotation.z = H.angle; return me; };
   rampG.add(tilt(b(run, 0.08, 2.7, '#c9a26b', len / 2, H.tipY / 2 - 0.085, 0,timberFinish)), b(1.0, 0.92, 2.4, '#8a6a45', len - 0.55, 0.46, 0,timberFinish), b(0.8, 0.4, 2.4, '#8a6a45', 2.9, 0.2, 0,timberFinish));
   for (let i = 0; i < 8; i++) for (const z of [-1.34, 1.34]) { const x = ((i + 0.5) / 8) * len; rampG.add(tilt(b(run / 8, 0.16, 0.07, i % 2 ? '#22242a' : '#f7c400', x, x * tan - 0.02, z))); }
+  const paddlePrint = tex(128,128,c => {
+    c.fillStyle='#f7efe1'; c.fillRect(0,0,128,128);
+    c.fillStyle='#c92632'; c.beginPath(); c.arc(64,64,55,0,2*PI); c.fill();
+    c.font='bold 38px Arial'; c.textAlign='center'; c.textBaseline='middle';
+    c.fillStyle='#fff8e5'; c.fillText('STOP',64,65);
+  });
+  const paddleGeometry=new THREE.CylinderGeometry(.137,.137,.027,24).rotateX(PI/2);
+  // The round ends carry the same upright print when viewed from their respective sides. The rim samples ivory.
+  const paddleUV=paddleGeometry.attributes.uv, paddlePos=paddleGeometry.attributes.position, paddleNormal=paddleGeometry.attributes.normal;
+  for(let i=0;i<paddleUV.count;i++){
+    const side=paddleNormal.getZ(i);
+    if(Math.abs(side)<.9)paddleUV.setXY(i,.02,.02);
+    else paddleUV.setXY(i,.5+Math.sign(side)*paddlePos.getX(i)/.274,.5+paddlePos.getY(i)/.274);
+  }
+  const paddleMaterial=mat('#ffffff',{map:paddlePrint,roughness:.45});
   const workers = [];
   for (const o of layout.works) {
     const g = put(o, hd);
@@ -224,7 +239,14 @@ export function buildStunts(scene, world, drive) {
     } else if (o.kind === 'worker') {
       const p = person(b, { shirt: '#ff7a1a', pants: '#2d3142', skin: workers.length ? '#8d5a3c' : '#f1c9a5', hair: null, face: 'o' }), side = Math.sign((o.x - H.x) * -sin(hd) + (o.z - H.z) * cos(hd)); // which side of the street
       const hat = new THREE.Mesh(new THREE.SphereGeometry(0.225, 16, 8, 0, PI * 2, 0, PI / 2), mat('#f7c400', { roughness: 0.4 })); hat.position.y = 0.05; p.head.add(hat, b(0.12, 0.03, 0.3, '#f7c400', 0.2, 0.06, 0));
-      p.g.add(b(0.275, 0.07, 0.515, '#e9edf2', 0, 0.3, 0), b(0.275, 0.07, 0.515, '#e9edf2', 0, 0.15, 0)); p.armR.add(b(0.08, 0.11, 0.08, '#ffffff', 0.05, -0.47, 0));
+      const safetyStrips = fuseGeometry(
+        [new THREE.BoxGeometry(.275,.065,.515),'#e2e5da',0,.28,0],
+        [new THREE.BoxGeometry(.275,.06,.515),'#e2e5da',0,.13,0],
+        ...[-.146,.146].map(z=>[new THREE.BoxGeometry(.02,.19,.052),'#eee9cc',.134,.405,z]));
+      p.g.add(new THREE.Mesh(safetyStrips,mat('#ffffff',{vertexColors:true})));
+      const disc = new THREE.Mesh(paddleGeometry,paddleMaterial);
+      disc.position.set(.064,-.481,.072); disc.rotation.z = -2.55;
+      p.armR.add(b(.045,.13,.045,'#334047',.053,-.435,0),disc);
       p.g.position.y = 0.55; g.rotation.y = -(hd - side * PI / 2); g.add(p.g); workers.push({ p, o, face: hd - side * PI / 2 }); // facing the street
     } else if (o.kind === 'digger') {
       const arm = new THREE.Group(); arm.position.set(0.3, 0.95, 0.28); arm.add(bm([0, 0, 0], [0.4, 1.1, 0], 0.14, '#f7c400'), bm([0.4, 1.1, 0], [0.75, 0.5, 0], 0.11, '#f7c400'), b(0.3, 0.3, 0.42, '#2b2e36', 0.78, 0.36, 0));

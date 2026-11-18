@@ -368,24 +368,69 @@ function makeAtlas() {
   const text = (g, s, x, y, px, fill, align = 'left') => { g.font = F(px); g.fillStyle = fill; g.textAlign = align; g.textBaseline = 'middle'; g.fillText(s, x, y); };
   const arrow = (g, x, y, s, a) => { g.save(); g.translate(x, y); g.rotate(a); g.fillStyle = '#fff'; g.beginPath(); g.moveTo(0, s); g.lineTo(-s * 0.75, 0); g.lineTo(-s * 0.28, 0); g.lineTo(-s * 0.28, -s); g.lineTo(s * 0.28, -s); g.lineTo(s * 0.28, 0); g.lineTo(s * 0.75, 0); g.closePath(); g.fill(); g.restore(); }; // points down; turn it with a
   const shield = (g, s, x, y, bg, fg) => { g.font = F(34); const w = g.measureText(s).width + 22; g.fillStyle = bg; rr(g, x, y - 23, w, 46, 6); g.fill(); g.strokeStyle = fg; g.lineWidth = 3; g.stroke(); text(g, s, x + 11, y + 2, 34, fg); return w; };
-  const panel = (g, w, h) => { g.fillStyle = '#fff'; rr(g, 0, 0, w, h, 20); g.fill(); g.fillStyle = '#1554b4'; rr(g, 6, 6, w - 12, h - 12, 15); g.fill(); };
-  put('white', 32, 32, () => {});
-  put('amsterdam', 500, 192, (g, w, h) => { panel(g, w, h); const s = shield(g, 'A9', 28, 50, '#d3202c', '#fff'); text(g, 'Amsterdam', 40 + s, 52, 52, '#fff'); text(g, 'Haarlem', 28, 112, 44, '#fff'); arrow(g, 130, 158, 22, 0); arrow(g, 370, 158, 22, 0); });
-  put('denhelder', 500, 192, (g, w, h) => { panel(g, w, h); const s = shield(g, 'N9', 28, 50, '#ffd21f', '#111'); text(g, 'Den Helder', 40 + s, 52, 52, '#fff'); text(g, 'Alkmaar', 28, 112, 44, '#fff'); arrow(g, 250, 158, 22, 0); });
-  put('afrit', 500, 192, (g, w, h) => { panel(g, w, h); g.strokeStyle = '#fff'; g.lineWidth = 4; rr(g, 26, 22, 150, 50, 8); g.stroke(); text(g, 'Afrit 5', 101, 49, 34, '#fff', 'center'); text(g, 'Alkmaar-Centrum', 26, 122, 50, '#fff'); arrow(g, 440, 60, 26, -PI * 0.75); });
-  put('kaas', 500, 128, (g, w, h) => { g.fillStyle = '#ffd43a'; g.fillRect(0, 0, w, h); g.fillStyle = '#f2a81d'; g.beginPath(); g.arc(78, 64, 50, 0, PI * 2); g.fill(); g.fillStyle = '#ffd43a'; g.beginPath(); g.moveTo(78, 64); g.arc(78, 64, 52, -0.5, 0.25); g.fill(); g.fillStyle = '#e08a12'; for (const [x, y, r] of [[58, 46, 8], [92, 88, 10], [50, 80, 6], [84, 34, 5]]) { g.beginPath(); g.arc(x, y, r, 0, PI * 2); g.fill(); } text(g, 'KAAS', 150, 60, 96, '#c0271f'); text(g, 'vers van de markt', 156, 110, 22, '#7a4a10'); });
-  put('tulp', 500, 128, (g, w, h) => { g.fillStyle = '#ff7fb2'; g.fillRect(0, 0, w, h); text(g, 'TULPEN', 24, 56, 84, '#fff'); text(g, 'recht uit de polder', 30, 108, 22, '#8a1d4f'); ['#e8222e', '#ffd21f', '#8d3fc4', '#fff'].forEach((c, i) => { const x = 372 + i * 32; g.strokeStyle = '#1f8a3a'; g.lineWidth = 5; g.beginPath(); g.moveTo(x, 118); g.lineTo(x, 60); g.stroke(); g.fillStyle = c; g.beginPath(); g.moveTo(x - 13, 62); g.quadraticCurveTo(x - 15, 22, x - 7, 26); g.lineTo(x, 40); g.lineTo(x + 7, 26); g.quadraticCurveTo(x + 15, 22, x + 13, 62); g.quadraticCurveTo(x, 74, x - 13, 62); g.fill(); }); });
-  put('bus', 500, 96, (g, w, h) => { g.fillStyle = '#fdfdf8'; g.fillRect(0, 0, w, h); g.fillStyle = '#ff7a1a'; g.beginPath(); g.moveTo(0, 96); g.quadraticCurveTo(180, 20, 500, 70); g.lineTo(500, 96); g.fill(); g.fillStyle = '#19a0c9'; g.beginPath(); g.moveTo(0, 96); g.quadraticCurveTo(220, 50, 500, 86); g.lineTo(500, 96); g.fill(); text(g, 'DAGJE UIT TOURS', 250, 34, 44, '#133a7c', 'center'); });
-  put('transport', 256, 64, (g, w, h) => { g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); text(g, 'TRANSPORT', 128, 30, 38, '#30343c', 'center'); g.fillStyle = '#30343c'; g.fillRect(14, 52, 228, 5); });
+  const panel = (g,w,h) => {
+    g.fillStyle='#dce2dc';g.fillRect(0,0,w,h);
+    g.fillStyle='#174b91';rr(g,4,4,w-8,h-8,12);g.fill();
+    g.lineWidth=2;g.strokeStyle='#aac6d8';rr(g,10,10,w-20,h-20,8);g.stroke();
+  };
+  put('white',32,32,()=>{});
+  const motorwayBoard = (g,w,h,route,destination,via,isA9) => {
+    panel(g,w,h);
+    const s=shield(g,route,23,48,isA9?'#b5293c':'#edc331',isA9?'#fff7e2':'#293537');
+    text(g,destination,37+s,52,52,'#fff');text(g,via,26,112,43,'#fff');
+    for(const x of isA9?[145,359]:[249])arrow(g,x,157,20,0);
+  };
+  put('amsterdam',500,192,(g,w,h)=>motorwayBoard(g,w,h,'A9','Amsterdam','Haarlem',true));
+  put('denhelder',500,192,(g,w,h)=>motorwayBoard(g,w,h,'N9','Den Helder','Alkmaar',false));
+  put('afrit',500,192,(g,w,h)=>{
+    panel(g,w,h);g.strokeStyle='#ecf5f4';g.lineWidth=3;rr(g,25,22,150,49,4);g.stroke();
+    text(g,'Afrit 5',99,48,33,'#fff','center');text(g,'Alkmaar-Centrum',26,124,48,'#fff');
+    arrow(g,446,51,25,-PI*.75);
+  });
+  const polygon = (g, points, color) => {
+    g.fillStyle = color; g.beginPath(); g.moveTo(...points[0]); for (const p of points.slice(1)) g.lineTo(...p); g.closePath(); g.fill();
+  };
+  const oval = (g,x,y,rx,ry,color) => { g.fillStyle=color; g.beginPath(); g.ellipse(x,y,rx,ry,0,0,2*PI); g.fill(); };
+  // The illustrations have a strong outline at motorway speed. The small sublines belong to the fictional makers.
+  put('kaas', 500, 128, (g,w,h) => {
+    g.fillStyle='#f7ce4b';g.fillRect(0,0,w,h);
+    polygon(g,[[0,0],[160,0],[113,h],[0,h]],'#b52b31');
+    for(const [x,y,r] of [[52,81,32],[94,79,33],[76,57,29]]) {
+      g.fillStyle='#d58d16';g.fillRect(x-r,y-6,r*2,13);oval(g,x,y+6,r,9,'#e5a62d');oval(g,x,y-6,r,9,'#ffe179');
+      oval(g,x-3,y-6,r*.37,4,'#ab3331');
+    }
+    text(g,'GOUDROND',152,48,54,'#943027');text(g,'KAAS UIT ALKMAAR',155,94,24,'#632f21');
+  });
+  put('tulp', 500, 128, (g,w,h) => {
+    g.fillStyle='#255a48';g.fillRect(0,0,w,h);
+    for(const [x,y,c] of [[55,26,'#ffb4b8'],[95,46,'#f79a23'],[28,62,'#f26877']]) {
+      g.strokeStyle='#b8ce83';g.lineWidth=6;g.beginPath();g.moveTo(66,128);g.quadraticCurveTo(x+3,92,x,y+19);g.stroke();
+      g.fillStyle=c;g.beginPath();g.moveTo(x-21,y);g.lineTo(x-9,y+7);g.lineTo(x,y-10);g.lineTo(x+9,y+7);g.lineTo(x+22,y-3);g.bezierCurveTo(x+24,y+39,x-24,y+42,x-21,y);g.fill();
+    }
+    text(g,'BOLLENBENDE',130,52,49,'#fff3d2');text(g,'BLOEMEN UIT DE POLDER',134,96,22,'#d6e4b5');
+  });
+  put('bus',500,96,(g,w,h)=>{
+    g.fillStyle='#f7e6bd';g.fillRect(0,0,w,h);
+    polygon(g,[[0,80],[145,14],[206,40],[300,94],[0,96]],'#cd7045');
+    polygon(g,[[0,90],[145,43],[263,96],[0,96]],'#558675');
+    oval(g,56,26,16,16,'#d88b32');text(g,'DUINRIT',213,35,48,'#254d48');text(g,'TOURINGCARS',217,72,20,'#5d503c');
+  });
+  put('limonade',256,64,(g,w,h)=>{
+    g.fillStyle='#ffbc40';g.fillRect(0,0,w,h);
+    polygon(g,[[0,0],[54,0],[80,64],[0,64]],'#be4635');
+    oval(g,33,32,21,21,'#fff1b1');oval(g,33,32,17,17,'#ec792d');
+    for(let i=0;i<8;i++){const a=PI*i/4;g.strokeStyle='#ffe6a0';g.lineWidth=1.7;g.beginPath();g.moveTo(33,32);g.lineTo(33+17*cos(a),32+17*sin(a));g.stroke();}
+    text(g,'BRUIS!',79,22,39,'#273d52');text(g,'SINAASAPPELLIMONADE',81,51,13,'#794029');
+  });
   put('matrix', 96, 96, (g) => { g.fillStyle = '#0c0c0e'; g.fillRect(0, 0, 96, 96); g.strokeStyle = '#ff2a22'; g.lineWidth = 8; g.beginPath(); g.arc(48, 48, 38, 0, PI * 2); g.stroke(); text(g, '100', 48, 51, 36, '#fff', 'center'); });
   put('stop', 64, 64, (g) => { g.fillStyle = '#fff'; g.beginPath(); g.arc(32, 32, 31, 0, PI * 2); g.fill(); g.fillStyle = '#d81e28'; g.beginPath(); g.arc(32, 32, 26, 0, PI * 2); g.fill(); text(g, 'STOP', 32, 34, 18, '#fff', 'center'); });
   put('hm', 64, 64, (g) => { g.fillStyle = '#12854a'; g.fillRect(0, 0, 64, 64); g.fillStyle = '#d3202c'; g.fillRect(8, 6, 48, 22); text(g, 'A9', 32, 18, 19, '#fff', 'center'); text(g, '61,3', 32, 46, 21, '#fff', 'center'); });
   put('politie', 256, 64, (g, w, h) => { g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); text(g, 'POLITIE', 128, 34, 50, '#12409a', 'center'); });
   put('nieuws', 256, 64, (g, w, h) => { g.fillStyle = '#e02630'; g.fillRect(0, 0, w, h); text(g, 'NIEUWS', 112, 34, 46, '#fff', 'center'); g.fillStyle = '#fff'; g.beginPath(); g.arc(228, 32, 13, 0, PI * 2); g.fill(); });
-  put('lang', 256, 64, (g, w, h) => { g.fillStyle = '#ffd21f'; g.fillRect(0, 0, w, h); for (let i = -1; i < 12; i++) { g.fillStyle = i % 2 ? '#d81e28' : '#fff'; g.beginPath(); g.moveTo(i * 24, 64); g.lineTo(i * 24 + 24, 64); g.lineTo(i * 24 + 40, 46); g.lineTo(i * 24 + 16, 46); g.fill(); } text(g, 'LANG TRANSPORT', 128, 24, 26, '#111', 'center'); });
+  put('lang', 256, 64, (g, w, h) => { g.fillStyle = '#ffd21f'; g.fillRect(0, 0, w, h); for (let i = -1; i < 12; i++) { g.fillStyle = i % 2 ? '#d81e28' : '#fff'; g.beginPath(); g.moveTo(i * 24, 64); g.lineTo(i * 24 + 24, 64); g.lineTo(i * 24 + 40, 46); g.lineTo(i * 24 + 16, 46); g.fill(); } text(g, 'LANGE LADING', 128, 24, 26, '#111', 'center'); });
   put('stripes', 128, 32, (g) => { g.fillStyle = '#ffd21f'; g.fillRect(0, 0, 128, 32); g.fillStyle = '#12409a'; for (let i = -1; i < 6; i++) { g.beginPath(); g.moveTo(i * 32, 32); g.lineTo(i * 32 + 16, 32); g.lineTo(i * 32 + 32, 0); g.lineTo(i * 32 + 16, 0); g.fill(); } });
   put('plate', 96, 24, (g) => { g.fillStyle = '#ffcf1a'; g.fillRect(0, 0, 96, 24); g.strokeStyle = '#111'; g.lineWidth = 2; g.strokeRect(1, 1, 94, 22); text(g, '12-TOY-3', 48, 13, 17, '#111', 'center'); });
-  put('auto', 256, 48, (g, w, h) => { g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); text(g, 'AUTOTRANSPORT', 128, 26, 27, '#d3202c', 'center'); });
+  put('auto', 256, 48, (g, w, h) => { g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); text(g, 'TIL & TAKEL', 126, 24, 31, '#9b302b', 'center'); });
   put('kaasrek', 128, 128, (g) => { g.fillStyle = '#2b1d12'; g.fillRect(0, 0, 128, 128); for (const y of [31, 63, 95, 127]) { g.fillStyle = '#7a5530'; g.fillRect(0, y - 3, 128, 4); for (const x of [10, 68]) for (const d of [16, 30]) { g.fillStyle = '#e39a1c'; rr(g, x, y - 3 - d + 2, 50, 13, 6); g.fill(); g.fillStyle = '#ffd84a'; g.fillRect(x + 5, y - 3 - d + 3, 40, 3); } } }); // the inside of the cheese trailer: shelves of Gouda
   put('afstand', 256, 128, (g, w, h) => { panel(g, w, h); text(g, 'Alkmaar', 24, 42, 34, '#fff'); text(g, '3', 232, 42, 34, '#fff', 'right'); text(g, 'Den Helder', 24, 90, 34, '#fff'); text(g, '38', 232, 90, 34, '#fff', 'right'); });
   put('succes', 256, 64, (g, w, h) => { g.fillStyle = '#fbf7ea'; g.fillRect(0, 0, w, h); g.strokeStyle = '#e6dfc8'; g.lineWidth = 2; for (const x of [64, 128, 192]) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x + 3, 64); g.stroke(); } g.save(); g.translate(128, 34); g.rotate(-0.03); text(g, 'SUCCES!', 0, 0, 50, '#d81e28', 'center'); g.restore(); });
@@ -428,10 +473,26 @@ function makeAtlas() {
     for (let i = 0; i < 6; i++) { g.rotate(PI / 3); g.fillStyle = '#c9d0d0'; g.fillRect(-4, -25, 7, 24); }
     ring(10, '#afb9ba'); ring(5, '#71797c');
   });
+  put('zilvervin',256,64,(g,w,h)=>{
+    g.fillStyle='#15495a';g.fillRect(0,0,w,h);
+    for(const y of [21,43]){polygon(g,[[10,y],[27,y+3],[48,y-6],[66,y],[50,y+8],[28,y+6],[10,y+12]],'#bce1d9');oval(g,55,y,1.7,1.7,'#15495a');}
+    text(g,'ZILVERVIN',74,23,32,'#e3f2e9');text(g,'VIS VAN DE NOORDZEE',76,50,13,'#a1d5c9');
+  });
+  put('wafel',256,64,(g,w,h)=>{
+    g.fillStyle='#f3ddae';g.fillRect(0,0,w,h);polygon(g,[[0,0],[73,0],[63,64],[0,64]],'#74422d');
+    oval(g,36,32,24,25,'#d89540');g.save();g.translate(36,32);g.beginPath();g.arc(0,0,22,0,2*PI);g.clip();g.rotate(.58);
+    g.strokeStyle='#9c592b';g.lineWidth=2;for(let n=-24;n<25;n+=7){g.beginPath();g.moveTo(n,-26);g.lineTo(n,26);g.moveTo(-26,n);g.lineTo(26,n);g.stroke();}g.restore();
+    text(g,'KERMISKROK',79,23,23,'#79432a');text(g,'VERSE STROOPWAFELS',80,50,13,'#874b33');
+  });
+  put('agentFace',96,64,(g,w,h)=>{
+    g.fillStyle='#e1ae8d';g.fillRect(0,0,w,h);g.strokeStyle='#714d42';g.lineWidth=5;
+    for(const x of [26,66]){g.beginPath();g.moveTo(x-8,17);g.lineTo(x+6,14);g.stroke();oval(g,x,27,6,7,'#312d33');oval(g,x-1,25,1.7,1.8,'#fff0dd');}
+    oval(g,48,50,10,7,'#794b45');g.fillStyle='#f0d4bf';g.fillRect(40,45,15,3);
+  });
   const tex = canvasTex(W, W, (g) => {
     g.fillStyle = '#fff'; g.fillRect(0, 0, W, W); let x = 0, y = 0, row = 0;
     for (const [name, w, h, draw] of jobs) { if (x + w > W) { x = 0; y += row + 6; row = 0; } g.save(); g.translate(x, y); g.beginPath(); g.rect(0, 0, w, h); g.clip(); draw(g, w, h);
-      if (['kaas', 'tulp', 'transport'].includes(name)) {
+      if (['kaas', 'tulp', 'limonade', 'zilvervin', 'wafel'].includes(name)) {
         for (let u = 7; u < w; u += 16) { g.fillStyle = 'rgba(70,45,30,.1)'; g.fillRect(u, 0, 1.5, h); g.fillStyle = 'rgba(255,255,245,.24)'; g.fillRect(u + 2, 0, 1, h); }
         g.fillStyle = 'rgba(54,57,53,.4)'; for (let u = 8; u < w; u += 32) { g.fillRect(u, 4, 2, 2); g.fillRect(u, h - 6, 2, 2); }
       }
@@ -703,7 +764,7 @@ export function buildSnelweg(scene, rubber) {
   const truck = (cab, body, sign) => { const k = kit(uv);
     k.part(box(16.2, 0.36, 2.2), dark, -0.1, 0.82, 0).part(rb(2.5, 2.95, 2.5, 0.4), cab, 7.0, 0.6, 0).part(box(0.06, 1.0, 2.1), '#ffffff', 8.26, 2.55, 0, 'glass').part(box(1.1, 0.8, 2.56), '#ffffff', 7.35, 2.6, 0, 'glass').part(box(0.06, 0.7, 1.7), '#ffffff', 8.26, 1.4, 0, 'grille').part(box(0.34, 0.36, 2.54), '#d9dde0', 8.14, 0.62, 0);
     for (const z of [-0.95, 0.95]) k.part(box(0.06, 0.2, 0.34), '#ffffff', 8.27, 0.98, z, 'headlight').part(box(0.06, 0.24, 0.3), '#ffffff', -8.23, 1.22, z, 'rearLamp');
-    k.part(rb(13.7, 3.0, 2.44, 0.22), body, -1.35, 1.0, 0).part(box(13.0, 0.2, 2.4), dark, -1.35, 0.98, 0).both(sign, 11.2, sign === 'transport' ? 2.8 : 2.6, -1.35, 2.5, 1.31).decal(sign, 10, sign === 'transport' ? 2.4 : 2.3, -1.35, 4.03, 0, 'y+').decal('plate', 0.6, 0.15, -8.24, 0.8, 0, 'x-');
+    k.part(rb(13.7, 3.0, 2.44, 0.22), body, -1.35, 1.0, 0).part(box(13.0, 0.2, 2.4), dark, -1.35, 0.98, 0).both(sign, 11.2, 2.52, -1.35, 2.5, 1.31).decal(sign, 10, 2.25, -1.35, 4.03, 0, 'y+').decal('plate', 0.6, 0.15, -8.24, 0.8, 0, 'x-');
     // The trailer is framed by corner posts and an underrun guard. They fit inside the previous body and axle extents.
     for (const side of [-1, 1]) {
       for (const x of [-8.03, 5.31]) k.part(box(0.18, 2.68, 0.10), '#a6b0ae', x, 2.48, side * 1.23);
@@ -712,6 +773,20 @@ export function buildSnelweg(scene, rubber) {
       k.part(box(1.02, 0.16, 0.32), '#64757b', 6.63, 0.64, side * 1.08);
     }
     k.part(box(0.07, 0.95, 0.07), '#71858e', 8.255, 2.55, 0);
+    if (sign !== 'kaas') {
+      k.part(box(.10,2.56,2.31),'#e0d8b8',-8.16,2.49,0);
+      k.decal(sign,2.22,.74,-8.218,2.87,0,'x-');
+      k.part(box(.045,2.42,.034),'#626c6c',-8.23,2.48,0);
+      for(const side of [-1,1]){
+        k.part(box(.036,2.27,.035),'#a1a8a0',-8.236,2.49,side*.71);
+        k.part(box(.045,.062,.22),'#526167',-8.249,1.62,side*.64);
+        k.part(box(.045,.09,.70),'#d59b37',-8.232,1.36,side*.57);
+      }
+    }
+    if(sign==='zilvervin'){
+      k.part(rb(.38,.84,1.47,.08,.024),'#d1d8c7',5.39,2.94,0);
+      for(const z of [-.36,.36])k.part(cyl(.225,.225,.05,10).rotateZ(-PI/2),'#455b63',5.60,3.34,z);
+    }
     if (sign === 'kaas') k.decal('kaasrek', 2.4, 2.5, -8.212, 2.65, 0, 'x-'); // behind her rear doors
     return k.geo(); };
   // A pressed body with real wheel wells and a tapered glazed cabin. The revised model shares
@@ -742,11 +817,13 @@ export function buildSnelweg(scene, rubber) {
     }
     k.part(box(0.12, 0.12, 1.59), '#43535c', x + 2.04, 0.48, 0).part(box(0.14, 0.16, 1.62), '#44505b', x - 2.03, 0.45, 0);
     k.part(box(0.09, 0.20, 0.69), '#ffffff', x + 2.075, 0.70, 0, 'grille');
+    k.decal('plate',.49,.117,x+2.108,.463,0,'x+');
     return k.decal('plate', 0.52, 0.13, x - 2.115, 0.52, 0, 'x-');
   };
   const bike = (k, x, c) => { const wheel = () => new THREE.TorusGeometry(0.33, 0.04, 5, 12).rotateY(PI / 2); k.part(wheel(), tyre, x, 1.45, -0.52).part(wheel(), tyre, x, 1.45, 0.52).part(box(0.05, 0.06, 1.0), c, x, 1.62, 0).part(box(0.05, 0.5, 0.06), c, x, 1.72, -0.18).part(box(0.05, 0.42, 0.06), c, x, 1.68, 0.4).part(box(0.1, 0.06, 0.26), tyre, x, 1.98, -0.18).part(box(0.4, 0.05, 0.05), tyre, x, 1.9, 0.4); };
   const GEO = {
-    truck: truck('#f2f2ee', '#f6f6f2', 'transport'), kaas: truck('#d3202c', '#ffd43a', 'kaas'), tulp: truck('#2f9a4a', '#ff7fb2', 'tulp'),
+    truck: truck('#c95139','#ffc34a','limonade'), vis: truck('#456b76','#276373','zilvervin'), wafel: truck('#865031','#e7ca93','wafel'),
+    kaas: truck('#b42a34', '#f2c74b', 'kaas'), tulp: truck('#275845', '#335d4c', 'tulp'),
     car: carParts(kit(uv), 0, '#f4f4f0').geo(),
     caravan: (() => { const k = carParts(kit(uv), 3.7, '#f4f4f0'); k.part(box(1.5, 0.1, 0.12), dark, 0.9, 0.55, 0).part(rb(7.2, 2.3, 2.24, 0.55), '#fbf8ee', -2.1, 0.5, 0).part(box(6.3, 0.2, 2.3), '#ff7a1a', -2.1, 1.25, 0).part(box(6.3, 0.08, 2.3), '#19a0c9', -2.1, 1.05, 0).part(box(1.4, 0.6, 2.3), '#ffffff', -0.6, 1.95, 0, 'glass').part(box(1.2, 0.6, 2.3), '#ffffff', -3.6, 1.95, 0, 'glass').part(box(0.5, 0.08, 1.5), dark, -5.95, 1.05, 0).part(box(0.06, 0.9, 0.06), dark, -5.76, 1.5, -0.3).part(box(0.06, 0.9, 0.06), dark, -5.76, 1.5, 0.3); bike(k, -5.95, '#e02630'); bike(k, -6.25, '#19a0c9'); return k.decal('plate', 0.52, 0.13, -5.72, 0.75, 0.6, 'x-').geo(); })(),
     bus: (() => { const k = kit(uv); k.part(rb(12.6, 3.15, 2.56, 0.55), '#fdfdf8', 0, 0.4, 0).part(box(11.0, 0.95, 2.62), '#ffffff', -0.2, 2.6, 0, 'coachGlass').part(box(0.06, 1.5, 2.2), '#ffffff', 6.3, 2.3, 0, 'glass').part(box(11.6, 0.2, 2.62), '#19a0c9', 0, 0.75, 0).both('bus', 7.5, 1.44, -0.2, 1.48, 1.34).decal('plate', 0.6, 0.15, -6.33, 0.9, 0, 'x-');
@@ -756,7 +833,23 @@ export function buildSnelweg(scene, rubber) {
       for (const z of [-0.84, 0.84]) k.part(box(1.5, 0.12, 0.56), green, -0.95, 1.9, z); return k.geo(); })(),
     blade: (() => { const k = kit(uv), white = '#f4f4f0';
       k.part(box(6.4, 0.4, 2.2), dark, 15.25, 0.9, 0).part(rb(3.2, 2.9, 2.5, 0.4), '#ff8a1e', 16.85, 0.6, 0).part(box(0.06, 1.0, 2.1), '#ffffff', 18.46, 2.55, 0, 'glass').part(box(1.2, 0.8, 2.56), '#ffffff', 17.4, 2.6, 0, 'glass').part(box(2.2, 1.9, 1.7), '#6d747c', 13.4, 2.05, 0);
-      k.part(new THREE.CylinderGeometry(0.22, 1.0, 34, 12).rotateZ(-PI / 2).scale(1, 1, 0.8), white, -2, 3.47, 0).part(new THREE.CylinderGeometry(0.03, 0.26, 2.2, 12).rotateZ(-PI / 2).scale(1, 1, 0.8), '#e02630', -20.1 + 1.1, 3.47, 0).part(cyl(1.08, 1.08, 0.5, 12).rotateZ(PI / 2), '#8d959c', 14.9, 3.47, 0);
+      // Root flange on the tractor, airfoil on its two saddles and a swept red tip over the rear dolly.
+      const bladeSections = [[-19,3.79,-.26,.04,.04],[-17.15,3.74,-.19,.105,.25],[-12,3.67,-.13,.17,.48],
+        [-3.8,3.52,-.02,.25,.80],[5.2,3.46,0,.36,.98],[9.4,3.47,0,.61,1.0],[12.2,3.47,0,.87,.92],[14.9,3.47,0,.91,.91]];
+      const rim=(station,i) => {
+        const [x,y,z,ry,rz]=station,angle=2*PI*i/12;
+        const section = x<9.4 ? sin(angle)*(1-.33*cos(angle)) : sin(angle);
+        return [x,y+ry*section,z+rz*cos(angle)];
+      };
+      for(let i=0;i<bladeSections.length-1;i++)for(let j=0;j<12;j++)
+        sectionFace(k,[rim(bladeSections[i],j),rim(bladeSections[i+1],j),rim(bladeSections[i+1],j+1),rim(bladeSections[i],j+1)],i===0?'#d75342':white);
+      for(let j=0;j<12;j++)sectionFace(k,[[-19,3.79,-.26],rim(bladeSections[0],j),rim(bladeSections[0],j+1)],'#d75342');
+      k.part(cyl(1.02,1.02,.44,16).rotateZ(PI/2),'#859498',14.89,3.47,0);
+      k.part(cyl(.95,.95,.06,16).rotateZ(PI/2),'#ccd1c5',15.15,3.47,0);
+      for(const side of [-1,1]){
+        rod(k,[-14.75,2.66,side*.63],[-14.75,3.61,side*.36],.105,'#d8a840',8);
+        rod(k,[13.36,2.58,side*.70],[13.36,3.28,side*.82],.10,'#d8a840',8);
+      }
       k.part(box(4.5, 0.5, 2.3), dark, -14.75, 1.0, 0).part(box(2.4, 1.95, 1.5), '#6d747c', -14.75, 2.2, 0).part(box(0.08, 0.6, 2.3), '#ffd21f', -17.02, 1.6, 0).decal('lang', 2.24, 0.56, -17.1, 1.6, 0, 'x-');
       for (const z of [-0.8, 0.8]) k.part(cyl(0.12, 0.12, 0.22, 8), '#ff8a1e', -16.6, 1.36, z).part(box(0.06, 0.2, 0.34), '#fff3b8', 18.46, 0.98, z); return k.geo(); })(),
     transporter: (() => { const k = kit(uv), s = new THREE.Shape(), lip = new THREE.Shape(), N = 20;
@@ -777,10 +870,23 @@ export function buildSnelweg(scene, rubber) {
       k.part(new THREE.CircleGeometry(r * 0.84, 22).rotateX(-PI / 2), face, 0, h / 2, 0).part(new THREE.CircleGeometry(r * 0.84, 22).rotateX(PI / 2), face, 0, -h / 2, 0).part(new THREE.CircleGeometry(0.08, 12).rotateX(-PI / 2), '#c0271f', 0.17, h / 2 + 0.004, 0.08);
       return k.geo().rotateX(PI / 2); })(), // the axle along z: it stands on its edge and rolls along x
   };
-  const tints = ['#ffffff', '#ffe3a1', '#bfe3ff', '#ffc2c2', '#d1f5c8', '#e7d2ff', '#ffd9b0', '#c9f2ee'], carTints = ['#e63b3b', '#3f7fe0', '#f4f4f0', '#ffc928', '#2f2f36', '#3fae5a', '#ff8a1e', '#9aa3ad', '#8d3fc4'];
+  const carTints = ['#e63b3b', '#3f7fe0', '#f4f4f0', '#ffc928', '#2f2f36', '#3fae5a', '#ff8a1e', '#9aa3ad', '#8d3fc4'];
   const enamel = paint.clone(); enamel.roughness = 0.39; enamel.metalness = 0.16;
+  const carEnamel=enamel.clone(), bodyColor=new THREE.Color('#f4f4f0');
+  const colorAttr=GEO.car.attributes.color, painted=new Uint8Array(colorAttr.count);
+  for(let i=0;i<painted.length;i++) {
+    const match=abs(colorAttr.getX(i)-bodyColor.r)+abs(colorAttr.getY(i)-bodyColor.g)+abs(colorAttr.getZ(i)-bodyColor.b);
+    painted[i]=match<.00001?1:0;
+  }
+  GEO.car.setAttribute('paintedPanel',new THREE.BufferAttribute(painted,1));
+  carEnamel.onBeforeCompile=shader=>{
+    const tint=THREE.ShaderChunk.color_vertex.replace('vColor.rgb *= instanceColor.rgb;',
+      'vColor.rgb *= mix(vec3(1.0), instanceColor.rgb, paintedPanel);');
+    shader.vertexShader='attribute float paintedPanel;\n'+shader.vertexShader.replace('#include <color_vertex>',tint);
+  };
   const lone = [], fleets = new Map();
-  const palettes = { car: carTints, truck: tints, caravan: ['#ffffff', '#ffe9c4'] }, nextTint = { car: 0, truck: 0, caravan: 0 };
+  const truckStyles = ['truck','vis','wafel'];
+  const palettes = { car: carTints, caravan: ['#ffffff', '#ffe9c4'] }, nextTint = { car: 0, truck: 0, caravan: 0 };
   // Vehicles in one direction and stretch stay close enough to share a draw in both the camera and shadow passes.
   function addTraffic(kind, vehicle, offset, y, z, radius, width, tint) {
     const key = kind + '/' + vehicle.dir + '/' + floor(vehicle.x0 / 700);
@@ -793,8 +899,9 @@ export function buildSnelweg(scene, rubber) {
       const m = new THREE.Mesh(GEO[special], enamel);
       m.castShadow = m.receiveShadow = true; m.position.set(0, GROUND, o.z); moving.add(m); lone.push([o, m]);
     } else {
-      const palette = palettes[o.kind], tint = palette[(nextTint[o.kind]++ * 5 + 1) % palette.length];
-      addTraffic(o.kind, o, 0, GROUND, o.z, 1, 1, tint);
+      const index = nextTint[o.kind]++, palette = palettes[o.kind];
+      const kind = o.kind === 'truck' ? truckStyles[index % truckStyles.length] : o.kind;
+      addTraffic(kind, o, 0, GROUND, o.z, 1, 1, o.kind === 'truck' ? '#ffffff' : palette[(index * 5 + 1) % palette.length]);
     }
     for (const [wx, r, w, tr] of KINDS[o.kind].wheels) for (const sign of [-1, 1]) {
       addTraffic('wheel', o, wx * o.dir, GROUND + r, o.z + sign * tr, r, w);
@@ -802,7 +909,7 @@ export function buildSnelweg(scene, rubber) {
   }
   for (const fleet of fleets.values()) {
     const { kind, rows } = fleet, geo = GEO[kind], isWheel = kind === 'wheel';
-    const mesh = new THREE.InstancedMesh(geo, isWheel ? paint : enamel, rows.length);
+    const mesh = new THREE.InstancedMesh(geo, isWheel ? paint : kind==='car' ? carEnamel : enamel, rows.length);
     mesh.castShadow = true; mesh.receiveShadow = !isWheel;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, GROUND, rows[0].z));
@@ -822,59 +929,139 @@ export function buildSnelweg(scene, rubber) {
   }
 
   // ---- the helicopters ----
-  const heliBody = (body, belly, sign, news) => { const k = kit(uv);
-    k.part(rb(5.0, 2.4, 2.2, 1.0), body, 0.4, -1.1, 0).part(rb(1.5, 1.3, 2.27, 0.6), '#455b6a', 2.2, -0.35, 0).part(box(5.2, 0.42, 0.42), body, -4.6, 0.6, 0).part(box(0.9, 1.6, 0.14), belly, -7.0, 1.1, 0).part(box(1.2, 0.12, 1.4), belly, -6.9, 0.62, 0).part(cyl(0.16, 0.2, 0.5, 8), dark, 0.3, 1.5, 0).part(box(2.2, 0.5, 2.26), belly, -0.3, -0.75, 0);
-    for (const side of [-1, 1]) {
-      const skid = side * 0.95;
-      rod(k, [-1.3, -1.59, skid], [2.02, -1.59, skid], 0.073, '#34434a', 8);
-      rod(k, [2.02, -1.59, skid], [2.29, -1.45, skid], 0.073, '#616e72', 8);
-      for (const x of [-0.79, 1.22]) rod(k, [x, -1.55, skid], [x + 0.31, -1.10, side * 0.68], 0.055, '#7f8c8f');
-      k.part(box(0.20, 0.22, 0.21), '#ffc24b', -6.88, 0.63, side * 0.57);
-    }
-    k.part(rb(2.15, 0.23, 1.34, 0.22), belly, -0.03, -1.23, 0);
-    k.part(cyl(0.46, 0.55, 0.22, 12), '#62747a', 0.36, 1.21, 0);
-    k.part(cyl(0.22, 0.40, 0.21, 10), '#9ca6a6', 0.36, 1.42, 0);
-    for (const side of [-1, 1]) {
-      k.part(box(0.95, 0.19, 0.05), '#ffffff', -1.05, 0.52, side * 1.104, 'grille');
-      k.part(box(0.68, 0.10, 0.04), '#687c82', -1.18, -0.25, side * 1.102);
-    }
-    k.part(box(1.95, 0.56, 2.19), '#ffffff', 0.22, 0.83, 0, 'glass');
-    for (const z of [-1.095, 1.095]) {
-      k.part(box(0.09, 0.58, 0.045), body, 0.09, 0.83, z);
-      k.part(box(0.34, 0.07, 0.055), '#778389', -1.33, 0.09, z);
-    }
-    for (const x of [-3.55, -5.45]) k.part(box(0.24, 0.45, 0.47), belly, x, 0.6, 0);
-    k.both(sign, 2.2, 0.55, -0.3, 0.42, 1.14).decal(sign, 2.2, 0.55, 0.2, -1.14, 0, 'y-');
-    if (news) k.part(new THREE.IcosahedronGeometry(0.4, 1), dark, 2.3, -1.42, 0).part(cyl(0.16, 0.16, 0.12, 10).rotateZ(PI / 2), '#7fd4ff', 2.68, -1.5, 0).part(box(0.5, 0.3, 0.3), dark, 2.3, -1.1, 0);
-    else k.both('stripes', 2.2, 0.42, -0.3, -0.75, 1.165).part(cyl(0.34, 0.33, 0.28, 12), '#667782', HELI.lamp[0], HELI.lamp[1] + 0.2, 0).part(cyl(0.26, 0.26, 0.085, 12), '#ffffff', HELI.lamp[0], HELI.lamp[1] + 0.03, 0, 'headlight').part(cyl(0.1, 0.1, 0.2, 8), '#3f7fe0', -1.0, 1.4, 0);
-    return k.geo(); };
-  const rotor = kit(uv);
-  for (const sign of [-1, 1]) for (const axis of [0, 1]) {
-    const len = HELI.rotor - 0.45, along = (d) => axis ? [0, 0, sign * d] : [sign * d, 0, 0];
-    rotor.part(axis ? box(0.34, 0.06, len) : box(len, 0.06, 0.34), dark, ...along(len / 2));
-    rotor.part(axis ? box(0.34, 0.06, 0.45) : box(0.45, 0.06, 0.34), '#d9b64b', ...along(len + 0.225));
+  // Each ring is a cross-section of the same mould. The canopy and body panels share their edges.
+  function sectionFace(k, points, color, tile, turnUV = false) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position',new THREE.Float32BufferAttribute(points.flat(),3));
+    g.setAttribute('uv',new THREE.Float32BufferAttribute(turnUV ? [1,0,1,1,0,1,0,0] : [0,1,0,0,1,0,1,1],2));
+    g.setIndex(points.length === 3 ? [0,1,2] : [0,1,2,0,2,3]);g.computeVertexNormals();k.part(g,color,0,0,0,tile);
   }
-  for (const sign of [-1, 1]) {
-    rotor.part(box(1.04, 0.105, 0.17), '#88989a', sign * 0.48, 0.001, 0);
-    rotor.part(box(0.17, 0.105, 1.04), '#88989a', 0, 0.001, sign * 0.48);
+  function heliBody(body, belly, sign, news) {
+    const k = kit(uv), frame = news ? '#aa343d' : '#384d5b';
+    // x, centre height, vertical radius, width radius.
+    const stations = [[-2.57,.19,.24,.24],[-1.83,.10,.80,.75],[-1.14,.02,1.08,1.05],[.32,.02,1.14,1.14],
+      [1.39,.005,1.07,1.09],[2.41,-.13,.81,.92],[2.98,-.26,.43,.59],[3.16,-.34,.10,.22]];
+    const section = [[-.90,-.50],[-.43,-.95],[.03,-1],[.46,-.99],[.83,-.77],[1,-.36],
+      [1,.36],[.83,.77],[.46,.99],[.03,1],[-.43,.95],[-.90,.50],[-1,0]];
+    const point = (i,j) => { const [x,y,h,w]=stations[i], [v,z]=section[j];return [x,y+v*h,z*w]; };
+    for(let i=0;i<stations.length-1;i++) for(let j=0;j<section.length;j++) {
+      const next=(j+1)%section.length, side = j === 1 || j === 9;
+      const sideWindow = i>=2 && i<=4 && ((j>=2 && j<=3) || (j>=7 && j<=8));
+      const windshield = i>=4 && i<=5 && j>=2 && j<=8;
+      const low = j===0 || j>=10;
+      let c=low?belly:body, tile;
+      if(sideWindow || windshield) { c='#ffffff';tile='glass'; }
+      if(side && i===2) { c='#ffffff';tile=sign; }
+      if(side && i===3 && !news) { c='#ffffff';tile='stripes'; }
+      sectionFace(k,[point(i,j),point(i,next),point(i+1,next),point(i+1,j)],c,tile,j<=5);
+    }
+    for (const [i,reverse] of [[0,true],[stations.length-1,false]]) {
+      const center=[stations[i][0],stations[i][1],0];
+      for(let j=0;j<section.length;j++){
+        const next=(j+1)%section.length, a=point(i,j), b=point(i,next);
+        sectionFace(k,reverse?[center,b,a]:[center,a,b],body);
+      }
+    }
+    for(const side of [-1,1]){
+      const j=side<0?3:8;
+      for(const i of [3,4]) rod(k,point(i,j),point(i,j+(side<0?1:-1)),.038,frame,8);
+      rod(k,point(4,side<0?4:7),point(6,side<0?4:7),.033,frame);
+      k.part(box(.31,.055,.07),'#e7e1ce',.02,-.15,side*1.115);
+      // Both runners turn up at the nose; thick diagonal cross-members meet the fuselage.
+      const z=side*.99;
+      rod(k,[-1.67,-1.52,z],[-1.43,-1.64,z],.075,'#435563',8);
+      rod(k,[-1.43,-1.64,z],[1.90,-1.64,z],.075,'#435563',8);
+      rod(k,[1.90,-1.64,z],[2.40,-1.42,z],.075,'#6f858c',8);
+      for(const x of [-.91,1.16]) rod(k,[x,-1.60,z],[x+.18,-.85,side*.57],.085,'#5f7178',8);
+    }
+    // Narrowing tail boom, dorsal gearbox fairing and swept fin. The stabiliser ends ahead of the tail rotor.
+    const boom = cyl(.43,.12,4.81,10).rotateZ(-PI/2).rotateZ(-.092);
+    k.part(boom,body,-4.76,.58,0);
+    const fin = new THREE.Shape();fin.moveTo(-7.25,.62);fin.lineTo(-7.42,1.86);fin.lineTo(-7.06,1.86);fin.lineTo(-6.47,.77);fin.lineTo(-6.69,.38);fin.closePath();
+    k.part(new THREE.ExtrudeGeometry(fin,{depth:.14,bevelEnabled:false}).translate(0,0,-.07),belly);
+    k.part(rb(1.0,.13,1.39,.13,.035),belly,-5.65,.58,0);
+    for(const z of [-.64,.64])k.part(box(.25,.135,.097),news?'#ffd281':'#ee9046',-5.72,.644,z);
+    k.part(cyl(.095,.095,.44,10).rotateX(PI/2),'#74818b',-7.06,1.10,.18);
+    k.part(rb(2.02,.38,1.10,.27),body,-.68,.98,0).part(cyl(.28,.35,.18,12),'#576b75',.22,1.37,0);
+    for(const side of [-1,1]){
+      k.part(box(.62,.135,.04),'#ffffff',-.88,1.18,side*.55,'grille');
+      k.part(cyl(.16,.18,.35,10).rotateZ(PI/2),'#645f5d',-1.64,1.12,side*.30);
+      k.part(cyl(.123,.123,.022,10).rotateZ(PI/2),'#332f32',-1.824,1.12,side*.30);
+    }
+    k.part(cyl(.105,.14,.30,10),'#80919a',.22,1.55,0);
+    // The camera turret and police search lamp are attached to brackets underneath the nose.
+    k.part(rb(.57,.36,.44,.14,.035),frame,2.08,-1.24,0);
+    if (news) {
+      k.part(new THREE.SphereGeometry(.38,12,8),dark,2.1,-1.45,0);
+      k.part(cyl(.21,.23,.12,12).rotateZ(-PI/2),'#aec0bd',2.40,-1.45,0).part(cyl(.16,.17,.045,12).rotateZ(-PI/2),'#31566f',2.475,-1.45,0);
+    } else {
+      k.part(cyl(.29,.31,.20,16),'#677982',HELI.lamp[0],HELI.lamp[1]+.10,0);
+      k.part(cyl(.25,.25,.035,16),'#fff4c3',HELI.lamp[0],HELI.lamp[1]-.015,0);
+    }
+    return k.geo();
   }
-  const rotorGeo = rotor.part(cyl(0.3, 0.3, 0.2, 8), '#8d959c').geo();
-  const tailGeo = kit(uv).part(box(1.7, 0.2, 0.05), dark).part(box(0.2, 1.7, 0.05), dark).geo();
-  const discMat = new THREE.MeshBasicMaterial({ color: '#30343c', transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide });
-  const helis = [['#fbfbf6', '#12409a', 'politie', false], ['#e02630', '#fbfbf6', 'nieuws', true]].map(([a, b, sign, news]) => {
-    const g = new THREE.Group(), body = new THREE.Mesh(heliBody(a, b, sign, news), enamel), rotor = new THREE.Mesh(rotorGeo, paint), tail = new THREE.Mesh(tailGeo, paint), disc = new THREE.Mesh(new THREE.CircleGeometry(HELI.rotor, 28).rotateX(-PI / 2), discMat);
-    rotor.position.set(0.3, 1.74, 0); disc.position.set(0.3, 1.72, 0); tail.position.set(-7.15, 1.1, 0.14); body.castShadow = rotor.castShadow = true; g.add(body, rotor, tail, disc); moving.add(g); return { g, rotor, tail };
+  // Each blade starts beyond the mast collar, with a tapered trailing edge and a painted tip.
+  function bladeSection(k, inner, outer, w0, w1, sweep, color, angle, tailRotor = false, startSweep = 0) {
+    const shape=new THREE.Shape();
+    shape.moveTo(inner,startSweep-w0/2);shape.lineTo(outer,sweep-w1/2);shape.lineTo(outer,sweep+w1/2);shape.lineTo(inner,startSweep+w0/2);shape.closePath();
+    const thickness = tailRotor ? .035 : .052;
+    const g=new THREE.ExtrudeGeometry(shape,{depth:thickness,bevelEnabled:false}).translate(0,0,-thickness/2);
+    if(tailRotor)g.rotateZ(angle);else g.rotateX(-PI/2).rotateY(angle);
+    k.part(g,color);
+  }
+  const rotor=kit(uv),tailRotor=kit(uv);
+  for(let i=0;i<4;i++){
+    const a=i*PI/2;
+    bladeSection(rotor,.12,.61,.12,.20,0,'#8b99a0',a);
+    bladeSection(rotor,.61,3.94,.33,.23,-.085,'#34424c',a);
+    bladeSection(rotor,3.94,4.36,.23,.15,-.085,'#f4be46',a,false,-.085);
+  }
+  for(let i=0;i<3;i++){
+    const a=i*PI*2/3;
+    bladeSection(tailRotor,.07,.65,.115,.095,-.025,'#49555c',a,true);
+    bladeSection(tailRotor,.65,.79,.095,.065,-.025,'#f1ac3e',a,true,-.025);
+  }
+  const rotorGeo=rotor.part(cyl(.22,.25,.14,12),'#82919a').geo();
+  const tailGeo=tailRotor.part(cyl(.11,.12,.09,10).rotateX(PI/2),'#8a9596').geo();
+  // Transparent tip traces occupy a separate thin band below the main blades; the cockpit stays clear through the rotor.
+  const traces=kit(uv);
+  for(let i=0;i<4;i++)traces.part(new THREE.RingGeometry(4.02,4.35,9,1,i*PI/2,PI*.17).rotateX(-PI/2),'#526068');
+  const traceGeo=traces.geo();
+  const discMat=new THREE.MeshBasicMaterial({color:'#65717a',transparent:true,opacity:.19,depthWrite:false,side:THREE.DoubleSide});
+  const helis=[['#eeeede','#193e71','politie',false],['#d74042','#f5e5bb','nieuws',true]].map(([a,b,sign,news])=>{
+    const g=new THREE.Group(),body=new THREE.Mesh(heliBody(a,b,sign,news),enamel),rotor=new THREE.Mesh(rotorGeo,paint),tail=new THREE.Mesh(tailGeo,paint),disc=new THREE.Mesh(traceGeo,discMat);
+    rotor.position.set(.22,1.76,0);tail.position.set(-7.06,1.10,.405);disc.position.y=-.082;
+    rotor.add(disc);body.castShadow=rotor.castShadow=true;g.add(body,rotor,tail);moving.add(g);return {g,rotor,tail};
   });
   // the rope ladder with the traffic cop on it, his stop paddle on a separate arm so it can wave
   const ladder = new THREE.Group(); moving.add(ladder);
-  { const k = kit(uv), L = HELI.ladder, blue = '#17336f', vis = '#e8f02a', skin = '#f0c39a';
-    for (const z of [-0.22, 0.22]) k.part(box(0.05, L, 0.05), '#c9b68c', 0, -L / 2, z); for (let y = 0.3; y < L; y += 0.4) k.part(box(0.045, 0.045, 0.44), '#8a6b3c', 0, -y, 0);
-    const y = -L + 0.35; // his feet
-    for (const z of [-0.13, 0.13]) k.part(box(0.2, 0.8, 0.2), blue, 0.16, y + 0.4, z).part(box(0.3, 0.1, 0.2), tyre, 0.2, y + 0.03, z);
-    k.part(box(0.3, 0.72, 0.52), vis, 0.17, y + 1.16, 0).part(box(0.31, 0.12, 0.53), '#c9ccd2', 0.17, y + 1.05, 0).part(box(0.31, 0.12, 0.53), '#c9ccd2', 0.17, y + 1.3, 0).part(box(0.26, 0.28, 0.28), skin, 0.17, y + 1.68, 0).part(box(0.32, 0.12, 0.32), '#fbfbf6', 0.17, y + 1.87, 0).part(box(0.16, 0.04, 0.3), blue, 0.38, y + 1.82, 0).part(box(0.13, 0.13, 0.5), vis, 0.08, y + 1.5, -0.42).part(box(0.13, 0.4, 0.13), vis, 0.02, y + 1.7, -0.3);
-    const m = new THREE.Mesh(k.geo(), paint); m.castShadow = true; ladder.add(m);
-    const a = kit(uv).part(box(0.13, 0.62, 0.13), vis, 0, 0.31, 0).part(box(0.06, 0.5, 0.06), '#8a6b3c', 0, 0.85, 0).part(cyl(0.3, 0.3, 0.04, 16).rotateZ(PI / 2), '#fbfbf6', 0, 1.3, 0).decal('stop', 0.56, 0.56, 0.035, 1.3, 0, 'x+').decal('stop', 0.56, 0.56, -0.035, 1.3, 0, 'x-');
-    ladder.arm = new THREE.Mesh(a.geo(), paint); ladder.arm.position.set(0.17, y + 1.42, 0.33); ladder.add(ladder.arm); }
+  { const k=kit(uv),L=HELI.ladder,blue='#20394c',vis='#e5e85d',skin='#e1ae8d',y=-L+.35;
+    for(const z of [-.22,.22])rod(k,[0,0,z],[0,-L,z],.036,'#a88d62',8);
+    for(let q=.3;q<L;q+=.4)rod(k,[0,-q,-.26],[0,-q,.26],.035,'#d7bb84',8);
+    for(const z of [-.13,.13]){
+      k.part(rb(.24,.76,.21,.045,.017),blue,.16,y+.07,z);
+      k.part(rb(.33,.135,.23,.045,.015),'#363e43',.20,y,z);
+      k.part(box(.245,.055,.215),'#bec7be',.16,y+.28,z);
+    }
+    k.part(rb(.34,.72,.52,.075,.027),vis,.17,y+.80,0);
+    k.part(box(.32,.104,.53),'#a9b7ba',.17,y+1.03,0).part(box(.32,.08,.53),'#d4dcd6',.17,y+1.10,0);
+    for(const z of [-.16,.16])k.part(box(.026,.29,.068),'#ccdad6',.34,y+1.35,z);
+    k.part(box(.031,.125,.097),'#243d4c',.357,y+1.30,-.145).part(box(.03,.065,.073),'#42607a',.36,y+1.32,-.145);
+    k.part(rb(.29,.30,.34,.04,.012),skin,.17,y+1.52,0).decal('agentFace',.265,.23,.321,y+1.68,0,'x+');
+    k.part(cyl(.187,.198,.11,12),blue,.17,y+1.84,0).part(rb(.36,.04,.34,.035,.012),blue,.24,y+1.78,0);
+    k.part(box(.02,.079,.071),'#e5c878',.35,y+1.84,0);
+    rod(k,[.16,y+1.42,-.25],[.07,y+1.38,-.40],.084,vis,8);
+    rod(k,[.07,y+1.38,-.40],[.025,y+1.71,-.23],.068,blue,8);
+    k.part(new THREE.SphereGeometry(.076,8,6),skin,.025,y+1.74,-.23);
+    const m=new THREE.Mesh(k.geo(),paint);m.castShadow=true;ladder.add(m);
+    const a=kit(uv);
+    rod(a,[0,0,0],[.01,.33,-.03],.083,vis,8);rod(a,[.01,.33,-.03],[.07,.58,0],.067,blue,8);
+    a.part(new THREE.SphereGeometry(.087,9,6),skin,.07,.60,0);
+    rod(a,[.073,.58,0],[.073,1.09,0],.035,'#5a4939',8);
+    a.part(cyl(.309,.309,.064,24).rotateZ(PI/2),'#ede3cb',.073,1.31,0);
+    for(const side of [-1,1]) a.part(new THREE.CircleGeometry(.30,24).rotateY(side*PI/2),'#ffffff',.073+side*.033,1.31,0,'stop');
+    ladder.arm=new THREE.Mesh(a.geo(),paint);ladder.arm.position.set(.17,y+1.42,.33);ladder.add(ladder.arm);
+  }
   const beam = new THREE.Mesh(new THREE.ConeGeometry(1, 1, 24, 1, true).translate(0, -0.5, 0), new THREE.MeshBasicMaterial({ color: '#fff2a8', transparent: true, opacity: 0.07, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
   const pool = new THREE.Mesh(new THREE.CircleGeometry(1, 28).rotateX(-PI / 2), new THREE.MeshBasicMaterial({ color: '#fff2a8', transparent: true, opacity: 0.2, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
   const glow = canvasTex(64, 64, (g) => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(0.25, 'rgba(255,255,240,.8)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); }, false);

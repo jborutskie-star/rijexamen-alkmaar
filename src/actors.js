@@ -557,7 +557,20 @@ export function buildCast(scene, world, drive, marks) {
   const smoke = puffs(scene, 220), party = confetti(scene, 340);
 
   // Nikki: helmet on until the very end
-  const nikki = person(b, { skin: '#c99c7c', shirt: '#ffffff', sleeve: '#c99c7c', pants: '#6f8fc0', face: nikkiFace(), hair: null, shoes: '#ffffff' });
+  const plum = '#894469';
+  const nikki = person(b, { skin: '#c99c7c', shirt: plum, sleeve: plum, pants: '#42628a', face: nikkiFace(), hair: null, shoes: '#ece5d5', collar: '#ece5d5' });
+  const jacket = [
+    [facet([[-0.11,0.51],[0.11,0.51],[0.068,0.33],[0.067,0.044],[-0.068,0.044],[-0.068,0.33]],0.129,0.006), '#f5ead8', 0,0,0],
+  ];
+  for (const side of [-1,1]) {
+    const lapel = [[.126,.51],[.184,.47],[.136,.395],[.153,.374],[.066,.29]].map(([z,y]) => [side*z,y]);
+    jacket.push([facet(lapel,.135,.007),'#ad6284',0,0,0],
+      [mould(.015,.19,.012,.004),'#e0b6a4',.137,.178,side*.072],
+      [mould(.014,.015,.09,.004).clone().rotateX(side*.37),'#69354e',.137,.19,side*.16]);
+  }
+  // The jacket hangs open over an ivory tee. Its plackets and cuffs move with the existing figure.
+  nikki.g.add(sculpt(fuse(...jacket)));
+
   const blonde = mat('#e6cf9c', { roughness: 0.7, side: THREE.DoubleSide });
   const cap = new THREE.Mesh(new THREE.SphereGeometry(0.222, 18, 8, 0, PI * 2, 0, PI / 2), blonde); cap.scale.y = 0.5; cap.position.y = 0.12;
   const curtain = new THREE.Mesh(new THREE.CylinderGeometry(0.222, 0.235, 0.36, 18, 1, true, 1.5 * PI - 2.2, 4.4), blonde); curtain.position.y = -0.05;
