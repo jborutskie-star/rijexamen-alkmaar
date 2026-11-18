@@ -20,3 +20,12 @@ Open `index.html` through any web server, or publish the folder with GitHub Page
 - 3D: three.js, MIT licence
 - Fonts: Lilita One, Rubik and Caveat, SIL Open Font Licence, served by Google Fonts
 - Sound effects and the fanfare are generated in the browser
+
+### Location references
+
+The remaster models and textures are procedural. Location photographs guided the following details.
+
+- The mill masonry, church window tracery and Waag weighing doors follow [Erfgoed Alkmaar’s mill photograph](https://www.erfgoedalkmaar.nl/monumentenkaart/molen-van-piet/), [church restoration photographs](https://www.erfgoedalkmaar.nl/nieuws/klassieke-loodgieting-tijdens-restauratie-vensters-grote-kerk/) and [Waag gallery](https://www.erfgoedalkmaar.nl/monumenten/fotogalerij-waaggebouw/).
+- Waagplein paving and the carriers’ shoulder harnesses draw on the [regional tourism board’s market photograph, page 10](https://www.hartvannoordholland.nl/storage/uploads/Pers/Press%20Kit%20regio%20Ontdek%20Hart%20van%20Noord%20Holland.pdf#page=10) and the [Cheese Carriers’ Guild account of its colours](https://www.kaasmarkt.nl/en-gb/history-of-the-cheese-market/cheese-carriers).
+- The canal fittings and bridge portal draw on [RouteXL’s Verdronkenoord photograph](https://commons.wikimedia.org/wiki/File:Eenhoornbrug,_Alkmaar_(27301229980).jpg) and [A. J. van der Wal’s view of the Eenhoornbrug for the Rijksdienst voor het Cultureel Erfgoed](https://commons.wikimedia.org/wiki/File:Overzicht_pakhuis_met_op_de_voorgrond_ophaalbrug_-_Alkmaar_-_20396696_-_RCE.jpg).
+- The fictional motorway uses hardware visible in Marcel Israel Fotografie’s A9 photographs for Rijkswaterstaat at [Nijenburgerweg](https://open.rijkswaterstaat.nl/publish/pages/223055/overzichtsfoto_a9_vanaf_viaduct_nijenburgerweg.jpg) and [Akersloot](https://open.rijkswaterstaat.nl/publish/pages/223051/bord_afrit_11_akersloot_liggend.jpg), and in [Harry Fluks’s Kooimeer approach photographs](https://wegnummers.nl/nba/nba009n2.html#nba_009n_012x).

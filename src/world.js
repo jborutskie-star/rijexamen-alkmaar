@@ -251,12 +251,16 @@ export function buildWorld(scene, map, drive, multiDraw = false) {
   // --- flat layers: parks, squares, streets. All on the street plane, painted one over the other in this order ---
   const cobbles = streetFinish('walk'), carriageway = streetFinish('road'), kerb = streetFinish('kerb');
   const klinker = cobbles.map, klinkerN = cobbles.normalMap, K = 1 / 2.5;
-  const flats = { green: new Soup(1 / 5), ped: new Soup(K), square: new Soup(1 / 3.4), kerb: new Soup(), minor: new Soup(), main: new Soup(), cycle: new Soup(K), coping };
+  const flats = { green: new Soup(1 / 5), ped: new Soup(K), square: new Soup(1 / 1.8), kerb: new Soup(), minor: new Soup(), main: new Soup(), cycle: new Soup(K), coping };
   const finishes = { green: streetFinish('grass'), ped: cobbles, square: streetFinish('square'), kerb, minor: carriageway, main: carriageway, cycle: cobbles, coping: kerb };
   const KIND = { pedestrian: '#e2cba6', cycleway: '#cf5a40', service: '#8b8d96', living_street: '#96897f' }, SKIP = /footway|path|steps/;
   for (const g of map.green) { try { flats.green.flat(g, Y0, C('#86cf5c')); } catch {} }
   for (const r of map.roads) {
-    if (r.a) { try { (r.n === 'Waagplein' ? flats.square : flats.ped).flat(r.p, Y0, C(KIND.pedestrian)); } catch {} continue; }
+    if (r.a) {
+      const market = r.n === 'Waagplein';
+      try { (market ? flats.square : flats.ped).flat(r.p, Y0, C(market ? '#fff5e7' : KIND.pedestrian)); } catch {}
+      continue;
+    }
     if (SKIP.test(r.k)) continue;
     const col = C(KIND[r.k] || '#6a6d7c');
     if (r.k === 'pedestrian') flats.ped.ribbon(r.p, r.w, Y0, col);

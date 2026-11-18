@@ -12,7 +12,12 @@ function stone(g, mode, x, y, w, h, key, warm = false) {
   const tone = Math.round(207 + key * 43), drop = 1.3 + key * 1.5;
   const base = mode === 'colour' ? (warm ? `rgb(${tone},${tone-4},${tone-12})` : `rgb(${tone},${tone-1},${tone-3})`)
     : mode === 'height' ? `rgb(${160+key*46|0},0,0)` : `rgb(0,${175+key*48|0},0)`;
-  g.fillStyle = base; g.beginPath(); g.roundRect(x + 0.9, y + 0.9, w - 1.8, h - 1.8, 1 + key * 1.3); g.fill();
+  if (warm === 'market' && mode === 'colour') {
+    // Local clinker mixes firing colours from iron-red through smokier brown and buff.
+    const palette = [[146,105,84],[156,114,91],[181,133,105],[165,120,95],[141,120,104],[184,151,118],[158,104,85],[169,137,113]];
+    const rgb = palette[Math.floor(key*palette.length)];
+    g.fillStyle = 'rgb(' + rgb.join(',') + ')';
+  } else g.fillStyle = base; g.beginPath(); g.roundRect(x + 0.9, y + 0.9, w - 1.8, h - 1.8, 1 + key * 1.3); g.fill();
   if (mode === 'roughness') return;
   g.fillStyle = mode === 'height' ? '#787878' : 'rgba(71,56,46,.20)';
   g.fillRect(x + 2, y + h - drop - 1, w - 4, drop);
@@ -36,7 +41,7 @@ function brickwork(g, mode, kind) {
     g.save(); g.scale(1 / repeats, 1 / repeats);
     for (let row = -2; row <= cells; row++) for (let col = -2; col <= cells; col++) {
       const k = ((col - row) % 4 + 4) % 4;
-      if (k === 0 || k === 3) stone(g, mode, col * 32, row * 32, k ? 32 : 64, k ? 64 : 32, seed((col+cells)%cells,(row+cells)%cells), kind === 'walk');
+      if (k === 0 || k === 3) stone(g, mode, col * 32, row * 32, k ? 32 : 64, k ? 64 : 32, seed((col+cells)%cells,(row+cells)%cells), kind === 'square' ? 'market' : kind === 'walk');
     }
     g.restore();
   }
@@ -51,27 +56,6 @@ function brickwork(g, mode, kind) {
       g.fillRect(x,y,40,22);
       g.fillStyle = mode === 'colour' ? '#202932' : mode === 'height' ? '#333' : '#00c000';
       for (let i=0;i<6;i++) g.fillRect(x+3+i*6,y+3,3,16);
-    }
-  }
-}
-function square(g,mode) {
-  const colour = mode === 'colour', height = mode === 'height';
-  g.fillStyle = colour ? '#b6ad9a' : height ? '#4d4d4d' : '#00f400'; g.fillRect(0,0,512,512);
-  // Stagger half-discs so the next course closes the spaces between neighbouring fans.
-  for (let row = -1; row < 7; row++) for (let column = -1; column <= 3; column++) {
-    const cx = column * 256 + (row & 1) * 128, cy = row * 128;
-    g.fillStyle = colour ? '#a9a18e' : height ? '#646464' : '#00ed00';
-    g.beginPath(); g.arc(cx,cy,185,Math.PI,2*Math.PI); g.fill();
-    for (let ring = 0; ring < 10; ring++) {
-      const inner = ring * 18.5 + 0.8, outer = (ring + 1) * 18.5 - 0.6;
-      const count = Math.max(2, Math.round(Math.PI * (inner+outer)/40));
-      const joint = 0.5 / outer;
-      for (let k = 0; k < count; k++) {
-        const a = Math.PI + k * Math.PI / count + joint, b = Math.PI + (k+1) * Math.PI / count - joint;
-        const v = seed(k + ring * 37, (row + 4) % 4 + ((column + 2) % 2) * 4), t = 204 + (v * 46 | 0);
-        g.fillStyle = colour ? `rgb(${t},${t-3},${t-9})` : height ? `rgb(${158 + v*56|0},0,0)` : `rgb(0,${179 + v*42|0},0)`;
-        g.beginPath(); g.arc(cx,cy,outer,a,b); g.arc(cx,cy,inner,b,a,true); g.closePath(); g.fill();
-      }
     }
   }
 }
@@ -91,7 +75,7 @@ function turf(g,mode) {
 }
 export function streetFinish(kind) {
   const paint=(g,mode,w)=>{g.save();g.scale(w/512,w/512);
-    if(kind==='square')square(g,mode);else if(kind==='kerb')coping(g,mode);else if(kind==='grass')turf(g,mode);else brickwork(g,mode,kind);
+    if(kind==='kerb')coping(g,mode);else if(kind==='grass')turf(g,mode);else brickwork(g,mode,kind);
     g.restore();
   };
   const map=canvasTex(512,512,(g,w)=>paint(g,'colour',w));

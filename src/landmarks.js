@@ -745,7 +745,7 @@ export function cheeseStackGeo() {
 export function edamGeo() { return new Kit().add(Sph(0.16, 10, 6).scale(1, 0.86, 1), '#c8102e', 0, 0.1376, 0).add(Cyl(0.05, 0.05, 0.012, 8), '#f6ecd0', 0, 0.277, 0).geo(); }
 // The cheese carriers' barrow, at carrying height: 2.2 x 0.68, long axis x. Runners, end bars and handles are white (the guild colour goes on as a tint);
 // the slatted floor is wood, 0.55 m above the ground in the middle and rising to 0.84 at the ends: floor(x) = 0.55 + 0.3 (x / 0.85)^2. A leather strap hangs from each end.
-export function berrieGeo(want) {
+export function berrieGeo(want, carried = false) {
   const T = new Kit(), R = new Kit(), fy = (x) => 0.54 + 0.3 * (x / 0.85) ** 2, W = '#ffffff';
   for (const o of [-1, 1]) {
     for (let i = 0; i < 6; i++) { const x0 = -0.85 + (i * 1.7) / 6, x1 = x0 + 1.7 / 6; T.bar([x0, fy(x0), o * 0.31], [x1, fy(x1), o * 0.31], 0.07, W, 0.06); }
@@ -753,7 +753,7 @@ export function berrieGeo(want) {
   }
   for (const e of [-1, 1]) {
     T.box(0.06, 0.07, 0.56, W, e * 0.85, 0.84, 0);
-    R.bar([e * 1.04, 0.84, -0.31], [e * 1.04, 0.46, -0.11], 0.02, '#5a3d2b', 0.05).bar([e * 1.04, 0.46, -0.12], [e * 1.04, 0.46, 0.12], 0.02, '#4a3122', 0.05).bar([e * 1.04, 0.46, 0.11], [e * 1.04, 0.84, 0.31], 0.02, '#5a3d2b', 0.05);
+    if (!carried) R.bar([e * 1.04, 0.84, -0.31], [e * 1.04, 0.46, -0.11], 0.02, '#5a3d2b', 0.05).bar([e * 1.04, 0.46, -0.12], [e * 1.04, 0.46, 0.12], 0.02, '#4a3122', 0.05).bar([e * 1.04, 0.46, 0.11], [e * 1.04, 0.84, 0.31], 0.02, '#5a3d2b', 0.05);
   }
   for (let i = 0; i < 8; i++) { const x = -0.74 + (i * 1.48) / 7; R.at(x, fy(x), 0, 0, 0, Math.atan((0.6 * x) / 0.7225)).box(0.17, 0.025, 0.56, i % 2 ? '#c9a26a' : '#b98a52'); }
   R.at();

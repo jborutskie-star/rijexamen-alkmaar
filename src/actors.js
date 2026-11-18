@@ -720,12 +720,31 @@ export function buildCast(scene, world, drive) {
   // Two cheese carriers in the middle of the Waagplein with a berrie of Gouda between them. They stand frozen; only their heads follow the car.
   const carriers = new THREE.Group(); carriers.position.set(layout.donut.x, GROUND, layout.donut.z); carriers.rotation.y = Math.PI / 2; // side on to the camera that stands west of them (main.js)
   const VEEM = '#e0202a', tinted = (geo, color = '#ffffff') => { const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, color, roughness: 0.55 })); m.castShadow = true; return m; };
-  carriers.add(tinted(berrieGeo('tint'), VEEM), tinted(berrieGeo('rest')));
+  carriers.add(tinted(berrieGeo('tint'), VEEM), tinted(berrieGeo('rest', true)));
   { const fy = (x) => 0.54 + 0.3 * (x / 0.85) ** 2, R = 0.17, geo = cheeseWheelGeo().scale(R / 0.36, 1.18, R / 0.36); // fy: the curve of the berrie's floor (landmarks.js). Each wheel lies across it like a chord, so none sinks in
     for (const c of [-0.575, -0.2, 0.2, 0.575, 0]) { const ch = tinted(geo); if (c) { ch.position.set(c, (fy(c - R) + fy(c + R)) / 2 + 0.025, 0); ch.rotation.z = atan2(fy(c + R) - fy(c - R), 2 * R); } else ch.position.y = 0.73; carriers.add(ch); } } // the fifth rides on the middle two
+  // The guild's shoulder harness takes the load of the curved berrie. Model the
+  // straps directly between the existing shoulders and handles, at their carrying height.
+  const straps = [];
+  for (const end of [-1,1]) for (const side of [-1,1]) {
+    const points = [[end*1.04,.85,side*.31],[end*1.18,.935,side*.294],[end*1.45,1.079,side*.203],
+      [end*1.56,1.079,side*.190],[end*1.64,1.00,side*.175],[end*1.64,.79,side*.165]];
+    for (let i=1;i<points.length;i++) {
+      const start = new THREE.Vector3(...points[i-1]), stop = new THREE.Vector3(...points[i]);
+      const direction = stop.clone().sub(start);
+      const leather = new THREE.BoxGeometry(direction.length(), .021, i===1?.027:.059);
+      leather.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1,0,0),direction.normalize()));
+      const mid = start.lerp(stop,.5);
+      straps.push([leather,i===1?'#a7987b':'#443a32',mid.x,mid.y,mid.z]);
+    }
+  }
+  carriers.add(tinted(fuse(...straps)));
   const kaas = [-1.52, 1.52].map((x) => { // at arm's length from the handles: the rear man reaches forward, the front man behind him
     const p = person(b, { shirt: '#ffffff', pants: '#ffffff', hair: null, face: 'o', shoes: '#ffffff' }); p.g.position.set(x, 0.55, 0); p.armL.rotation.z = p.armR.rotation.z = x < 0 ? 1.228 : -1.228;
     const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.05, 16), mat('#f3e2a8')), top = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.2, 0.12, 16), mat('#f3e2a8')), band = new THREE.Mesh(new THREE.CylinderGeometry(0.203, 0.21, 0.05, 16), mat(VEEM));
+    const wing = new THREE.ConeGeometry(.058,.068,3).rotateX(PI/2);
+    p.g.add(tinted(fuse([wing,VEEM,.147,.458,-.035],[wing.clone().rotateX(PI),VEEM,.147,.458,.035],
+      [new THREE.SphereGeometry(.026,6,5),VEEM,.154,.458,0])));
     hat.position.y = 0.2; top.position.y = 0.285; band.position.y = 0.25; p.head.add(hat, top, band); carriers.add(p.g); return p;
   });
   scene.add(carriers);
