@@ -699,12 +699,19 @@ export function buildCast(scene, world, drive, marks) {
   const wArm = crowdOf(fuse([box(0.15, 0.5, 0.15), WHITE, 0, -0.2, 0]), tintMat(), watchers.length * 2);
   const wFace = ['smile', 'o', 'grin'].map((kind) => crowdOf(new THREE.CylinderGeometry(0.203, 0.203, 0.32, 16, 1, true, PI / 2 - 0.8, 1.6).translate(0, 0.73, 0), new THREE.MeshStandardMaterial({ map: plainFace(kind), alphaTest: 0.45, roughness: 0.6 })));
   wFace.forEach((m) => { m.castShadow = false; });
-  { const c = new THREE.Color(), SHIRTS = ['#e0202a', '#1f5fd0', '#f7c400', '#3fbf6a', '#ff5fa8', '#7a4fd0', '#ff6a13', '#f4f1e6', '#22b5c4'], SKINS = ['#f1c9a5', '#c99c7c', '#8d5a3c', '#f6d7b8'], HAIRS = ['#4a3526', '#e6cf9c', '#2a2c33', '#b5532a', '#9a9da6', '#6b4a2f'];
-    watchers.forEach((w, i) => { wShirt.setColorAt(i, c.set(pick(SHIRTS, w.k))); wSkin.setColorAt(i, c.set(pick(SKINS, w.k >> 3))); wArm.setColorAt(2 * i, c); wArm.setColorAt(2 * i + 1, c); wHair.setColorAt(i, c.set(pick(HAIRS, w.k >> 5))); }); }
-  const wD = new THREE.Object3D(), wM = new THREE.Matrix4(), ZERO = new THREE.Matrix4().makeScale(0, 0, 0), turn = (a) => a - 2 * PI * Math.round(a / (2 * PI));
-  const watch = (st, now) => {
+  { const SHIRTS = ['#e0202a', '#1f5fd0', '#f7c400', '#3fbf6a', '#ff5fa8', '#7a4fd0', '#ff6a13', '#f4f1e6', '#22b5c4'], SKINS = ['#f1c9a5', '#c99c7c', '#8d5a3c', '#f6d7b8'], HAIRS = ['#4a3526', '#e6cf9c', '#2a2c33', '#b5532a', '#9a9da6', '#6b4a2f'];
+    watchers.forEach(w => { w.shirt = new THREE.Color(pick(SHIRTS,w.k)); w.skin = new THREE.Color(pick(SKINS,w.k>>3)); w.hair = new THREE.Color(pick(HAIRS,w.k>>5));
+      w.bounds = new THREE.Sphere(new THREE.Vector3(w.x,GROUND+1,w.z),1.65); }); }
+  const wD = new THREE.Object3D(), wM = new THREE.Matrix4(), turn = (a) => a - 2 * PI * Math.round(a / (2 * PI));
+  let watchState, watchTime;
+  const watchersInView = (visible) => {
+    if (!watchState) return;
+    const st=watchState, now=watchTime, faces=[0,0,0];
+    let count=0;
     const eye = world.eye, fast = ramp(abs(st.v), 1, 6);
-    watchers.forEach((w, i) => {
+    watchers.forEach((w) => {
+      if (!visible(w.bounds,true) || (eye && hypot(eye.x-w.x,eye.z-w.z)<1.6)) return;
+      const i=count++;
       const dx = st.x - w.x, dz = st.z - w.z, d = hypot(dx, dz), near = (1 - ramp(d, 9, 30)) * fast, ph = now * (8 + (w.k % 3)) + w.k, idle = 0.05 * sin(now * 1.3 + w.k);
       let hop = 0, lean = 0, aL = idle, aR = -idle;
       if (w.k % 4 === 0) { hop = abs(sin(ph)) * 0.2 * near; aL = aR = near * (2.8 + 0.3 * sin(ph * 2)); } // jumping for joy
@@ -712,11 +719,18 @@ export function buildCast(scene, world, drive, marks) {
       else if (w.k % 4 === 2) aR = near * (2.85 + 0.4 * sin(ph)); // waving
       else { aL = near * 1.5; aR = near * (0.5 + 0.2 * sin(ph)); } // pointing it out
       wD.position.set(w.x, GROUND + 0.56 * w.sc + hop, w.z); wD.rotation.set(0, -(w.phi0 + turn(atan2(dz, dx) - w.phi0) * (1 - ramp(d, 30, 60))), lean);
-      wD.scale.setScalar(eye && hypot(eye.x - w.x, eye.z - w.z) < 1.6 ? 0 : w.sc); wD.updateMatrix(); // nobody is ever half inside the camera
-      wShirt.setMatrixAt(i, wD.matrix); wSkin.setMatrixAt(i, wD.matrix); wHair.setMatrixAt(i, wD.matrix); wFace.forEach((m, j) => m.setMatrixAt(i, j === (near > 0.3 ? 1 + (w.k % 2) : 0) ? wD.matrix : ZERO)); // a smile, until the car comes
+      wD.scale.setScalar(w.sc); wD.updateMatrix(); // nobody is ever half inside the camera
+      wShirt.setMatrixAt(i, wD.matrix); wSkin.setMatrixAt(i, wD.matrix); wHair.setMatrixAt(i, wD.matrix); const face=near>.3?1+w.k%2:0;
+      if (visible(w.bounds,false)) wFace[face].setMatrixAt(faces[face]++,wD.matrix);
+      wShirt.setColorAt(i,w.shirt); wSkin.setColorAt(i,w.skin); wHair.setColorAt(i,w.hair);
+      wArm.setColorAt(2*i,w.skin); wArm.setColorAt(2*i+1,w.skin); // a smile, until the car comes
       [aL, aR].forEach((a, j) => wArm.setMatrixAt(2 * i + j, wM.makeRotationZ(a).setPosition(0, 0.47, j ? 0.33 : -0.33).premultiply(wD.matrix)));
     });
-    for (const m of [wShirt, wSkin, wHair, wArm, ...wFace]) m.instanceMatrix.needsUpdate = true;
+    for (const m of [wShirt,wSkin,wHair,wArm]) {
+      m.count=m===wArm?count*2:count; m.visible=!!m.count;
+      if (m.count) { m.instanceMatrix.needsUpdate=true; m.instanceColor.needsUpdate=true; }
+    }
+    wFace.forEach((m,i)=>{ m.count=faces[i]; m.visible=!!m.count; if (m.count) m.instanceMatrix.needsUpdate=true; });
   };
 
   // Two cheese carriers in the middle of the Waagplein with a berrie of Gouda between them. They stand frozen; only their heads follow the car.
@@ -790,7 +804,7 @@ export function buildCast(scene, world, drive, marks) {
 
   // one frame of the car and everyone reacting to it. st = drive state, t = drive time, now = wall clock
   function frame(st, t, dt, now, events) {
-    watch(st, now);
+    watchState = st; watchTime = now;
     const { root, pitch, roll, shell, wheels } = car;
     root.position.set(st.x, st.y + GROUND, st.z); root.rotation.y = -st.yaw; pitch.rotation.z = st.pitch; roll.rotation.x = st.roll - st.lean;
     const acc = (drive.speed(st.s + 1) - drive.speed(st.s - 1)) * st.v / 2;
@@ -902,5 +916,5 @@ export function buildCast(scene, world, drive, marks) {
     return CUE;
   }
 
-  return { car, nikki, ex, smoke, party, frame, outro, reset, poke, CUE, get fear() { return fear; }, talk(on) { talking = on; } };
+  return { car, nikki, ex, smoke, party, frame, outro, reset, poke, watchersInView, CUE, get fear() { return fear; }, talk(on) { talking = on; } };
 }

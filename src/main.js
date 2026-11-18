@@ -7,6 +7,7 @@ import { buildStunts } from './stunts.js';
 import { makeAudio } from './audio.js';
 import { buildSnelweg } from './snelweg.js';
 import { buildPolder } from './polder.js';
+import { cullInstances } from './visibility.js';
 import { tyreMarks } from './tyre-marks.js';
 import { daylight } from './atmosphere.js';
 
@@ -360,6 +361,7 @@ function step(dt) {
   }
 }
 
+cullInstances(scene, sun, cast.watchersInView);
 const resize = () => { renderer.setSize(innerWidth, innerHeight, false); cam.aspect = innerWidth / innerHeight; };
 addEventListener('resize', resize); resize();
 let last = performance.now(), slow = 0, tier = 0;

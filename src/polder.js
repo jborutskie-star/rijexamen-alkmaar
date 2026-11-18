@@ -98,7 +98,7 @@ export function buildPolder(scene, { rect = [-1090, -730, 860, 760] } = {}) {
       if (!cells.has(id)) cells.set(id, []);
       cells.get(id).push(o);
     }
-    for (const batch of cells.values()) inst(geo, batch);
+    for (const batch of cells.values()) inst(geo, batch).userData.fixedInstances = true;
   };
   const free = (x, z, m = 8) => !(x > RX0 - m && x < RX1 + m && z > RZ0 - m && z < RZ1 + m) && !(z > CORRIDOR.z0 - m && z < CORRIDOR.z1 + m) && x > DUNE + 30 && abs(x) < EXT - 50 && abs(z) < EXT - 50
     && roads.every(([rx, a, b]) => abs(x - rx) > m + 4 || z < a - m || z > b + m) && !(abs(x - XV) < 26 && abs(z - Z0) < 260);
@@ -283,12 +283,12 @@ export function buildPolder(scene, { rect = [-1090, -730, 860, 760] } = {}) {
       [Box(.075,.12,1.45),'#a8bc9a',7.67,2.56,z],
       [Box(.065,2.42,.13).rotateX(sign*.51),'#a8bc9a',7.702,1.44,z]);
   }
-  inst(fuse(...farm), farms);
+  regional(fuse(...farm), farms);
   // glasshouses, in two clusters
   { const list = []; for (const c of cells) { if (c.kind === 'road' || c.kind === 'tulip' || !c.near) continue; const cx = (c.x0 + c.x1) / 2, cz = (c.z0 + c.z1) / 2; if (!((cx > 1250 && cx < 2100 && cz > 950 && cz < 1650) || (cx > -2500 && cx < -1750 && cz > 2350 && cz < 2950))) continue;
       for (let x = c.x0 + 20; x + 16 < c.x1; x += 34) for (let z = c.z0 + 36; z + 34 < c.z1; z += 66) if (free(x, z, 30) && !farms.some((f) => abs(f.x - x) < 40 && abs(f.z - z) < 50)) list.push({ x, z }); }
     const parts = [[Box(28, 3.2, 58), '#dff3f2', 0, 1.6, 0]]; for (let i = 0; i < 4; i++) parts.push([gable(7, 1.7, 58), '#f2fcfc', -10.5 + i * 7, 3.2, 0], [Box(0.24, 0.16, 58.2), '#8fb9bf', -10.5 + i * 7, 4.9, 0]); for (let i = 0; i < 5; i++) parts.push([Box(0.2, 3.3, 58.2), '#8fb9bf', -14 + i * 7, 1.65, 0]);
-    inst(fuse(...parts), list); }
+    regional(fuse(...parts), list); }
   // wind turbines in a line south of the motorway and a few to the north-east; the rotors turn
   const mills = []; for (let x = -2850; x <= 2900; x += 520) mills.push({ x: x + 10, z: Z0 + 640 + 40 * sin(x) }); for (let i = 0; i < 5; i++) mills.push({ x: 1700 + i * 540, z: -2300 - i * 150 });
   inst(fuse([Cyl(1.25, 2.4, 90, 10), '#f6f6f2', 0, 45, 0], [Box(3.6, 3.6, 10), '#f6f6f2', 0, 91.5, 0.6], [Cyl(2.5, 2.9, 5, 10), '#d3202c', 0, 2.5, 0], [Cyl(3.6, 3.6, 0.6, 10), '#b9b6ad', 0, 0.3, 0]), mills);

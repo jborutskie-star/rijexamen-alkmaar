@@ -618,7 +618,7 @@ export function buildSnelweg(scene, rubber) {
   const many = (geo, material, list, shadow, parent = still) => { // [[x, y, z, turn, sx, sy, sz]]
     const im = new THREE.InstancedMesh(geo, material, list.length);
     list.forEach((o, i) => im.setMatrixAt(i, M.compose(V.set(o[0], o[1], o[2]), Q.setFromEuler(E.set(0, o[3] || 0, 0)), S.set(o[4] ?? 1, o[5] ?? 1, o[6] ?? 1))));
-    im.castShadow = shadow; im.receiveShadow = true; parent.add(im); return im;
+    im.castShadow = shadow; im.receiveShadow = true; im.userData.fixedInstances = true; parent.add(im); return im;
   };
   { const posts = [];
     for (const [a, b, z] of railRuns) for (let x = a + 2; x < b; x += (x > XW - 120 && x < XE + 150 ? 4 : 16)) {

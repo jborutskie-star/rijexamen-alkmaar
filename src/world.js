@@ -186,7 +186,7 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
   };
   const streetInstances = (geo, material, list, shadow = true) => {
     const cells = list.length < 100 ? [list] : regions(list, 360);
-    for (const cell of cells) inst(geo, material, cell, shadow);
+    for (const cell of cells) inst(geo, material, cell, shadow).userData.fixedInstances = true;
   };
   const roofInstances = (name, geo, list, material = tinted, shadow = true) => {
     tally(name, list.length, trisOf(geo) * list.length);
@@ -1162,21 +1162,21 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
       ['#c8102e', '#ffffff', '#21468b'].forEach((c, k) => cloth.add(box(1.9, 0.4, 0.05, c, 1.02, 0.4 - k * 0.4, 0)));
       g.add(cloth); g.traverse((q) => { q.castShadow = true; }); scene.add(g); flags.push(cloth); world.solid(o.x, o.z, 0.4, 8);
     }
-    inst(Street.cafeSet(), tinted, shade.map((o, i) => ({ x: o.x, z: o.z, a: i * 1.3 })));
-    inst(Street.parasol(), mat('#ffffff', { vertexColors: true, side: THREE.DoubleSide, roughness: 0.91 }), shade.map((o,i) => ({ x: o.x, y: Y0 + 2.5, z: o.z, a: i * 1.3, c: o.c })));
+    streetInstances(Street.cafeSet(), tinted, shade.map((o, i) => ({ x: o.x, z: o.z, a: i * 1.3 })));
+    streetInstances(Street.parasol(), mat('#ffffff', { vertexColors: true, side: THREE.DoubleSide, roughness: 0.91 }), shade.map((o,i) => ({ x: o.x, y: Y0 + 2.5, z: o.z, a: i * 1.3, c: o.c })));
     for (const o of shade) world.solid(o.x, o.z, 1.7, 2.9);
   }
 
   // --- street furniture along the route (placed by props.js, which the clipping check shares) ---
   const props = placeProps(map, drive); world.people = props.filter((o) => o.kind === 'person' && ![[0, 0], [0.5, 0], [-0.5, 0], [0, 0.5], [0, -0.5]].some(([i, j]) => world.inside(o.x + i, 0.5, o.z + j))); // not the ones who would stand in a market stall
   const of = (kind) => props.filter((o) => o.kind === kind).map((o, i) => ({ x: o.x, z: o.z, a: o.a + (o.side < 0 ? PI : 0), i }));
-  inst(Street.streetLamp(), tinted, of('lamp'));
-  inst(Street.bollard(), tinted, of('bollard'));
-  inst(bikeGeo.all(),
+  streetInstances(Street.streetLamp(), tinted, of('lamp'));
+  streetInstances(Street.bollard(), tinted, of('bollard'));
+  streetInstances(bikeGeo.all(),
     tinted, of('bike').map((o) => ({ ...o, rx: 0.16, a: o.a + (o.i % 2) * PI, c: BRIGHT[o.i % 6] })));
-  mine('benches', LM.benchGeo(), of('bench'));
-  inst(Street.flowerPlanter(), tinted, of('planter'));
-  inst(Street.litterBin(), tinted, of('bin'));
+  roofInstances('benches', LM.benchGeo(), of('bench'));
+  streetInstances(Street.flowerPlanter(), tinted, of('planter'));
+  streetInstances(Street.litterBin(), tinted, of('bin'));
 
   // --- the cheese market on the Waagplein: stacks of Gouda in rows square to the Waag, the weighing scale at their head, a herring cart and a flower stall at the edge ---
   {
