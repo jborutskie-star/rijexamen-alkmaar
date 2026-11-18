@@ -472,7 +472,7 @@ class Flat {
   }
 }
 
-export function buildSnelweg(scene) {
+export function buildSnelweg(scene, rubber) {
   const plan = getPlan(), Y = plan.layout, { tex: atlas, uv } = makeAtlas();
   const { XW, RA0, RA1, RB0, RB1, XV, XE, M0, M1, E0, E1, zA, zB } = Y;
   const still = new THREE.Group(), moving = new THREE.Group(); scene.add(still, moving);
@@ -532,7 +532,10 @@ export function buildSnelweg(scene) {
     verge.quad(a, b, 0.79, 1.5, 0.79, 1.5, '#95935e'); }
   const grass = canvasTex(128, 128, (g, w, h) => { g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); const r = rnd(4); for (let i = 0; i < 900; i++) { g.fillStyle = r() < 0.5 ? `rgba(20,70,10,${0.05 + r() * 0.12})` : `rgba(255,255,200,${0.05 + r() * 0.1})`; g.fillRect(r() * w, r() * h, 2 + r() * 3, 2 + r() * 5); } });
   const rampTex = canvasTex(64, 128, (g, w, h) => { g.fillStyle = '#474a51'; g.fillRect(0, 0, w, h); grain(g, w, h, 700, 9); asphaltGrain(g, w, h, 4); g.fillStyle = '#f4f3ea'; g.fillRect(0, 7, w, 4); g.fillRect(0, h - 11, w, 4); });
-  [[roadA, asphalt(EDGE - 1.5, false)], [roadB, asphalt(WIDE - 1.5, true)], [roadC, rampTex], [verge, grass]].forEach(([f, map], i) => still.add(f.mesh(mat('#ffffff', { map, bumpMap: map, bumpScale: 0.023, roughness: 0.89, vertexColors: i === 3 }))));
+  [[roadA, asphalt(EDGE - 1.5, false)], [roadB, asphalt(WIDE - 1.5, true)], [roadC, rampTex], [verge, grass]].forEach(([f, map], i) => {
+    const road = mat('#ffffff', { map, bumpMap: map, bumpScale: 0.023, roughness: 0.89, vertexColors: i === 3 });
+    still.add(f.mesh(i < 3 ? rubber.surface(road) : road));
+  });
 
   // ---- everything that stands still ----
   const solid = kit(uv), light = kit(uv), steel = '#aeb6bd', concrete = '#c9c5bb';

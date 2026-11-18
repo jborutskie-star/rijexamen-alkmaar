@@ -519,14 +519,6 @@ export function puffs(scene, n, color = '#f6f6f2') {
     clear() { for (const p of P) p.life = 0; mesh.count = 0; },
   };
 }
-function skids(scene, n) {
-  const geo = new THREE.PlaneGeometry(0.7, 0.24); geo.rotateX(-PI / 2);
-  const mesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ color: '#15161a', transparent: true, opacity: 0.5, depthWrite: false }), n);
-  const M = new THREE.Matrix4(), ZERO = new THREE.Matrix4().makeScale(0, 0, 0); let next = 0;
-  const clear = () => { for (let i = 0; i < n; i++) mesh.setMatrixAt(i, ZERO); mesh.instanceMatrix.needsUpdate = true; };
-  clear(); mesh.frustumCulled = false; scene.add(mesh);
-  return { clear, drop(x, y, z, h) { mesh.setMatrixAt(next, M.makeRotationY(-h).setPosition(x, GROUND + y + 0.04, z)); next = (next + 1) % n; mesh.instanceMatrix.needsUpdate = true; } };
-}
 function confetti(scene, n) {
   const mesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.13, 0.2), new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }), n);
   const P = Array.from({ length: n }, () => ({ on: false })), D = new THREE.Object3D(), COL = ['#ff6a13', '#ffffff', '#1f5fd0', '#e0202a', '#f7c400', '#3fbf6a', '#ff5fa8'];
@@ -548,11 +540,11 @@ function confetti(scene, n) {
 }
 
 // ---------- everything together ----------
-export function buildCast(scene, world, drive) {
+export function buildCast(scene, world, drive, marks) {
   const { layout, L } = drive, b = world.box, bm = world.beam, H = layout.hop, RV = layout.rev, BS = layout.boom.s;
   const zone = (s, a, z, e = 3) => ramp(s, a, a + e) * (1 - ramp(s, z - e, z)); // 1 between two distances, eased in and out
   const car = lessonCar(world); scene.add(car.root);
-  const smoke = puffs(scene, 220), marks = skids(scene, 3000), party = confetti(scene, 340);
+  const smoke = puffs(scene, 220), party = confetti(scene, 340);
 
   // Nikki: helmet on until the very end
   const nikki = person(b, { skin: '#c99c7c', shirt: '#ffffff', sleeve: '#c99c7c', pants: '#6f8fc0', face: nikkiFace(), hair: null, shoes: '#ffffff' });
@@ -775,11 +767,11 @@ export function buildCast(scene, world, drive) {
     g.add(body, feet); scene.add(g); return { g, body, feet, leg, wet: false, h: 0 };
   });
 
-  const V = new THREE.Vector3(); let mood = 'calm', fear = 0, dist = 0, spun = 0, steer = 0, lastDrop = 0, headPhase = 0, talking = false, lurch = 0;
+  const V = new THREE.Vector3(); let mood = 'calm', fear = 0, spun = 0, steer = 0, headPhase = 0, talking = false, lurch = 0;
   const setMood = (k, now = 0) => { mood = k; const t = (talking && sin(now * 34) > 0 && moods[k + '!']) || moods[k]; if (ex.faceMat.map !== t) ex.faceMat.map = t; }; // his mouth moves while he talks
 
   function reset() {
-    smoke.clear(); marks.clear(); party.clear(); fear = 0; lurch = 0; dist = 0; spun = 0; lastDrop = 0; headPhase = 0; talking = false; setMood('calm'); showHair(false); signMat.map = signs.before; car.shell.rotation.z = 0;
+    smoke.clear(); marks.clear(); party.clear(); fear = 0; lurch = 0; spun = 0; headPhase = 0; talking = false; setMood('calm'); showHair(false); signMat.map = signs.before; car.shell.rotation.z = 0;
     sheet.material.map = papers.blank; nikki.head.add(helmet); helmet.position.set(0, 0, 0); helmet.rotation.set(0, 0, 0); helmet.scale.setScalar(1);
     for (const p of [nikki, ex]) { p.g.rotation.set(0, 0, 0); p.head.rotation.set(0, 0, 0); sit(p); for (const a of [p.armL, p.armR]) a.rotation.set(0, 0, 0); }
     nikki.g.position.set(-0.2, 0.62, -0.4); ex.g.position.set(-0.2, 0.62, 0.4); car.doorL.rotation.y = car.doorR.rotation.y = 0; clip.scale.setScalar(1); hold();
@@ -793,7 +785,7 @@ export function buildCast(scene, world, drive) {
     root.position.set(st.x, st.y + GROUND, st.z); root.rotation.y = -st.yaw; pitch.rotation.z = st.pitch; roll.rotation.x = st.roll - st.lean;
     const acc = (drive.speed(st.s + 1) - drive.speed(st.s - 1)) * st.v / 2;
     shell.position.y = -st.squash; shell.rotation.z = clamp(acc * 0.004, -0.05, 0.05) + (st.air ? 0 : sin(now * 31) * 0.003 * st.v / 10);
-    dist += st.v * dt; spun += st.v * dt * (st.rev > 0.5 ? -1 : 1);
+    spun += st.v * dt * (st.rev > 0.5 ? -1 : 1);
     steer = lerp(steer, clamp(Math.atan(2.5 * st.k) * 1.4 - st.beta * 0.9, -0.6, 0.6), Math.min(1, dt * 10));
     wheels.forEach((w, i) => { w.spin.rotation.z = -(spun / 0.34) * (i > 1 && st.slide > 0.3 ? 1.8 : 1); if (i < 2) w.steer.rotation.y = -steer; });
     car.wheelRim.rotation.x = steer * 2.2;
@@ -804,10 +796,12 @@ export function buildCast(scene, world, drive) {
       for (const z of [-0.76, 0.76]) {
         const x = st.x - c * 1.25 - s * z, zz = st.z - s * 1.25 + c * z;
         if (random() < st.slide * dt * 55) smoke.emit(x, GROUND + st.y + 0.25, zz, 0.5 + st.slide * 0.45, -cos(st.travel) * 2, -sin(st.travel) * 2);
-        if (dist - lastDrop > 0.45) marks.drop(x, st.y, zz, st.travel); // st.y: rubber stays on the bridge deck, not under it
+        // Keep the rear contact patch planted through a wheelie. The A9 flatbed carries no road rubber.
+        const pavement = st.t === undefined ? drive.layout.deckY(st.s - 1.25 * cos(st.yaw-st.travel)) : 0;
+        if (Math.abs(st.y - 1.25*sin(st.pitch) - pavement) < .16) marks.stroke(z < 0 ? 0 : 1, x, zz, st.slide);
+        else marks.lift();
       }
-      if (dist - lastDrop > 0.45) lastDrop = dist;
-    }
+    } else marks.lift();
     smoke.update(dt);
 
     // fear rises with speed, sideways angle and altitude

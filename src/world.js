@@ -142,7 +142,7 @@ const BRIGHT = ['#e9503a', '#2f6fc9', '#f2c230', '#3aa66a', '#f08a2c', '#ffffff'
 const KERK_A = 0.2523990323078452; // the angle of the Grote Kerk's nave on the map (debug/kerk-footprint.json)
 const MILL_FACE = -0.36, STAIR = 1.0; // which way the windmill's sails look (rotation.y), and the bearing of the steps up its bastion
 
-export function buildWorld(scene, map, drive, multiDraw = false) {
+export function buildWorld(scene, map, drive, multiDraw, rubber) {
   const world = { update() {}, lights: [] };
   const { layout, m: mk } = drive, M = new THREE.Matrix4(), R = rnd(5);
   const waters = map.water.map((p) => ({ p, bb: bbox(p) }));
@@ -200,7 +200,7 @@ export function buildWorld(scene, map, drive, multiDraw = false) {
   const CITY = [-1090, -730, 860, 760]; // the paved slab stops here; beyond it lies the polder
   for (const t of [footpath.map, footpath.normalMap, footpath.roughnessMap]) t.repeat.set((CITY[2] - CITY[0]) / 3.2, (CITY[3] - CITY[1]) / 3.2);
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(CITY[2] - CITY[0], CITY[3] - CITY[1], 32, 24), mat('#e6cfae', { ...footpath, ...cut }));
-  ground.rotation.x = -PI / 2; ground.position.set((CITY[0] + CITY[2]) / 2, Y0, (CITY[1] + CITY[3]) / 2); ground.receiveShadow = true; ground.renderOrder = -20; scene.add(ground);
+  rubber.surface(ground.material); ground.rotation.x = -PI / 2; ground.position.set((CITY[0] + CITY[2]) / 2, Y0, (CITY[1] + CITY[3]) / 2); ground.receiveShadow = true; ground.renderOrder = -20; scene.add(ground);
   world.city = CITY; world.cut = cut;
 
   // --- canals: the water lies 1.2 m below the street, between brick quay walls ---
@@ -270,6 +270,7 @@ export function buildWorld(scene, map, drive, multiDraw = false) {
   }
   Object.entries(flats).forEach(([k, soup], i) => {
     const me = soup.mesh(new THREE.MeshStandardMaterial({ vertexColors: true, ...finishes[k], depthTest: false, depthWrite: false, ...cut }));
+    if (k !== 'green') rubber.surface(me.material);
     me.renderOrder = -19 + i * 0.8; scene.add(me);
   });
   // --- paint and ironwork on the streets the car drives: one more flat layer over the others, cut out of one picture ---
@@ -332,7 +333,7 @@ export function buildWorld(scene, map, drive, multiDraw = false) {
         (audit.bikes ||= []).push([round(x), round(z)]); bikesAt.push([x, z]); stamp(x, z, (p[i + 2] - p[i]) / l, (p[i + 3] - p[i + 1]) / l, min(1.1, r.w * 0.6), min(1.1, r.w * 0.6), 5); count.bikes++; break;
       }
     }
-    const me = paint.mesh(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, map: sheet, alphaTest: 0.5, depthTest: false, depthWrite: false, ...cut }));
+    const me = paint.mesh(rubber.surface(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, map: sheet, alphaTest: 0.5, depthTest: false, depthWrite: false, ...cut })));
     me.renderOrder = -12; scene.add(me); tally('street marks', paint.p.length / 9, paint.p.length / 9); audit.marks = count;
   }
 
@@ -433,7 +434,7 @@ export function buildWorld(scene, map, drive, multiDraw = false) {
   }
   {
     const bm = (o) => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, ...o }), rp = canvasTex(256, 128, railPic);
-    scene.add(decks.mesh(bm(), 'cast'), brickS.mesh(bm({ map: canvasTex(128, 128, (g) => brickPic(g, false)), normalMap: reliefTex(128, 128, (g) => brickPic(g, true), 1.6) }), 'cast'), pave.mesh(bm({ roughness: 0.8, map: klinker, normalMap: klinkerN }), 'cast'), ironS.mesh(bm({ roughness: 0.6, map: rp, alphaTest: 0.5, side: THREE.DoubleSide }), 'cast'));
+    scene.add(decks.mesh(rubber.surface(bm()), 'cast'), brickS.mesh(bm({ map: canvasTex(128, 128, (g) => brickPic(g, false)), normalMap: reliefTex(128, 128, (g) => brickPic(g, true), 1.6) }), 'cast'), pave.mesh(bm({ roughness: 0.8, map: klinker, normalMap: klinkerN }), 'cast'), ironS.mesh(bm({ roughness: 0.6, map: rp, alphaTest: 0.5, side: THREE.DoubleSide }), 'cast'));
     tally('bridges (all fixed ones)', 1, [decks, brickS, pave, ironS].reduce((t, s) => t + s.p.length / 9, 0));
     const post = (H) => fuse([Box(0.42, H + 0.06, 0.26), '#d6cfc0', 0, (H - 0.06) / 2, 0], [Box(0.48, 0.07, 0.32), '#e6e0d2', 0, H + 0.035, 0]); // H: from the deck to under the cap
     if (pillars[0].length) mine('bridge end posts', post(0.76), pillars[0]); if (pillars[1].length) mine('footbridge end posts', post(1.1), pillars[1]);
