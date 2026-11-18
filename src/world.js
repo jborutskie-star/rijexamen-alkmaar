@@ -304,7 +304,15 @@ export function buildWorld(scene, map, drive) {
     g.fillStyle = bump ? '#3c3c3c' : '#b9ab9f'; g.fillRect(0, 0, 128, 128);
     for (let y = 0; y < 8; y++) for (let x = -1; x < 2; x++) { const v = hash(y * 5 + ((x + 2) % 2) * 3 + 17); g.fillStyle = grey(bump ? 200 + v * 55 : 222 + v * 33); g.fillRect(x * 64 + (y % 2) * 32 + 2, y * 16 + 2, 60, 13); }
   };
-  const railPic = (g) => { g.fillStyle = '#fff'; g.fillRect(0, 0, 256, 11); g.fillRect(0, 98, 256, 9); g.fillRect(0, 0, 10, 128); for (let x = 16; x < 256; x += 16) g.fillRect(x - 2, 0, 5, 107); }; // 2 m of railing: handrail, bottom rail, one post, a bar every 12.5 cm
+  const railPic = (g) => {
+    g.fillStyle = g.strokeStyle = '#fff'; g.fillRect(0, 0, 256, 11); g.fillRect(0, 98, 256, 9); g.fillRect(0, 0, 10, 128);
+    for (let x = 16; x < 256; x += 16) g.fillRect(x - 2, 0, 5, 107);
+    g.lineWidth = 4;
+    for (let x = 32; x < 256; x += 64) {
+      g.beginPath(); g.ellipse(x, 33, 14, 21, 0, 0, 2 * PI); g.stroke();
+      g.fillRect(x - 5, 53, 10, 5);
+    }
+  };
   const decks = new Soup(), brickS = new Soup(), pave = new Soup(K), ironS = new Soup(), UP = [0, 1, 0], DOWN = [0, -1, 0], pillars = [[], []];
   const BC = { cap: C('#e6e0d2'), band: C('#d6cfc0'), kerb: C('#b3afa7'), walk: C('#cfc6b6'), brick: C('#a5513a'), ring: [C('#e3dccb'), C('#c4bba8')], key: C('#f4efe3'), iron: C('#1f5a3c') };
   const bq = (a, b, c, d, want, col) => { const l = hypot(want[0], want[2]) || 1, ux = want[2] / l, uz = -want[0] / l; brickS.quad(a, b, c, d, want, col, [a, b, c, d].map((p) => [(p[0] * ux + p[2] * uz) / 1.28, p[1] / 1.28])); }; // brick, courses level; the picture is 1.28 m square
@@ -779,17 +787,37 @@ export function buildWorld(scene, map, drive) {
     const P = [], add = (w, h, d, c, px, py, pz) => P.push([Box(w, h, d), c, px, py, pz]), oct = (r, h, c, py) => P.push([Cyl(r, r, h, 8), c, 0, py, 0]);
     const ridge = (len, h, half) => { const q = new THREE.CylinderGeometry(1, 1, len, 3, 1, false, PI / 2).rotateZ(PI / 2).scale(1, h / 1.5, half / 0.866).translate(0, h / 3, 0).toNonIndexed(); q.computeVertexNormals(); return q; };
     const onion = (py, k, c) => { let y = py; for (const [rb, rt, h] of [[2.4, 2.9, 0.9], [2.9, 2.6, 1.1], [2.6, 1.6, 1], [1.6, 0.8, 0.8], [0.8, 0.5, 0.8]]) { P.push([Cyl(rt * k, rb * k, h * k, 12), c, 0, y + (h * k) / 2, 0]); y += h * k; } };
-    P.push([ridge(31.9, 7.5, 6.5), slate, 4.05, 13.3, -1.2]);
+    // Use the town's tiled-roof material on the original roof profile.
+    const roof = ridge(31.9, 7.5, 6.5), pos = roof.attributes.position, colour = C(slate), roofColours = [];
+    for (let i = 0; i < pos.count; i++) {
+      roof.attributes.uv.setXY(i, pos.getX(i) / 3.5, pos.getY(i) / 2.65);
+      roofColours.push(colour.r, colour.g, colour.b);
+    }
+    roof.setAttribute('color', new THREE.Float32BufferAttribute(roofColours, 3));
+    const hallRoof = new THREE.Mesh(roof, roofMat); hallRoof.position.set(4.05, 13.3, -1.2); g.add(hallRoof);
     for (const ex of [-12.25, 20.35]) { // both end walls: a slab just proud of the old wall, stepping up to a pinnacle. Every trim piece sticks out a few cm further than the one behind it
       add(0.7, 13.1, 15.5, brick, ex, 6.55, -1.15); add(0.86, 0.14, 15.66, stone, ex, 13.08, -1.15);
       for (let k = 1; k <= 6; k++) { add(0.7, 1.3, 16 - k * 2.3, brick, ex, 13 + (k - 0.5) * 1.3, -1.15); add(0.86, 0.14, 16.16 - k * 2.3, stone, ex, 12.95 + k * 1.3, -1.15); }
       add(0.5, 1.5, 0.5, stone, ex, 21.5, -1.15); P.push([new THREE.SphereGeometry(0.34, 10, 8), gold, ex, 22.5, -1.15]);
       for (const y of [3.95, 7.3, 10.6]) add(0.74, 0.24, 15.54, stone, ex, y, -1.15); // bands of pale stone through the brick
-      for (const y of [5.6, 8.95]) for (const wz of [-5.95, -2.75, 0.45, 3.65]) { add(0.74, 2.3, 1.3, stone, ex, y, wz); add(0.78, 2, 1, dark, ex, y, wz); for (const q of [-0.95, 0.95]) add(0.76, 2, 0.42, red, ex, y, wz + q); }
+      for (const y of [5.6, 8.95]) for (const wz of [-5.95, -2.75, 0.45, 3.65]) {
+        const outer = Math.sign(ex);
+        add(0.74, 2.3, 1.3, stone, ex, y, wz); add(0.8, 2, 1, dark, ex, y, wz);
+        add(0.09, 1.98, 0.075, stone, ex + outer * 0.435, y, wz);
+        add(0.10, 0.08, 0.97, stone, ex + outer * 0.46, y + 0.23, wz);
+        add(0.26, 0.13, 1.55, stone, ex + outer * 0.4, y - 1.19, wz);
+        for (const q of [-0.95, 0.95]) add(0.76, 2, 0.42, red, ex, y, wz + q);
+      }
       add(0.74, 3.5, 3.2, stone, ex, 1.75, -1.15); add(0.78, 3.2, 2.7, green, ex, 1.6, -1.15); add(0.74, 1.6, 1.1, stone, ex, 15, -1.15); add(0.78, 1.3, 0.8, dark, ex, 15, -1.15);
     }
     for (const dx of [-8.5, 6.5, 11.5, 16.5]) { add(1.5, 3, 2.4, brick, dx, 15.7, -5.6); add(1.8, 0.16, 2.7, stone, dx, 17.28, -5.6); add(1, 1.3, 0.1, dark, dx, 16.3, -6.82); } // dormers
     add(27, 0.16, 4.9, slate, 4, 4.1, -9.45); add(27, 0.45, 0.1, green, 4, 3.95, -11.92); // the canopy the cheese is carried under
+    for (const px of [-9, -4.5, 0, 4.5, 9, 13.5, 17]) {
+      for (const dir of [-1, 1]) if (px + dir > -9.5 && px + dir < 17.5) {
+        P.push([Box(1.24, 0.16, 0.14).rotateZ(dir * 0.63), green, px + dir * 0.47, 3.59, -11.59]);
+      }
+      add(0.40, 0.16, 0.37, stone, px, 3.45, -11.6);
+    }
     for (const px of [-9, -4.5, 0, 4.5, 9, 13.5, 17]) { add(0.22, 4.05, 0.22, green, px, 2.02, -11.6); world.solid(x + px * cos(A) + 11.6 * sin(A), z + px * sin(A) - 11.6 * cos(A), 0.35, 4.3); }
     add(6.6, 27, 6.6, brick, 0, 13.5, 0); for (const y of [14.2, 17.6, 21, 26.6]) add(6.72, 0.3, 6.72, stone, 0, y, 0); // the tower
     add(7.7, 0.5, 7.7, stone, 0, 27.25, 0); for (const q of [-3.77, 3.77]) { add(7.7, 0.9, 0.16, stone, 0, 27.95, q); add(0.16, 0.9, 7.7, stone, q, 27.95, 0); }
@@ -798,9 +826,32 @@ export function buildWorld(scene, map, drive) {
     P.push([Cyl(0.45, 0.85, 1.1, 10), gold, 0, 34.2, 0], [Cyl(0.07, 0.07, 0.6, 6), dark, 0, 35, 0]); oct(3, 0.3, stone, 35.35); // the bell
     onion(35.5, 1, copper); oct(0.75, 1.5, stone, 40.85); onion(41.6, 0.42, copper);
     P.push([new THREE.ConeGeometry(0.36, 3.6, 8), slate, 0, 45.2, 0], [new THREE.SphereGeometry(0.42, 12, 8), gold, 0, 47.2, 0]);
+    for (let k = 0; k < 4; k++) {
+      const a = k * PI / 2;
+      P.push([new THREE.TorusGeometry(2.34, 0.13, 6, 32).rotateY(a), gold, sin(a) * 3.35, 23.8, cos(a) * 3.35]);
+    }
     g.add(new THREE.Mesh(fuse(...P), tinted));
-    const clock = canvasTex(128, 128, (c) => { c.fillStyle = '#1d2a44'; c.beginPath(); c.arc(64, 64, 60, 0, 7); c.fill(); c.strokeStyle = '#f2c230'; c.lineWidth = 6; c.stroke(); for (let k = 0; k < 12; k++) { const q = (k * PI) / 6; c.lineWidth = 4; c.beginPath(); c.moveTo(64 + sin(q) * 46, 64 - cos(q) * 46); c.lineTo(64 + sin(q) * 54, 64 - cos(q) * 54); c.stroke(); } c.lineWidth = 7; c.lineCap = 'round'; c.beginPath(); c.moveTo(64, 64); c.lineTo(64, 24); c.moveTo(64, 64); c.lineTo(92, 72); c.stroke(); }, false);
-    for (let k = 0; k < 4; k++) { const f = new THREE.Mesh(new THREE.CircleGeometry(2.3, 24), new THREE.MeshStandardMaterial({ map: clock, alphaTest: 0.5 })); f.position.set(sin(k * PI / 2) * 3.33, 23.8, cos(k * PI / 2) * 3.33); f.rotation.y = k * PI / 2; g.add(f); }
+    const clock = canvasTex(256, 256, (c) => {
+      c.translate(128, 128);
+      const enamel = c.createRadialGradient(-40, -50, 4, 0, 0, 127);
+      enamel.addColorStop(0, '#38506a'); enamel.addColorStop(1, '#111e34');
+      c.fillStyle = enamel; c.fillRect(-128, -128, 256, 256);
+      c.strokeStyle = c.fillStyle = '#f7d372'; c.lineWidth = 2;
+      for (const r of [79, 119]) { c.beginPath(); c.arc(0, 0, r, 0, 2 * PI); c.stroke(); }
+      c.font = 'bold 20px Georgia, serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      const numerals = ['XII','I','II','III','IIII','V','VI','VII','VIII','IX','X','XI'];
+      for (let k = 0; k < 60; k++) {
+        c.save(); c.rotate(k * PI / 30);
+        c.fillRect(-1.3, -117, 2.6, k % 5 ? 4 : 8);
+        if (k % 5 === 0) c.fillText(numerals[k / 5], 0, -96);
+        c.restore();
+      }
+      c.lineWidth = 6; c.lineCap = 'round'; c.beginPath(); c.moveTo(0, 0); c.lineTo(0, -74);
+      c.moveTo(0, 0); c.lineTo(51, 15); c.stroke();
+      c.beginPath(); c.arc(0, 0, 7, 0, 2 * PI); c.fill();
+    }, false);
+    const enamel = mat('#ffffff', { map: clock, roughness: 0.36, metalness: 0.09 });
+    for (let k = 0; k < 4; k++) { const f = new THREE.Mesh(new THREE.CircleGeometry(2.32, 32), enamel); f.position.set(sin(k * PI / 2) * 3.36, 23.8, cos(k * PI / 2) * 3.36); f.rotation.y = k * PI / 2; g.add(f); }
     g.add(box(11, 1.3, 0.12, '#ffffff', 4, 4.8, -11.95, { map: canvasTex(512, 64, (c) => { c.fillStyle = '#f6efdc'; c.fillRect(0, 0, 512, 64); c.strokeStyle = '#1f5a3c'; c.lineWidth = 5; c.strokeRect(4, 4, 504, 56); c.fillStyle = '#1f5a3c'; c.font = '900 42px system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('KAASMARKT  ALKMAAR', 256, 34); }, false) })); // so nobody has to guess what the yellow wheels are
     g.traverse((o) => { o.castShadow = o.receiveShadow = true; }); scene.add(g);
     B.find((b) => b.n === 'Waag').H = 21; world.solid(x, z, 5, 48); // cameras keep out of the roof and the tower
@@ -826,7 +877,21 @@ export function buildWorld(scene, map, drive) {
   {
     const r = layout.ramp, g = new THREE.Group(); g.position.set(r.x, GROUND, r.z); g.rotation.y = -r.h;
     const len = (r.s1 - r.s0) / cos(r.angle), lf = new THREE.Group(); lf.rotation.z = r.angle;
-    lf.add(box(len - 3, 0.3, 5.8, '#8a5a3a', (len - 3) / 2, -0.15, 0));
+    const boards = (ctx, height) => {
+      const rand = rnd(49);
+      ctx.fillStyle = height ? '#5f5f5f' : '#867d70'; ctx.fillRect(0, 0, 512, 256);
+      for (let i = 0; i < 16; i++) {
+        const x = i * 32, value = 211 + rand() * 37;
+        ctx.fillStyle = height ? '#e3e3e3' : grey(value); ctx.fillRect(x + 1, 0, 30, 256);
+        ctx.fillStyle = height ? '#b6b6b6' : 'rgba(81,66,51,.26)';
+        for (let n = 0; n < 10; n++) ctx.fillRect(x + 2 + rand() * 25, rand() * 248, 1, 10 + rand() * 55);
+        for (const y of [13, 243]) { ctx.beginPath(); ctx.arc(x + 16, y, 2.2, 0, 2 * PI); ctx.fill(); }
+      }
+    };
+    lf.add(box(len - 3, 0.3, 5.8, '#8a5a3a', (len - 3) / 2, -0.15, 0, {
+      map: canvasTex(512, 256, (ctx) => boards(ctx, false)),
+      normalMap: reliefTex(512, 256, (ctx) => boards(ctx, true), 1.1),
+    }));
     for (let k = 0; k < 6; k++) lf.add(box(0.5, 0.3, 5.8, k % 2 ? '#e9503a' : '#f6f1e4', len - 0.25 - k * 0.5, -0.15, 0)); // warning stripes: their own planks, end to end
     for (const z of [-2.7, 2.7]) { lf.add(box(len, 0.17, 0.3, '#f6f1e4', len / 2, 0.045, z), box(len, 0.1, 0.1, '#f6f1e4', len / 2, 0.95, z)); for (let k = 0; k <= 4; k++) lf.add(box(0.1, 0.84, 0.1, '#f6f1e4', 0.05 + ((len - 0.1) * k) / 4, 0.5, z)); }
     // white wooden railings with a St Andrew's cross in every panel, as on the drawbridges over the Alkmaar canals; one bar of each cross 4 cm deeper, so no two faces share a plane
@@ -845,7 +910,16 @@ export function buildWorld(scene, map, drive) {
     { // the balance: a cross beam and a pair of braces in each bay between the arms, all well above anything the car does; tarred feet on the portal posts
       const A = (t) => [-0.8 + cos(arm) * (12.2 * t - 4), top + sin(arm) * (12.2 * t - 4)], P = [], bar = (a, b, th) => { const u = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]), l = u.length(); return [Box(l, th, th).applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), u.normalize())), '#f6f1e4', (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]; };
       for (const [t0, t1] of [[4 / 12.2, 0.66], [0.66, 1]]) { P.push([Box(0.22, 0.22, 6.6), '#f6f1e4', ...A(t1), 0], bar([...A(t0), -3.3], [...A(t1), 3.3], 0.14), bar([...A(t0), 3.3], [...A(t1), -3.3], 0.1)); }
-      for (const z of [-3.3, 3.3]) P.push([Box(0.62, 0.9, 0.62), '#26282d', -0.8, 0.45, z]);
+      for (const z of [-3.3, 3.3]) {
+        const out = Math.sign(z);
+        P.push([Box(0.62, 0.9, 0.62), '#26282d', -0.8, 0.45, z],
+          [Box(0.56, 0.16, 0.56), '#636b70', -0.8, 1.07, z],
+          [Cyl(0.45, 0.45, 0.17, 16).rotateX(PI / 2), '#39464b', -0.8, top, z + out * 0.26],
+          [Cyl(0.21, 0.25, 0.13, 8).rotateX(PI / 2), '#a98b55', -0.8, top, z + out * 0.40]);
+        for (const t of [0.08, 0.22, 0.58, 0.83, 0.96]) {
+          const [px, py] = A(t); P.push([Box(0.18, 0.40, 0.43).rotateZ(arm), '#546268', px, py, z]);
+        }
+      }
       g.add(solid(fuse(...P)));
     }
     { // a brick abutment with a stone cap at each bank: the near one slid out until all of it stands in the water; the far one just under the fixed half,

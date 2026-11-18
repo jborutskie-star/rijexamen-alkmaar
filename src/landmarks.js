@@ -2,7 +2,7 @@
 // One-off models return a THREE.Group (a few meshes); instanced props return one fused, vertex-coloured BufferGeometry (position, normal, color).
 // Metres; x east, z south, y up. Geometry builds without a DOM (node): textures are only made when `document` exists.
 import * as THREE from 'three';
-import { fuse, canvasTex, bikeGeo } from './world.js';
+import { fuse, canvasTex, reliefTex, bikeGeo } from './world.js';
 
 const { PI, sin, cos, hypot, min, max, atan2, abs, sqrt } = Math;
 const HAS_DOM = typeof document !== 'undefined';
@@ -91,20 +91,33 @@ class Kit {
   geo() { return join(fuse(...this.a), ...this.x); }
 }
 
-// ---- materials: three small tiling textures (masonry, slates, planks), all near white so the vertex colours decide what they are ----
+// Relief and roughness share the same pattern, so weathered edges catch the sun with their colour.
 let MATS;
 const mats = () => MATS || (MATS = (() => {
   const plain = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7 });
-  if (!HAS_DOM) return { plain, masonry: plain, roofing: plain, planks: plain };
-  const pair = (draw, bumpScale, roughness = 0.85) => {
-    const map = canvasTex(256, 256, (g, w, h) => draw(g, w, h, false)), bumpMap = canvasTex(256, 256, (g, w, h) => draw(g, w, h, true)); bumpMap.colorSpace = THREE.NoColorSpace;
-    return new THREE.MeshStandardMaterial({ vertexColors: true, roughness, map, bumpMap, bumpScale });
+  if (!HAS_DOM) return { plain, masonry: plain, roofing: plain, leaded: plain };
+  const pair = (draw, depth, roughness = 0.85) => {
+    const map = canvasTex(256, 256, (g, w, h) => draw(g, w, h, false));
+    const normalMap = reliefTex(256, 256, (g, w, h) => draw(g, w, h, true), depth);
+    const roughnessMap = canvasTex(256, 256, (g, w, h) => {
+      draw(g, w, h, true);
+      g.fillStyle = 'rgba(226,226,226,.8)'; g.fillRect(0, 0, w, h);
+    });
+    roughnessMap.colorSpace = THREE.NoColorSpace;
+    return new THREE.MeshStandardMaterial({ vertexColors: true, roughness, map, normalMap, roughnessMap });
   };
   const grey = (v) => `rgb(${v},${v},${v})`;
   const masonry = pair((g, w, h, bump) => { // eight staggered courses of blocks; mortar is the low, dark line
     const r = rnd(7); g.fillStyle = bump ? '#3a3a3a' : '#b8b2a6'; g.fillRect(0, 0, w, h);
-    for (let j = 0; j < 8; j++) for (let i = -1; i < 4; i++) { const v = bump ? 215 + r() * 40 : 205 + r() * 50; g.fillStyle = bump ? grey(v | 0) : `rgb(${v | 0},${(v - 2 - r() * 6) | 0},${(v - 6 - r() * 10) | 0})`; g.fillRect(i * 64 + (j % 2) * 32 + 2, j * 32 + 2, 60, 28); }
-  }, 1.2);
+    for (let j = 0; j < 8; j++) for (let i = -1; i < 4; i++) {
+      const x = i * 64 + (j % 2) * 32, y = j * 32, v = 205 + r() * 45;
+      g.fillStyle = bump ? grey(v | 0) : `rgb(${v | 0},${(v - 3) | 0},${(v - 8) | 0})`;
+      g.beginPath(); g.roundRect(x + 1.5, y + 1.5, 61, 29, 2.8); g.fill();
+      g.fillStyle = bump ? '#a8a8a8' : 'rgba(87,63,44,.16)';
+      g.fillRect(x + 4, y + 27, 56, 2);
+      for (let p = 0; p < 12; p++) g.fillRect(x + 3 + r() * 53, y + 4 + r() * 20, r() * 4 + 1, 1);
+    }
+  }, 1.25);
   const roofing = pair((g, w, h, bump) => { // rows of slates: each row is dark under the row above and lightens towards its own lower edge
     const r = rnd(11); g.fillStyle = bump ? '#000' : '#8a8a8a'; g.fillRect(0, 0, w, h);
     for (let j = 0; j < 8; j++) for (let i = -1; i < 8; i++) {
@@ -113,11 +126,19 @@ const mats = () => MATS || (MATS = (() => {
       g.fillStyle = s; g.fillRect(x + 1, y, 30, 31);
     }
   }, 1.6);
-  const planks = pair((g, w, h, bump) => { // eight boards with dark seams and a little grain
-    const r = rnd(5); g.fillStyle = bump ? '#222' : '#7d7468'; g.fillRect(0, 0, w, h);
-    for (let j = 0; j < 8; j++) { const v = 210 + r() * 45; g.fillStyle = grey(v | 0); g.fillRect(0, j * 32 + 2, w, 29); if (!bump) { g.fillStyle = 'rgba(90,70,50,0.18)'; for (let q = 0; q < 5; q++) g.fillRect(r() * w, j * 32 + 4 + r() * 24, 30 + r() * 60, 1.5); g.fillStyle = '#6f675c'; g.fillRect(((j * 97) % 256), j * 32 + 2, 2, 29); } }
-  }, 0.8);
-  return { plain, masonry, roofing, planks };
+  const leaded = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.24, metalness: 0.14,
+    map: canvasTex(256, 256, (g) => {
+      const panes = ['#416478', '#557c90', '#31526e', '#72939a', '#466b87', '#385a71'];
+      g.fillStyle = '#293847'; g.fillRect(0, 0, 256, 256);
+      for (let row = -1; row < 9; row++) for (let col = -1; col < 5; col++) {
+        const x = 64 * col + (row & 1) * 32, y = 32 * row;
+        const pane = g.createLinearGradient(x - 24, y - 26, x + 22, y + 25);
+        pane.addColorStop(0, panes[(13 + col + row * row) % panes.length]); pane.addColorStop(1, '#334c64');
+        g.fillStyle = pane; g.beginPath(); g.moveTo(x, y - 30); g.lineTo(x + 30, y);
+        g.lineTo(x, y + 30); g.lineTo(x - 30, y); g.closePath(); g.fill();
+      }
+    }) });
+  return { plain, masonry, roofing, leaded };
 })());
 const mesh = (geo, material) => { const m = new THREE.Mesh(geo, material); m.castShadow = m.receiveShadow = true; return m; };
 const noUV = (s) => { const g = s.geo(); g.deleteAttribute('uv'); return g; };
@@ -136,7 +157,7 @@ export const groteKerkSolids = [[-36, 0, 8, 33], [-24, 0, 8, 33], [-12, 0, 8, 33
   [-36, -12, 6, 18], [-24, -12, 6, 18], [-12, -12, 6, 18], [-36, 12, 6, 18], [-24, 12, 6, 18], [-12, 12, 6, 18], [15, -9, 5.5, 18], [25, -9, 5.5, 18], [15, 13.5, 7.5, 18], [24, 13.5, 7.5, 18], [-18, 21.5, 4, 9], [-9, 22.5, 5, 9]] // nave, crossing and spire, choir, apse, transepts; then the aisles and the houses
   .map(([u, w, r, h]) => { const [x, z] = kerkXZ(u, w); return { x, z, r, h }; });
 export function groteKerk() {
-  const M = mats(), S = new Skin(), R = new Skin(), K = new Kit(), g = new THREE.Group();
+  const M = mats(), S = new Skin(), R = new Skin(), glazing = new Skin(), K = new Kit(), g = new THREE.Group();
   const stone = '#f1ebdc', hi = '#fcf8ee', lo = '#ddd3bd', base = '#aaa193', brick = '#b5553b', brick2 = '#a54d37', slate = '#74849f', slate2 = '#687891', lead = '#6c7684', tile = '#cf6238', tile2 = '#bf5530', door = '#6a2f24';
   const kS = 0.3, kB = 0.55, kR = 0.42;
   const AW = 17.9, NW = 6.5, EA = 10.5, LT = 17, EV = 22.5, RG = 31.5, W0 = -42.45, T0 = -4.55, T1 = 8.95, TN = -28.25, TS = 27.7, TC = 2.2, CH = 31, CN = -14.35, CS = 21.15;
@@ -192,10 +213,20 @@ export function groteKerk() {
 
   // --- stonework: windows, buttresses, parapets ---
   const win = (w, h, { mull = 1, rose = false, t = 0.28, d = 0.22 } = {}) => { // a pointed window: stone frame standing proud, glass set back in it, mullions and a bar of tracery
-    const s = h - 0.866 * w; K.add(ring(arch(w + 2 * t, h + 1.6 * t).map(([x, y]) => [x, y - t]), arch(w, h), d), hi).add(slab(arch(w, h), 0.05), GLASS);
+    const s = h - 0.866 * w, opening = arch(w, h);
+    K.add(ring(arch(w + 2 * t, h + 1.6 * t).map(([x, y]) => [x, y - t]), opening, d), hi);
+    const pane = new Skin().poly(opening.map(([x, y]) => [x, y, 0.05]), [0, 0, 1], '#ffffff', 0.48);
+    glazing.add(pane.geo().applyMatrix4(K.m), '#ffffff');
     for (let i = 1; i <= mull; i++) { const x = -w / 2 + (i * w) / (mull + 1), top = s + sqrt(max(0, w * w - (abs(x) + w / 2) ** 2)) - 0.03; K.box(0.14, top, 0.1, hi, x, top / 2, 0.1); }
     if (mull) K.box(w, 0.16, 0.1, hi, 0, max(s, h * 0.45), 0.1);
-    if (rose) K.add(Tor(w * 0.2, 0.09, 4, 12), hi, 0, s + w * 0.42, 0.12).box(w, 0.16, 0.1, hi, 0, s * 0.5, 0.1);
+    if (rose) {
+      const cy = s + w * 0.42;
+      K.add(Tor(w * 0.2, 0.105, 5, 20), hi, 0, cy, 0.22).box(w, 0.16, 0.1, hi, 0, s * 0.5, 0.1);
+      for (let k = 0; k < 4; k++) {
+        const a = (k + 0.5) * PI / 2;
+        K.add(Tor(w * 0.075, 0.072, 4, 9), lo, cos(a) * w * 0.099, cy + sin(a) * w * 0.099, 0.25);
+      }
+    }
   };
   const portal = (w, h) => { K.add(ring(arch(w + 0.8, h + 0.6).map(([x, y]) => [x, y - 0.02]), arch(w, h), 0.3), hi).add(slab(arch(w, h), 0.08), door).box(0.07, h - 0.1, 0.06, '#3a1a14', 0, h / 2, 0.08); for (const x of [-0.25, 0.25]) K.add(Ico(0.07), GOLD, x, h * 0.42, 0.13); };
   const pinnacle = (y, r = 0.3, h = 2.8, z = 0.1) => K.box(r * 1.9, h * 0.5, r * 1.9, hi, 0, y + h * 0.25, z).add(Cone(r * 1.25, h * 0.55, 4).rotateY(PI / 4), lo, 0, y + h * 0.5 + h * 0.275, z);
@@ -240,6 +271,12 @@ export function groteKerk() {
   // transept fronts: a huge window over a door, corner buttresses carried up into pinnacles
   for (const [w, ry, o] of [[TN, PI, -1], [TS, 0, 1]]) {
     K.at(TC, 6.2, w, ry); win(7.6, 14.7, { mull: 4, rose: true, t: 0.34, d: 0.26 }); K.at(TC, 0, w, ry); portal(2.4, 4.3);
+    // Three blind lancets carved into the gable above the great window.
+    for (const x of [-2.15, 0, 2.15]) {
+      const h = x ? 3.15 : 5.15, shape = arch(1.25, h);
+      K.at(TC + x, 23.6, w, ry).add(slab(shape, 0.055), '#b4ae9e')
+        .add(ring(arch(1.65, h + 0.33).map(([u, v]) => [u, v - 0.14]), shape, 0.22), hi);
+    }
     for (const u of [T0 + 0.45, T1 - 0.45]) { K.at(u, 0, w, ry); buttress(EV, 1.15, 1); }
     K.at(TC, RG + 0.9, w - o * 0.3).box(0.16, 1.9, 0.16, GOLD, 0, 0.9, 0).box(0.9, 0.16, 0.16, GOLD, 0, 1.25, 0);
   }
@@ -273,7 +310,7 @@ export function groteKerk() {
   for (let k = 0; k < 4; k++) K.at(TC, 38.8, 0, k * PI / 4 + PI / 8).box(2.66, 1.3, 0.5, '#252c3d'); // louvres in the upper stage
 
   const fin = (q) => q.rotateY(KERK_TURN).translate(0, 0, KERK_N);
-  g.add(mesh(fin(S.geo()), M.masonry), mesh(fin(R.geo()), M.roofing), mesh(fin(K.geo()), M.plain));
+  g.add(mesh(fin(S.geo()), M.masonry), mesh(fin(R.geo()), M.roofing), mesh(fin(K.geo()), M.plain), mesh(fin(glazing.geo()), M.leaded));
   return g;
 }
 
@@ -283,7 +320,7 @@ export function groteKerk() {
 // as on every Dutch mill, which is also what carries the sail tips clear of the gallery rail (they sweep a circle of 12.05 m).
 export function molen() {
   const M = mats(), g = new THREE.Group(), K = new Kit(), T = new Skin(), CAP = new Skin(), SK = new Kit();
-  const white = WHITE, dark = '#3a2c22', thatch = '#51483b', cloth = '#f1e4c2', iron = '#2b2f36';
+  const white = WHITE, dark = '#3a2c22', thatch = '#51483b', iron = '#2b2f36';
   const HT = 16.4, rad = (y) => 5.7 - (2.8 * y) / HT, LEAN = -atan2(2.8, HT), GY = 7.2, GR = 6.5, TILT = 0.262;
   const b0 = C('#8c4b2c'), b1 = C('#b8713f');
   T.add(new THREE.CylinderGeometry(rad(HT), rad(0), HT, 20, 4, true).translate(0, HT / 2, 0), (x, y) => b0.clone().lerp(b1, y / HT), 14, 8.2);
@@ -294,12 +331,30 @@ export function molen() {
     const a = ((k + 0.5) * PI) / 8, a2 = ((k + 1.5) * PI) / 8, P = (r, y) => [sin(a) * r, y, cos(a) * r], Q = (r, y) => [sin(a2) * r, y, cos(a2) * r];
     K.bar(P(rad(3.4) - 0.12, 3.4), P(6.15, GY - 0.3), 0.17, white).bar(P(rad(GY) - 0.1, GY - 0.36), P(GR - 0.02, GY - 0.36), 0.18, dark, 0.14).bar(P(6.36, GY), P(6.36, GY + 1.08), 0.1, white);
     K.bar(P(6.36, GY + 1.06), Q(6.36, GY + 1.06), 0.09, white, 0.11).bar(P(6.36, GY + 0.56), Q(6.36, GY + 0.56), 0.06, white);
+    K.bar(P(6.32, GY + 0.15), Q(6.32, GY + 0.97), 0.072, '#ddd7c4');
   }
   const on = (y, a) => K.at(sin(a) * rad(y), y, cos(a) * rad(y), a, LEAN); // stand on the tower wall, leaning with it
   for (const [y, a] of [[3.3, PI / 2], [3.3, -PI / 2], [10, 0.62], [10, 0.62 + PI], [12.5, PI / 2 + 0.3], [12.5, -PI / 2 + 0.3], [14.7, 0], [14.7, PI]]) {
     on(y, a); K.box(1.04, 1.44, 0.3, white).box(0.8, 1.2, 0.3, GLASS, 0, 0, 0.03).box(0.06, 1.2, 0.3, white, 0, 0, 0.06).box(0.8, 0.06, 0.3, white, 0, 0, 0.06).box(1.24, 0.1, 0.44, white, 0, -0.77, 0.02);
+    for (const side of [-1, 1]) {
+      K.box(0.41, 1.29, 0.2, GREEN, side * 0.77, 0, -0.035);
+      for (const h of [-0.4, 0.4]) K.box(0.33, 0.09, 0.07, '#cad2ac', side * 0.77, h, 0.08);
+    }
   }
-  for (const a of [0, PI]) { on(1.5, a); K.box(2.1, 2.9, 0.5, white).box(1.7, 2.6, 0.5, GREEN, 0, -0.1, 0.04).box(0.05, 2.6, 0.5, '#123a26', 0, -0.1, 0.07); for (const x of [-0.2, 0.2]) K.add(Ico(0.06), GOLD, x, -0.2, 0.34); }
+  for (const a of [0, PI]) {
+    on(1.5, a); K.box(2.1, 2.9, 0.5, white).box(1.7, 2.6, 0.5, GREEN, 0, -0.1, 0.04).box(0.05, 2.6, 0.5, '#123a26', 0, -0.1, 0.07);
+    for (const x of [-0.2, 0.2]) K.add(Ico(0.06), GOLD, x, -0.2, 0.34);
+    const archStones = new Skin(), point = (t, r, z = 0.21) => [r * cos(t), 1.44 + 0.64 * r * sin(t), z];
+    for (let k = 0; k < 9; k++) {
+      const t = PI * k / 9, u = PI * (k + 1) / 9, c = k % 2 ? '#b36a43' : '#e3c4a0', mid = (t + u) / 2;
+      archStones.poly([point(t, 0.82), point(t, 1.16), point(u, 1.16), point(u, 0.82)], [0, 0, 1], c);
+      for (const r of [0.82, 1.16]) {
+        const side = r > 1 ? 1 : -1;
+        archStones.poly([point(t, r), point(u, r), point(u, r, -0.3), point(t, r, -0.3)], [cos(mid) * side, sin(mid) * side, 0], c);
+      }
+    }
+    K.skin(archStones);
+  }
   for (const a of [PI / 2, -PI / 2]) { on(GY + 1.12, a); K.box(1.2, 2.1, 0.3, white).box(0.95, 1.9, 0.3, GREEN, 0, -0.06, 0.03).box(0.5, 0.4, 0.3, GLASS, 0, 0.45, 0.06); }
   // the cap, the beard under the wind shaft, and a flag for a festive day
   CAP.add(Sph(1, 14, 5, 0, PI * 2, 0, PI / 2).scale(3.2, 3, 3.7).translate(0, HT + 0.5, 0.5), thatch, 10, 3);
@@ -312,12 +367,23 @@ export function molen() {
   K.box(0.36, 0.5, 0.36, GREEN, 0, 8.05, -5.46).add(Cyl(0.07, 0.07, 0.5, 6).rotateZ(PI / 2), iron, 0.2, 8.75, -5.3);
   K.at(0.36, 8.75, -5.3, PI / 2).add(Tor(0.6, 0.045, 4, 12), white); for (let k = 0; k < 3; k++) K.at(0.36, 8.75, -5.3, PI / 2, 0, (k * PI) / 3).box(1.2, 0.05, 0.05, white);
   // the sails: two stocks through the shaft head, each arm a lattice frame behind a wind board, with cloth spread over the inner half
-  SK.at().add(Cyl(0.34, 0.34, 2.6, 10).rotateX(PI / 2), '#7a2d22', 0, 0, -1).box(0.8, 0.8, 0.8, dark, 0, 0, 0).add(Cyl(0.22, 0.22, 0.2, 8).rotateX(PI / 2), GOLD, 0, 0, 0.45);
+  SK.at().add(Cyl(0.34, 0.34, 2.6, 10).rotateX(PI / 2), '#7a2d22', 0, 0, -1).box(0.8, 0.8, 0.8, dark, 0, 0, 0)
+    .add(Cyl(0.42, 0.48, 0.14, 8).rotateX(PI / 2), '#316246', 0, 0, 0.43)
+    .add(Cyl(0.22, 0.28, 0.14, 8).rotateX(PI / 2), GOLD, 0, 0, 0.55);
   for (let k = 0; k < 4; k++) {
     SK.at(0, 0, k % 2 ? -0.15 : 0.15, 0, 0, (k * PI) / 2).box(0.3, 12, 0.26, dark, 0, 6, 0).box(0.34, 0.6, 0.3, white, 0, 11.75, 0);
     for (let r = 2.5; r < 11.7; r += 0.83) SK.box(2.1, 0.07, 0.08, dark, 1.2, r, 0);
     for (const x of [0.85, 1.55, 2.25]) SK.box(0.07, 9.5, 0.06, dark, x, 6.95, 0);
-    SK.box(0.5, 9.5, 0.05, '#e9e1cf', -0.4, 6.95, 0).box(2, 5.2, 0.03, cloth, 1.22, 4.95, -0.045);
+    SK.box(0.5, 9.5, 0.05, '#e9e1cf', -0.4, 6.95, 0);
+    for (const y of [1.2, 7.9, 10.9]) SK.box(0.35, 0.18, 0.33, '#6a6960', 0, y, 0);
+    // The old sailcloth footprint, panelled and bowed between its stitched hems.
+    const linen = new Skin(), shades = ['#ecdbb4', '#f6e9c8', '#eadab5', '#f4e4c0'];
+    const clothPoint = (u, v, front) => [0.22 + u * 2, 2.35 + v * 5.2, -0.062 - 0.12 * sin(u * PI) * abs(sin(v * 4 * PI)) - (front ? 0 : 0.035)];
+    for (const front of [true, false]) for (let row = 0; row < 8; row++) for (let col = 0; col < 2; col++) {
+      const u = col / 2, v = row / 8;
+      linen.poly([clothPoint(u, v, front), clothPoint(u + 0.5, v, front), clothPoint(u + 0.5, v + 0.125, front), clothPoint(u, v + 0.125, front)], [0, 0, front ? 1 : -1], shades[((row >> 1) + col) % 4]);
+    }
+    SK.skin(linen);
   }
   const sails = new THREE.Object3D(), holder = new THREE.Group(); holder.position.set(0, 18.5, 4.5); holder.rotation.x = -TILT; holder.add(sails); sails.add(mesh(SK.geo(), M.plain));
   g.add(mesh(T.geo(), M.masonry), mesh(CAP.geo(), M.roofing), mesh(K.geo(), M.plain), holder);
@@ -340,7 +406,13 @@ function hull(B, st, { col, inner, rimCol, floor, rim = 0.09, floorY = 0, strake
       B.poly([a.S(o), b.S(o), b.C(o), a.C(o)], [0, 0.2, o], col).poly([a.C(o), b.C(o), b.K(o), a.K(o)], [0, -0.6, o], col).poly([a.S(o), b.S(o), b.T(o), a.T(o)], [0, 1, 0], rimCol).poly([a.T(o), b.T(o), b.F(o), a.F(o)], [0, 0.2, -o], inner);
       if (strake) { const { col: c, y0, y1, out } = strake; B.poly([a.P(o, y1, out), b.P(o, y1, out), b.P(o, y0, out), a.P(o, y0, out)], [0, 0, o], c).poly([a.P(o, y1, out), b.P(o, y1, out), b.P(o, y1, -0.04), a.P(o, y1, -0.04)], [0, 1, 0], c).poly([a.P(o, y0, out), b.P(o, y0, out), b.P(o, y0, -0.06), a.P(o, y0, -0.06)], [0, -1, 0], c); }
     }
-    B.poly([a.K(-1), b.K(-1), b.K(1), a.K(1)], [0, -1, 0], col).poly([a.F(-1), b.F(-1), b.F(1), a.F(1)], [0, 1, 0], floor);
+    B.poly([a.K(-1), b.K(-1), b.K(1), a.K(1)], [0, -1, 0], col);
+    // Divide the original dry floor into fitted boards, following the taper of each hull station.
+    for (let plank = 0; plank < 6; plank++) {
+      const left = plank / 3 - 1, right = (plank + 1) / 3 - 1;
+      const varnish = C(floor).multiplyScalar([1.12, 0.85, 1.04, 0.92, 1.08, 0.88][plank]);
+      B.poly([a.F(left), b.F(left), b.F(right), a.F(right)], [0, 1, 0], varnish);
+    }
   }
   for (const [p, d] of [[pt[0], -1], [pt[n - 1], 1]]) B.poly([p.S(-1), p.C(-1), p.K(-1), p.K(1), p.C(1), p.S(1)], [d, 0, 0], col).poly([p.S(-1), p.S(1), p.T(1), p.T(-1)], [0, 1, 0], rimCol).poly([p.T(-1), p.T(1), p.F(1), p.F(-1)], [-d, 0.1, 0], inner);
   if (strake) { const p = pt[0], { col: c, y0, y1, out } = strake; B.poly([p.P(-1, y1, out), p.P(1, y1, out), p.P(1, y0, out), p.P(-1, y0, out)], [-1, 0, 0], c).poly([p.P(-1, y1, out), p.P(1, y1, out), pt[0].S(1), pt[0].S(-1)], [0, 1, 0], c); }
@@ -349,7 +421,24 @@ const stations = (L, n, f) => Array.from({ length: n + 1 }, (_, i) => [-L / 2 + 
 const boat = (B, K) => { const g = new THREE.Group(); g.add(mesh(join(noUV(B), K.geo()), mats().plain)); return g; };
 const JACKETS = ['#e9503a', '#2f6fc9', '#f2c230', '#3aa66a', '#f08a2c', '#8e5bd0', '#ff7fb0', '#35b5c9'], HAIRS = ['#3a2a1e', '#d9b25a', '#7a4a2a', '#1c1c1c', '#b9b9b9'], WOOD = '#b98a52', WOOD2 = '#9a6a3a';
 // someone sitting, facing +x, on a seat at height y: 0.69 m from the seat to the top of the head
-const sitter = (K, x, y, z, i, hat) => K.box(0.26, 0.42, 0.38, JACKETS[i % 8], x, y + 0.21, z).box(0.36, 0.13, 0.32, '#39425c', x + 0.2, y + 0.065, z).add(Sph(0.125, 6, 3), SKIN, x + 0.02, y + 0.535, z).add(Sph(0.135, 6, 3, 0, PI * 2, 0, PI / 2), hat || HAIRS[i % 5], x, y + 0.55, z);
+const sitter = (K, x, y, z, i, hat) => {
+  const shirt = JACKETS[i % 8];
+  K.add(Cyl(1, 0.79, 0.42, 8).scale(0.15, 1, 0.205), shirt, x, y + 0.21, z)
+    .box(0.36, 0.13, 0.32, '#39425c', x + 0.2, y + 0.065, z)
+    .add(Sph(0.125, 6, 3), SKIN, x + 0.02, y + 0.535, z)
+    .add(Sph(0.135, 6, 3, 0, PI * 2, 0, PI / 2), hat || HAIRS[i % 5], x, y + 0.55, z);
+  for (const side of [-1, 1]) {
+    K.bar([x, y + 0.34, z + side * 0.17], [x + 0.13, y + 0.19, z + side * 0.2], 0.095, shirt);
+    K.bar([x + 0.13, y + 0.19, z + side * 0.2], [x + 0.25, y + 0.17, z + side * 0.14], 0.08, SKIN);
+  }
+};
+const lifeRing = (K, x, y, z, r, hanging = false) => {
+  for (let k = 0; k < 8; k++) {
+    const section = Tor(r, r * 0.235, 4, 2, PI / 4).rotateZ(k * PI / 4);
+    if (!hanging) section.rotateX(PI / 2);
+    K.add(section, k % 2 ? WHITE : '#cb4931', x, y, z);
+  }
+};
 const miniBike = (K, x, y, z, col) => { // a bike standing on y, along x
   for (const dx of [-0.52, 0.52]) K.add(Tor(0.3, 0.03, 3, 10), '#1c1c1c', x + dx, y + 0.33, z);
   for (const [a, b, c, d] of [[-0.52, 0.33, -0.2, 0.85], [-0.2, 0.85, 0.36, 0.8], [0, 0.33, -0.2, 0.85], [0, 0.33, 0.36, 0.8], [-0.52, 0.33, 0, 0.33], [0.52, 0.33, 0.32, 1.05]]) K.bar([x + a, y + b, z], [x + c, y + d, z], 0.04, col);
@@ -368,6 +457,7 @@ export function rondvaartboot() {
   K.box(0.28, 0.5, 0.6, WHITE, -3.1, 0.23, 0).add(Tor(0.16, 0.025, 4, 10).rotateY(PI / 2), WOOD2, -3.26, 0.62, 0).box(0.1, 0.04, 0.04, WOOD2, -3.2, 0.62, 0);
   K.bar([-4.36, 0.4, 0], [-4.36, 0.98, 0], 0.035, WHITE); K.at(-4.36, 0.97, 0); flag(K, 0.32, 0.21); K.at();
   K.box(0.5, 0.2, 0.05, WHITE, 3.2, 0.3, 0).add(Cyl(0.06, 0.06, 0.14, 6), '#fff1c4', 3.9, 0.56, 0).box(0.5, 0.05, 0.3, WOOD2, 3.7, 0.47, 0); // bow seat and lantern
+  lifeRing(K, 2.57, 0.143, -0.46, 0.27);
   return boat(B, K);
 }
 // An open launch: 5.65 x 2.0 m, 1.45 m above the water at the flag
@@ -379,6 +469,7 @@ export function sloep() {
   K.box(0.3, 0.6, 0.5, WHITE, -1.2, 0.28, 0.3).add(Tor(0.17, 0.025, 4, 10).rotateY(PI / 2), WOOD2, -1.38, 0.66, 0.3).box(0.12, 0.04, 0.04, WOOD2, -1.3, 0.66, 0.3);
   K.box(0.26, 0.36, 0.3, '#22262d', -2.86, 0.68, 0).box(0.08, 0.8, 0.08, '#22262d', -2.86, 0.15, 0); // outboard
   K.box(0.42, 0.26, 0.3, '#35b5c9', 0.9, 0.11, -0.35).box(0.44, 0.05, 0.32, WHITE, 0.9, 0.265, -0.35);
+  lifeRing(K, -0.42, 0.129, -0.31, 0.21);
   const dog = '#c98b4a'; K.box(0.42, 0.2, 0.18, dog, 1.5, 0.3, 0).box(0.17, 0.17, 0.16, dog, 1.76, 0.44, 0).box(0.1, 0.07, 0.08, '#8a5a2e', 1.87, 0.41, 0).box(0.05, 0.16, 0.05, dog, 1.3, 0.45, 0); for (const [x, z] of [[1.35, -0.06], [1.35, 0.06], [1.65, -0.06], [1.65, 0.06]]) K.box(0.05, 0.22, 0.05, dog, x, 0.09, z);
   for (const z of [-0.09, 0.09]) K.box(0.03, 0.09, 0.05, '#8a5a2e', 1.72, 0.55, z);
   K.bar([-2.7, 0.5, 0.55], [-2.7, 1.45, 0.55], 0.035, WHITE); K.at(-2.7, 1.44, 0.55); flag(K, 0.42, 0.28); K.at();
@@ -425,6 +516,10 @@ export function woonboot() {
     if (x !== -1.4) { K.box(1.1, 0.16, 0.2, '#8a4b2f', x, 1.2, o * 1.56); for (const q of [-0.3, 0.3]) K.box(0.3, 0.14, 0.16, FL[i++ % 3], x + q, 1.33, o * 1.56); }
   }
   K.box(0.08, 1.95, 0.9, WHITE, 3.31, 1.45, -0.5).box(0.08, 1.8, 0.75, '#e9503a', 3.34, 1.4, -0.5).add(Ico(0.05), GOLD, 3.4, 1.4, -0.22).add(Cyl(0.36, 0.36, 0.08, 10).rotateZ(PI / 2), WHITE, 3.31, 1.85, 0.7).add(Cyl(0.28, 0.28, 0.08, 10).rotateZ(PI / 2), GLASS, 3.34, 1.85, 0.7);
+  for (const side of [-1, 1]) {
+    lifeRing(K, 2.34, 1.62, side * 1.52, 0.31, true);
+    K.box(0.09, 0.14, 0.15, '#99754a', 2.34, 1.95, side * 1.48);
+  }
   for (const [x, z] of [[3.5, -1.7], [3.5, 1.7], [5.7, -1.55], [5.7, 1.55]]) K.box(0.08, 0.9, 0.08, WHITE, x, 0.92, z); // the terrace at the bow
   K.bar([3.5, 1.35, -1.7], [5.7, 1.35, -1.55], 0.07, WHITE).bar([3.5, 1.35, 1.7], [5.7, 1.35, 1.55], 0.07, WHITE).bar([5.7, 1.35, -1.55], [5.7, 1.35, 1.55], 0.07, WHITE);
   K.add(Cyl(0.4, 0.4, 0.05, 8), WHITE, 4.6, 1.12, 0.3).add(Cyl(0.04, 0.04, 0.65, 5), WHITE, 4.6, 0.79, 0.3); pot(K, 5.3, 0.47, -1.1, '#ff7fb0', 0.2); pot(K, 3.75, 0.47, 1.25, '#f2c230', 0.17);
@@ -511,7 +606,11 @@ export function gullGeo() {
 // -- the cheese market --
 const WAXES = ['#f2b632', '#eeaa2c', '#f5c043'];
 const wheel = (K, x, y, z, r, t, seg, { a0 = 0, len = PI * 2, bottom = true, wax = WAXES[0] } = {}) => {
-  const b = r * 0.16, full = [[0, 0], [r - b, 0], [r, b], [r, t - b], [r - b, t], [r * 0.46, t], [0, t]], cols = ['#d99a26', wax, C(wax).multiplyScalar(0.88), wax, wax, '#f6ecd0'];
+  const b = min(r * 0.16, t * 0.32);
+  const full = [[0, 0], [r - b, 0], [r, b], [r, t - b], [r - b, t], [r * 0.46, t]];
+  const cols = ['#d99a26', wax, C(wax).multiplyScalar(0.84), wax, wax, '#f6ecd0'];
+  if (r > 0.3 || len < 2 * PI) { full.push([r * 0.15, t]); cols.push('#a94b31'); }
+  full.push([0, t]);
   K.at(x, y, z).pre(turn(bottom ? full : full.slice(1), seg, bottom ? cols : cols.slice(1), a0, len));
   if (len < PI * 2 - 1e-3) { const S = new Skin(); for (const [a, s] of [[a0, 1], [a0 + len, -1]]) S.poly(full.map(([q, h]) => [q * cos(a), h, q * sin(a)]), [s * sin(a), 0, -s * cos(a)], '#f7e2a0'); K.skin(S); }
   return K.at();
@@ -573,7 +672,10 @@ export function benchGeo() {
       .add(Tor(0.075, 0.018, 3, 8).rotateY(PI / 2), iron, x, 0.54, -0.02);
   }
   [-0.2, -0.087, 0.026, 0.139].forEach((z, i) => K.box(1.56, 0.03, 0.097, i % 2 ? '#b47d47' : '#a8713e', 0, 0.46, z));
-  [0.58, 0.71, 0.84].forEach((y, i) => K.at(0, y, 0.15 + (0.11 * (y - 0.4)) / 0.515 - 0.04, 0, 0.21).box(1.56, 0.1, 0.03, i % 2 ? '#a8713e' : '#b47d47'));
+  [0.58, 0.71, 0.84].forEach((y, i) => {
+    K.at(0, y, 0.15 + (0.11 * (y - 0.4)) / 0.515 - 0.04, 0, 0.21)
+      .add(ext([[-0.78,-0.025],[-0.75,-0.05],[0.75,-0.05],[0.78,-0.025],[0.78,0.025],[0.75,0.05],[-0.75,0.05],[-0.78,0.025]], 0.035), i % 2 ? '#a8713e' : '#b47d47');
+  });
   K.at(); return K.geo();
 }
 // A bridge lantern on a cast-iron post: 3.25 m tall, foot 0.28 wide, cream glass
@@ -583,6 +685,8 @@ export function bridgeLampGeo() {
     .box(0.5, 0.035, 0.035, iron, 0, 2.3, 0).add(Ico(0.035), GOLD, -0.25, 2.3, 0).add(Ico(0.035), GOLD, 0.25, 2.3, 0).add(Cyl(0.13, 0.05, 0.12, 6), iron, 0, gy - 0.06, 0)
     .add(Cyl(0.2, 0.13, 0.42, 6), '#fff1c4', 0, gy + 0.21, 0).add(Cyl(0.06, 0.25, 0.14, 6), iron, 0, gy + 0.49, 0).add(Cyl(0.05, 0.07, 0.08, 6), iron, 0, gy + 0.6, 0).add(Ico(0.04), GOLD, 0, gy + 0.67, 0);
   for (let k = 0; k < 6; k++) { const a = (k * PI) / 3 + PI / 6, p = (r, y) => [sin(a) * r, y, cos(a) * r]; rod(K, p(0.137, gy), p(0.208, gy + 0.42), 0.012, iron, 3); }
+  K.add(Cyl(0.124, 0.124, 0.045, 8), '#a88948', 0, 0.325, 0)
+    .add(Cyl(0.17, 0.16, 0.055, 6), '#88713d', 0, gy + 0.022, 0);
   return K.geo();
 }
 // One metre of white bridge railing along x (-0.5 to 0.5), 1.0 tall, 0.09 thick: a post in the middle, four pickets and two rings. Sections butt end to end.
@@ -603,6 +707,10 @@ export function haringkarGeo() {
     for (const x of [-0.95, 0.95]) K.box(0.05, 1.2, 0.05, WHITE, x, 1.7, o * 0.47);
     for (let i = 0; i < 7; i++) K.at(-0.9857 + i * 0.32857, 2.35, o * 0.4, 0, o * 0.3588).box(0.32857, 0.035, 0.84, i % 2 ? '#ffffff' : RED);
     K.at().box(2.3, 0.14, 0.03, BLUE, 0, 2.13, o * 0.785);
+    for (let i = 0; i < 7; i++) {
+      K.add(ext([[-0.162,0],[0.162,0],[0.145,-0.074],[0.08,-0.115],[-0.08,-0.115],[-0.145,-0.074]], 0.028),
+        i % 2 ? WHITE : RED, -0.9857 + i * 0.32857, 2.06, o * 0.785);
+    }
   }
   K.add(Cyl(0.03, 0.03, 1.2, 5).rotateX(PI / 2), iron, -0.15, 0.435, 0).box(2, 0.5, 1, WHITE, 0, 0.8, 0).box(2.06, 0.14, 1.06, BLUE, 0, 0.64, 0).box(2.06, 0.08, 1.06, RED, 0, 0.99, 0).box(2.14, 0.05, 1.14, WOOD, 0, 1.075, 0);
   K.box(1.2, 0.26, 0.04, WHITE, 0, 1.98, 0.5).box(0.42, 0.11, 0.03, BLUE, 0.05, 1.98, 0.535).add(Box(0.13, 0.13, 0.03).rotateZ(PI / 4), BLUE, -0.24, 1.98, 0.535);
@@ -621,7 +729,12 @@ export function bloemenkraamGeo() {
     K.box(2.2, h, 0.39, c, 0, h / 2, z);
     for (let i = 0; i < 4; i++) {
       const x = -0.84 + i * 0.56 + (j % 2) * 0.1, col = TUL[(i + j * 2) % 6];
-      K.add(Cyl(0.13, 0.1, 0.26, 5), j === 1 ? '#2b2f36' : '#8d9399', x, h + 0.13, z).add(Cone(0.17, 0.2, 5).rotateX(PI), '#3f8f4a', x, h + 0.34, z).add(Ico(0.16).scale(1, 0.62, 1), col, x, h + 0.47, z);
+      K.add(Cyl(0.13, 0.1, 0.26, 6), j === 1 ? '#41474a' : '#929e9e', x, h + 0.13, z)
+        .add(Cone(0.17, 0.2, 6).rotateX(PI), '#3f8f4a', x, h + 0.34, z);
+      for (const [dx, dz, dy] of [[-0.09, 0.035, 0.015], [0.1, 0.02, 0], [0, -0.08, 0.03]]) {
+        const bud = Lathe([[0, 0], [0.076, 0.08], [0.062, 0.155], [0, 0.115]], 5);
+        K.add(bud, col, x + dx, h + 0.405 + dy, z + dz);
+      }
     }
   });
   return K.geo();

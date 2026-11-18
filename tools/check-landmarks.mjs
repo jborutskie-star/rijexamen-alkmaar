@@ -26,19 +26,19 @@ const B = (x, y0, y1, z) => [-x, y0, -z, x, y1, z];
 const GROUPS = {
   groteKerk: { tris: [6000, 14000], box: [-48, -0.05, -30, 48, 53, 33] },
   molen: { tris: [0, 5000], box: B(13, -0.01, 31, 13) },
-  rondvaartboot: { tris: [0, 1500], box: B(4.6, -0.35, 1.0, 1.3) },
+  rondvaartboot: { tris: [0, 2500], box: B(4.6, -0.35, 1.0, 1.3) },
   sloep: { tris: [0, 1500], box: B(3.0, -0.35, 1.5, 1.05) },
   roeiboot: { tris: [0, 1500], box: B(2.3, -0.35, 0.6, 1.25) },
   tjalk: { tris: [0, 1500], box: [-6.4, -0.35, -1.8, 5.6, 10.5, 1.8] },
-  woonboot: { tris: [0, 1500], box: B(6.1, -0.35, 4.1, 2.1) },
+  woonboot: { tris: [0, 1800], box: B(6.1, -0.35, 4.1, 2.1) },
 };
 const GEOS = { // props are under 400 triangles unless a bigger budget is stated here
   duckGeo: { box: B(0.25, -0.06, 0.25, 0.13) }, swanGeo: { box: B(0.62, -0.11, 0.9, 0.3) }, lilyGeo: { box: B(0.62, 0, 0.0601, 0.62) }, reedGeo: { box: B(0.5, -0.31, 1.65, 0.5) },
   mooringPostGeo: { box: B(0.21, -0.31, 1.55, 0.21) }, gullGeo: { box: B(0.32, -0.08, 0.15, 0.6) },
   cheeseWheelGeo: { box: B(0.361, 0, 0.1101, 0.361) }, cheeseStackGeo: { tris: 900, box: B(0.651, 0, 0.75, 0.501) }, edamGeo: { box: B(0.161, 0, 0.29, 0.161) },
   berrieGeo: { box: B(1.13, 0.4, 0.92, 0.36) }, scaleGeo: { tris: 450, box: B(1.3, 0, 2.5, 0.45) },
-  benchGeo: { box: B(0.9, 0, 0.95, 0.325) }, bridgeLampGeo: { tris: 450, box: B(0.3, 0, 3.3, 0.3) }, railingGeo: { box: B(0.5001, 0, 1.0001, 0.05) },
-  haringkarGeo: { tris: 900, box: B(1.3, 0, 3.01, 0.801) }, bloemenkraamGeo: { tris: 900, box: B(1.3, 0, 2.5, 0.801) }, fietsenrekGeo: { tris: 4000, box: B(1.3, 0, 1.3, 2.2) },
+  benchGeo: { tris: 432, box: B(0.9, 0, 0.95, 0.325) }, bridgeLampGeo: { tris: 450, box: B(0.3, 0, 3.3, 0.3) }, railingGeo: { box: B(0.5001, 0, 1.0001, 0.05) },
+  haringkarGeo: { tris: 1200, box: B(1.3, 0, 3.01, 0.801) }, bloemenkraamGeo: { tris: 1800, box: B(1.3, 0, 2.5, 0.801) }, fietsenrekGeo: { tris: 4000, box: B(1.3, 0, 1.3, 2.2) },
   dormerGeo: { box: [-0.81, -0.21, -1.9, 0.81, 1.85, 0.18] }, chimneyGeo: { box: B(0.37, -0.61, 1.83, 0.37) }, skylightGeo: { box: B(0.7, 0, 0.16, 0.6) }, ventGeo: { box: B(0.56, 0, 0.95, 0.46) },
   roofTerraceGeo: { tris: 700, box: B(1.51, 0, 2.4, 1.26) },
 };
