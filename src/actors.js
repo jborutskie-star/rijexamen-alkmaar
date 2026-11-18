@@ -48,6 +48,28 @@ const moulded = (w, h, d, r, material, x = 0, y = 0, z = 0) => {
   const m = new THREE.Mesh(mould(w, h, d, r), material); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; return m;
 };
 
+// Cast pieces are coloured in the mould. One draw per articulated part, even with cuffs, soles and carved hair.
+const sculpt = (geometry, color = '#ffffff', roughness = 0.7) => {
+  const m = new THREE.Mesh(geometry, mat(color, { vertexColors: true, roughness })); m.castShadow = m.receiveShadow = true; return m;
+};
+const facet = (contour, x, depth) => {
+  const shape = new THREE.Shape(contour.map(([z, y]) => new THREE.Vector2(-z, y)));
+  return new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false }).rotateY(PI / 2).translate(x, 0, 0);
+};
+const ell = (x, y, z) => new THREE.SphereGeometry(1, 12, 6).scale(x, y, z);
+const hairMould = fuse([HAIR.clone().scale(1, 0.55, 1), '#f1eadf', 0, 0.12, 0],
+  [mould(0.06, 0.2, 0.36, 0.028), '#c1b7ab', -0.19, 0.06, 0],
+  ...[-1, 1].flatMap(side => [[ell(0.09, 0.08, 0.048), '#cfbfb3', 0.045, 0.095, side * 0.165],
+    [ell(0.075, 0.045, 0.055), '#f0e9d9', 0.13, 0.14, side * 0.09]]),
+  [ell(0.079, 0.036, 0.13).rotateX(-0.17), '#fff5df', 0.09, 0.186, 0.012]);
+const sleeveMould = fuse([mould(0.15, 0.34, 0.15, 0.024), '#ffffff', 0, -0.12, 0],
+  [mould(0.145, 0.06, 0.148, 0.009), '#d2d5d9', 0, -0.32, 0]);
+const palmMould = (side) => fuse([mould(0.125, 0.1, 0.129, 0.028), '#fff9f3', -0.0125, -0.4, 0],
+  [ell(0.035, 0.045, 0.027), '#e8d5c4', 0.04, -0.393, -side * 0.047]);
+const palms = [palmMould(-1), palmMould(1)];
+const shoeMould = fuse([mould(0.28, 0.035, 0.25, 0.012), '#8d928f', 0.04, -0.5425, 0],
+  [mould(0.272, 0.071, 0.236, 0.027), '#ffffff', 0.04, -0.493, 0],
+  ...[0.05, 0.105].map(x => [mould(0.014, 0.014, 0.12, 0.004), '#a6b1b6', x, -0.46, 0]));
 let knit;
 function shirtPrint() {
   return knit ??= tex(128, 128, (g) => {
@@ -79,15 +101,15 @@ export function person(b, { skin = '#f0c8a0', shirt = '#3d7dca', pants = '#2d314
   const skull = new THREE.Mesh(HEAD, mat(skin, { roughness: 0.6 })); skull.castShadow = true; head.add(skull, b(0.05, 0.09, 0.03, skin, 0, 0, -0.205), b(0.05, 0.09, 0.03, skin, 0, 0, 0.205));
   const faceMat = new THREE.MeshStandardMaterial({ map: typeof face === 'string' ? plainFace(face) : face, alphaTest: 0.45, roughness: 0.6 });
   head.add(new THREE.Mesh(FACE, faceMat));
-  if (hair) { const top = new THREE.Mesh(HAIR, mat(hair, { roughness: 0.9 })); top.scale.y = 0.55; top.position.y = 0.12; head.add(top, b(0.06, 0.2, 0.36, hair, -0.19, 0.06, 0)); }
-  const cloth = mat(pants, { roughness: 0.92 }), cuff = mat(sleeve, { roughness: 0.83 }), hand = mat(skin, { roughness: 0.63 }), shoe = mat(shoes, { roughness: 0.48 });
+  if (hair) head.add(sculpt(hairMould, hair, 0.65));
+  const cloth = mat(pants, { roughness: 0.92 });
   const arm = (z) => {
     const p = new THREE.Group(); p.position.set(0, 0.47, z);
-    p.add(moulded(0.15, 0.4, 0.15, 0.025, cuff, 0, -0.15, 0), moulded(0.15, 0.1, 0.15, 0.032, hand, 0, -0.4, 0)); return p;
+    p.add(sculpt(sleeveMould, sleeve, 0.84), sculpt(palms[z > 0 ? 1 : 0], skin, 0.58)); return p;
   };
   const leg = (z) => {
     const p = new THREE.Group(); p.position.set(0, 0, z);
-    p.add(moulded(0.2, 0.46, 0.22, 0.02, cloth, 0, -0.23, 0), moulded(0.28, 0.1, 0.25, 0.022, shoe, 0.04, -0.51, 0)); return p;
+    p.add(moulded(0.2, 0.46, 0.22, 0.02, cloth, 0, -0.23, 0), sculpt(shoeMould, shoes, 0.53)); return p;
   };
   const o = { g, head, faceMat, armL: arm(-0.33), armR: arm(0.33), legL: leg(-0.13), legR: leg(0.13) };
   g.add(shirtBody(shirt), moulded(0.2, 0.05, 0.34, 0.016, mat(collar), 0, 0.535, 0), head, o.armL, o.armR, o.legL, o.legR);
@@ -151,16 +173,31 @@ const wheelProfile = [[0, -0.095], [0.213, -0.095], [0.253, -0.113], [0.29, -0.1
 const wheelGeo = fuse([new THREE.LatheGeometry(wheelProfile.map(([r, h]) => new THREE.Vector2(r, h)), 18), '#ffffff'],
   [new THREE.CylinderGeometry(0.2, 0.2, 0.25, 5), '#ffffff']);
 const wheelVertices = wheelGeo.attributes.position, wheelUV = new Float32Array(wheelVertices.count * 2);
-for (let i = 0; i < wheelVertices.count; i++) {
-  wheelUV[2 * i] = 0.5 + wheelVertices.getX(i) / 0.69; wheelUV[2 * i + 1] = 0.5 + wheelVertices.getZ(i) / 0.69;
+for (let i = 0; i < wheelVertices.count; i += 3) {
+  const sidewall = [i, i + 1, i + 2].some(j => Math.hypot(wheelVertices.getX(j), wheelVertices.getZ(j)) < 0.335);
+  const az = [i, i + 1, i + 2].map(j => (Math.atan2(wheelVertices.getX(j), wheelVertices.getZ(j)) / (2 * PI) + 1) % 1);
+  for (let k = 0; k < 3; k++) {
+    const j = i + k;
+    if (sidewall) {
+      wheelUV[2 * j] = 0.25 + wheelVertices.getX(j) / 1.38; wheelUV[2 * j + 1] = 0.5 + wheelVertices.getZ(j) / 0.69;
+    } else {
+      const at = az[k] < 0.1 && Math.max(...az) > 0.9 ? 1 : az[k];
+      wheelUV[2 * j] = 0.505 + at * 0.49; wheelUV[2 * j + 1] = 0.5 + wheelVertices.getY(j) / 0.25;
+    }
+  }
 }
 wheelGeo.setAttribute('uv', new THREE.BufferAttribute(wheelUV, 2)); wheelGeo.deleteAttribute('color');
 let wheelPaint;
 function wheel(parent, x, z) {
   const steer = new THREE.Group(), spin = new THREE.Group(); steer.position.set(x, 0.34, z);
   if (!wheelPaint) {
-    const map = tex(256, 256, (g) => {
-      g.translate(128, 128);
+    const map = tex(512, 256, (g) => {
+      g.fillStyle = '#282b2d'; g.fillRect(256, 0, 256, 256);
+      for (let n = -1; n <= 18; n++) for (const side of [-1, 1]) {
+        const y = side < 0 ? 0 : 256;
+        g.fillStyle = '#424446'; g.beginPath(); g.moveTo(258 + n * 14, y); g.lineTo(266 + n * 14, y); g.lineTo(271 + n * 14, 128 + side * 22); g.lineTo(264 + n * 14, 128 + side * 22); g.fill();
+      }
+      g.save(); g.beginPath(); g.rect(0, 0, 256, 256); g.clip(); g.translate(128, 128);
       const circle = (r, c) => { g.fillStyle = c; g.beginPath(); g.arc(0, 0, r, 0, PI * 2); g.fill(); };
       circle(184, '#22262c'); circle(112, '#35383e'); circle(108, '#25282d');
       for (let i = 0; i < 40; i++) { g.rotate(PI / 20); g.fillStyle = '#414348'; g.fillRect(117, 0, 10, 2.8); }
@@ -170,13 +207,13 @@ function wheel(parent, x, z) {
         g.fillStyle = '#94a1a8'; g.fillRect(4, -64, 4, 36);
       }
       circle(26, '#a4afb7'); circle(16, '#d7dfe1'); circle(10, '#6d7881');
-      for (let i = 0; i < 5; i++) { g.rotate(2 * PI / 5); g.fillStyle = '#485159'; g.beginPath(); g.arc(0, -21, 3.5, 0, PI * 2); g.fill(); }
+      for (let i = 0; i < 5; i++) { g.rotate(2 * PI / 5); g.fillStyle = '#485159'; g.beginPath(); g.arc(0, -21, 3.5, 0, PI * 2); g.fill(); } g.restore();
     });
-    const finish = tex(128, 128, (g) => {
-      g.fillStyle = '#00da00'; g.fillRect(0, 0, 128, 128); g.fillStyle = '#0075a0'; g.beginPath(); g.arc(64, 64, 41, 0, PI * 2); g.fill();
+    const finish = tex(256, 128, (g) => {
+      g.fillStyle = '#00da00'; g.fillRect(0, 0, 256, 128); g.fillStyle = '#0075a0'; g.beginPath(); g.arc(64, 64, 41, 0, PI * 2); g.fill();
     });
     finish.colorSpace = THREE.NoColorSpace;
-    wheelPaint = mat('#ffffff', { map, roughness: 1, roughnessMap: finish, metalness: 1, metalnessMap: finish });
+    wheelPaint = mat('#ffffff', { map, bumpMap: map, bumpScale: 0.006, roughness: 1, roughnessMap: finish, metalness: 1, metalnessMap: finish });
   }
   const w = new THREE.Mesh(wheelGeo, wheelPaint); w.rotation.x = PI / 2; w.castShadow = true;
   spin.add(w); steer.add(spin); parent.add(steer); return { steer, spin };
@@ -196,31 +233,142 @@ function plate() {
     g.fillStyle = '#111'; g.font = `400 40px ${FONT}`; g.textAlign = 'center'; g.fillText('JB-007-L', 143, 45); });
 }
 
+// The chrome bezel, scalloped reflector, fluted lens and bulb share the light's existing housing.
+function headlampLens() {
+  const lens = tex(128, 128, (g) => {
+    g.translate(64, 64);
+    const ring = (r, c) => { g.fillStyle = c; g.beginPath(); g.arc(0, 0, r, 0, 2 * PI); g.fill(); };
+    ring(92, '#59666d'); ring(62, '#dfe4de'); ring(56, '#3b444a'); ring(51, '#dcdbbd');
+    for (let i = 0; i < 18; i++) {
+      g.fillStyle = ['#f8e4a7', '#7c7e76', '#e8ecdc'][i % 3]; g.beginPath(); g.moveTo(0, -18); g.lineTo(-8, -49); g.lineTo(4, -50); g.fill(); g.rotate(2 * PI / 18);
+    }
+    ring(18, '#ece5cc'); ring(12, '#fff9cc'); ring(5, '#fffefa');
+    g.fillStyle = 'rgba(255,255,245,.52)'; for (const x of [-32, -21, 20, 31]) g.fillRect(x, -25, 2, 50);
+  });
+  return mat('#ffffff', { map: lens, emissive: '#fff4d2', emissiveMap: lens, emissiveIntensity: 0.24, metalness: 0.18, roughness: 0.22 });
+}
+function dashboard() {
+  const map = tex(512, 128, (g) => {
+    g.fillStyle = '#353d43'; g.fillRect(0, 0, 512, 128); g.fillStyle = '#1d2428'; g.fillRect(0, 0, 512, 13);
+    for (const x of [91, 155]) {
+      g.fillStyle = '#949a99'; g.beginPath(); g.arc(x, 61, 32, 0, 2 * PI); g.fill();
+      g.fillStyle = '#1d2327'; g.beginPath(); g.arc(x, 61, 28, 0, 2 * PI); g.fill();
+      for (let n = 0; n < 9; n++) { const a = 0.8 + n * 0.56; g.fillStyle = n < 2 ? '#e07c51' : '#dbdfc9'; g.fillRect(x + 22 * cos(a), 61 + 22 * sin(a), 3, 4); }
+      g.strokeStyle = '#eb7134'; g.lineWidth = 4; g.beginPath(); g.moveTo(x, 61); g.lineTo(x - 15, 49); g.stroke();
+    }
+    for (const x of [224, 287, 419]) { g.fillStyle = '#172124'; g.fillRect(x, 35, 50, 38); g.fillStyle = '#819092'; for (let y = 40; y < 70; y += 8) g.fillRect(x + 4, y, 42, 2); }
+    g.fillStyle = '#848c8d'; g.fillRect(12, 103, 487, 4); g.fillStyle = '#d46845'; g.fillRect(270, 86, 12, 7);
+  });
+  const m = moulded(0.3, 0.22, 1.58, 0.045, mat('#ffffff', { map, roughness: 0.66 }), 0.6, 0.92, 0);
+  m.geometry = m.geometry.clone(); const { normal, position, uv } = m.geometry.attributes;
+  for (let i = 0; i < uv.count; i++) {
+    if (normal.getX(i) < -0.74) uv.setXY(i, 0.5 + position.getZ(i) / 1.58, 0.5 + position.getY(i) / 0.22);
+    else uv.setXY(i, 0.04, 0.87);
+  }
+  return m;
+}
+function coachwork(mesh, front) {
+  const map = tex(512, 256, (g) => {
+    g.fillStyle = '#fbfaf4'; g.fillRect(0, 0, 512, 256);
+    g.lineJoin = 'round'; g.strokeStyle = '#98998c'; g.lineWidth = 3.5; g.beginPath();
+    g.moveTo(27, 13); g.bezierCurveTo(26, 66, 46, 179, 62, 214); g.quadraticCurveTo(123, 226, 194, 214); g.bezierCurveTo(211, 173, 229, 63, 229, 13); g.stroke();
+    g.strokeStyle = '#d6d5c9'; g.lineWidth = 5; g.beginPath(); g.moveTo(48, 36); g.lineTo(71, 163); g.moveTo(208, 36); g.lineTo(185, 163); g.stroke();
+    if (front) { for (let n = 0; n < 9; n++) { g.fillStyle = '#757d7a'; g.fillRect(65 + n * 15, 18, 8, 4); } }
+    // The quarter panel receives a pressed arch and a moulding near the sill.
+    g.strokeStyle = '#adac9f'; g.lineWidth = 4; g.beginPath(); g.arc(385, 238, 87, PI, 2 * PI); g.stroke();
+    g.strokeStyle = '#666c67'; g.lineWidth = 7; g.beginPath(); g.moveTo(265, 222); g.lineTo(295, 222); g.moveTo(476, 222); g.lineTo(505, 222); g.stroke();
+    g.fillStyle = front ? '#e69e37' : '#ab3030'; g.fillRect(front ? 476 : 263, 114, 22, 7);
+  });
+  mesh.material = mat('#ffffff', { map, roughness: 0.24, metalness: 0.23 });
+  const { position: p, normal, uv } = mesh.geometry.attributes, center = front ? 1.25 : -1.25;
+  for (let i = 0; i < uv.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    if (normal.getY(i) > 0.74 && y > 0.8) {
+      const long = front ? (x - 0.72) / 1.15 : (-x - 0.55) / 1.4;
+      uv.setXY(i, clamp(0.25 + z / 3.44, 0.002, 0.498), clamp(1 - long, 0.006, 0.994));
+    } else if (Math.abs(normal.getZ(i)) > 0.84) uv.setXY(i, clamp(0.75 + (x - center) / 2.65, 0.502, 0.998), clamp((y - 0.34) / 1.05, 0.008, 0.992));
+    else uv.setXY(i, 0.502, 0.985);
+  }
+  return mesh;
+}
+function bumperSkin() {
+  const map = tex(256, 48, (g) => {
+    g.fillStyle = '#313941'; g.fillRect(0, 0, 256, 48);
+    g.fillStyle = '#939c9d'; g.fillRect(0, 3, 256, 5); g.fillStyle = '#525f66'; g.fillRect(0, 8, 256, 3);
+    for (const x of [9, 189]) { g.fillStyle = '#18242b'; g.beginPath(); g.roundRect(x, 18, 58, 22, 7); g.fill();
+      g.fillStyle = '#57646a'; g.fillRect(x + 7, 22, 40, 2); }
+    g.fillStyle = '#1c252b'; g.fillRect(82, 16, 92, 27);
+  });
+  return mat('#ffffff', { map, roughness: 0.47, metalness: 0.18 });
+}
 function lessonCar(world) {
   const b = world.box, bm = world.beam;
   const root = new THREE.Group(), pitch = new THREE.Group(), roll = new THREE.Group(), body = new THREE.Group(), shell = new THREE.Group();
   roll.position.y = 0.75; body.position.y = -0.75; root.add(pitch); pitch.add(roll); roll.add(body); body.add(shell);
   const white = mat('#fbfaf4', { roughness: 0.24, metalness: 0.23 }), dark = '#2b2e36', orange = '#ff6a13';
+  const bumperFinish = bumperSkin();
+  for (const sign of [-1, 1]) {
+    const bumper = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.16, 1.56), bumperFinish);
+    bumper.position.set(sign * 1.93, 0.47, 0); bumper.castShadow = bumper.receiveShadow = true; shell.add(bumper);
+  }
+  const headliner = tex(256, 256, (g) => {
+    g.fillStyle = '#eeeae0'; g.fillRect(0, 0, 256, 256);
+    g.strokeStyle = '#c6c2b8'; g.lineWidth = 3; g.beginPath(); g.roundRect(7, 10, 242, 235, 18); g.stroke();
+    g.fillStyle = '#ddd9d0'; g.fillRect(16, 186, 224, 4);
+    for (const x of [11, 237]) { g.fillStyle = '#aeb0a7'; g.beginPath(); g.roundRect(x, 91, 8, 42, 4); g.fill(); }
+  });
+  const roof = b(1.36, 0.08, 1.52, '#ffffff', -0.32, 1.8, 0, { map: headliner });
+  const roofUV = roof.geometry.attributes.uv;
+  for (let i = 0; i < roofUV.count; i++) if (Math.floor(i / 4) !== 3) roofUV.setXY(i, 0.005, 0.995);
+  shell.add(roof);
+  const visors = [];
+  for (const side of [-1, 1]) {
+    visors.push([mould(0.26, 0.035, 0.53, 0.012), '#d3cfc1', 0.18, 1.745, side * 0.397],
+      [mould(0.20, 0.022, 0.37, 0.009), side > 0 ? '#b6b5ab' : '#c9c6b9', 0.18, 1.726, side * 0.397]);
+  }
+  visors.push([mould(0.11, 0.046, 0.16, 0.015), '#bcbdb0', 0.235, 1.741, 0],
+    [mould(0.027, 0.073, 0.025, 0.01), '#5b656a', 0.261, 1.687, 0],
+    [mould(0.048, 0.072, 0.24, 0.018), '#42515b', 0.262, 1.629, 0]);
+  shell.add(sculpt(fuse(...visors)));
   shell.add(
-    extrude((s) => { s.moveTo(0.72, 0.4); arch(s, 1.25); s.lineTo(1.9, 0.4); s.lineTo(1.9, 0.78); s.lineTo(1.76, 0.94); s.lineTo(0.72, 1.0); }, 1.72, white),
-    extrude((s) => { s.moveTo(-1.9, 0.4); arch(s, -1.25); s.lineTo(-0.55, 0.4); s.lineTo(-0.55, 1.0); s.lineTo(-1.8, 1.0); s.lineTo(-1.9, 0.9); }, 1.72, white),
+    coachwork(extrude((s) => { s.moveTo(0.72, 0.4); arch(s, 1.25); s.lineTo(1.9, 0.4); s.lineTo(1.9, 0.78); s.lineTo(1.76, 0.94); s.lineTo(0.72, 1.0); }, 1.72, white), true),
+    coachwork(extrude((s) => { s.moveTo(-1.9, 0.4); arch(s, -1.25); s.lineTo(-0.55, 0.4); s.lineTo(-0.55, 1.0); s.lineTo(-1.8, 1.0); s.lineTo(-1.9, 0.9); }, 1.72, white), false),
     b(1.3, 0.1, 1.66, dark, 0.085, 0.41, 0), b(0.7, 0.36, 1.3, '#1c1e23', 1.25, 0.58, 0), b(0.7, 0.36, 1.3, '#1c1e23', -1.25, 0.58, 0),
     b(1.0, 0.07, 1.735, orange, 1.24, 0.9, 0), b(1.3, 0.07, 1.735, orange, -1.22, 0.9, 0), // stripe
-    b(0.1, 0.16, 1.56, dark, 1.93, 0.47, 0), b(0.1, 0.16, 1.56, dark, -1.93, 0.47, 0), // bumpers
-    b(0.3, 0.22, 1.58, dark, 0.6, 0.92, 0), // dashboard
-    b(1.36, 0.08, 1.52, white.color.getStyle(), -0.32, 1.8, 0), // roof
+    dashboard(),
     b(0.12, 0.22, 0.46, '#1f5fd0', -0.3, 1.95, 0),
   );
   const L = tex(64, 64, (g) => { g.fillStyle = '#1f5fd0'; g.fillRect(0, 0, 64, 64); g.fillStyle = '#fff'; g.font = `400 56px ${FONT}`; g.textAlign = 'center'; g.fillText('L', 32, 52); });
   for (const s of [1, -1]) { const l = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.2), new THREE.MeshStandardMaterial({ map: L })); l.position.set(-0.3 + s * 0.062, 1.95, 0); l.rotation.y = s * PI / 2; shell.add(l); }
+  const lens = headlampLens(), upholstery = [];
+  for (const side of [-1, 1]) {
+    const z = side * 0.4;
+    upholstery.push([mould(0.5, 0.16, 0.5, 0.042), '#344451', -0.24, 0.54, z],
+      [mould(0.12, 0.52, 0.46, 0.046), '#394958', -0.50, 0.88, z],
+      [mould(0.09, 0.34, 0.30, 0.033), '#536778', -0.464, 0.90, z],
+      [mould(0.14, 0.24, 0.32, 0.054), '#384956', -0.53, 1.32, z]);
+    for (const dz of [-0.1, 0.1]) upholstery.push([new THREE.CylinderGeometry(0.013, 0.013, 0.10, 6), '#b5bfc2', -0.53, 1.17, z + dz]);
+    for (const dz of [-0.195, 0.195]) upholstery.push([ell(0.05, 0.205, 0.049), '#657583', -0.46, 0.89, z + dz]);
+  }
+  // Separate seat assemblies keep the clipboard's empty space between them out of their AABBs.
+  for (let i = 0; i < upholstery.length; i += upholstery.length / 2) {
+    const cushion = sculpt(fuse(upholstery[i])), backrest = sculpt(fuse(...upholstery.slice(i + 1, i + upholstery.length / 2)));
+    shell.add(cushion, backrest);
+  }
   for (const z of [-1, 1]) {
     shell.add(bm([0.74, 1.0, z * 0.8], [0.3, 1.78, z * 0.72], 0.08, '#fbfaf4'), bm([-0.55, 1.0, z * 0.8], [-0.55, 1.78, z * 0.72], 0.08, '#fbfaf4'), bm([-1.1, 1.0, z * 0.8], [-0.95, 1.78, z * 0.72], 0.08, '#fbfaf4'));
     shell.add(pane(0.5, 0.7, 0.02, -0.8, 1.38, z * 0.76));
-    const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.06, 16), mat('#fff8d0', { emissive: '#fff2a8', emissiveIntensity: 0.9 })); lamp.rotation.z = PI / 2; lamp.position.set(1.95, 0.68, z * 0.58);
+    const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.06, 16), lens); lamp.rotation.z = PI / 2; lamp.position.set(1.95, 0.68, z * 0.58);
     shell.add(lamp, b(0.06, 0.12, 0.3, '#e0202a', -1.95, 0.84, z * 0.58, { emissive: '#ff2020', emissiveIntensity: 0.6 }));
-    shell.add(b(0.5, 0.16, 0.5, '#3b3f4a', -0.24, 0.54, z * 0.4), b(0.1, 0.52, 0.46, '#3b3f4a', -0.5, 0.88, z * 0.4)); // seats
+
   }
   shell.add(pane(0.02, 0.88, 1.48, 0.52, 1.39, 0, 0.525), pane(0.02, 0.78, 1.48, -1.025, 1.39, 0, -0.195));
+  // Resting wipers follow the windscreen rake; the lower blade and its arm stay below the actors' faces.
+  const atGlass = (y, z) => [0.52 - Math.tan(0.525) * (y - 1.39) + 0.031, y, z];
+  for (const z of [-0.37, 0.27]) {
+    shell.add(bm(atGlass(1.056, z - 0.18), atGlass(1.085, z + 0.04), 0.014, '#363e42'),
+      bm(atGlass(1.062, z - 0.15), atGlass(1.094, z + 0.18), 0.016, '#262c30'));
+  }
   // The original bumper is the extremity. The grille and pressed ribs sit on the nose within it.
   const grille = new THREE.BoxGeometry(0.09, 0.245, 0.75);
   const uv = grille.attributes.uv;
@@ -238,6 +386,8 @@ function lessonCar(world) {
   // doors, hinged at the front edge, with the driving school on them
   const decal = tex(512, 256, (g) => {
     g.fillStyle = '#fbfaf4'; g.fillRect(0, 0, 512, 256); g.fillStyle = orange; g.fillRect(0, 34, 512, 32);
+    g.strokeStyle = '#8d958f'; g.lineWidth = 6; g.beginPath(); g.roundRect(5, -12, 502, 261, 18); g.stroke();
+    g.fillStyle = '#676e6e'; g.fillRect(7, 226, 498, 10); g.fillStyle = '#dde0d7'; g.fillRect(8, 225, 496, 2);
     g.fillStyle = '#ffc17a'; g.fillRect(0, 32, 512, 4); g.fillStyle = '#c34d13'; g.fillRect(0, 66, 512, 5);
     g.strokeStyle = '#c7c7be'; g.lineWidth = 5; g.beginPath(); g.moveTo(10, 227); g.quadraticCurveTo(240, 243, 500, 219); g.stroke();
     g.fillStyle = '#14213d'; g.textAlign = 'center'; g.font = `400 88px ${FONT}`; g.fillText('RIJSCHOOL', 256, 186);
@@ -252,15 +402,26 @@ function lessonCar(world) {
     const { uv, normal, position } = geo.attributes;
     for (let i = 0; i < uv.count; i++) {
       if (normal.getZ(i) * z > 0.995) uv.setXY(i, 0.5 + z * position.getX(i) / 1.17, 0.5 + position.getY(i) / 0.585);
-      else uv.setXY(i, 0.01, 0.96);
+      else uv.setXY(i, 0.055, 0.96);
     }
     const panel = new THREE.Mesh(geo, mat('#ffffff', { map: decal, roughness: 0.25, metalness: 0.2 }));
     panel.position.set(-0.585, 0.72, 0); panel.castShadow = panel.receiveShadow = true;
-    h.add(panel, b(0.16, 0.04, 0.03, dark, -0.95, 0.86, z * 0.05), b(0.1, 0.12, 0.2, '#fbfaf4', -0.12, 1.08, z * 0.12, { roughness: 0.25, metalness: 0.2 }));
+    const mirror = b(0.1, 0.12, 0.2, '#fbfaf4', -0.12, 1.08, z * 0.12, { roughness: 0.25, metalness: 0.2 });
+    const mirrorMap = tex(64, 64, (g) => {
+      g.fillStyle = '#fbfaf4'; g.fillRect(0, 0, 64, 64); g.fillStyle = '#293940'; g.beginPath(); g.roundRect(4, 4, 56, 56, 8); g.fill();
+      const sky = g.createLinearGradient(0, 0, 0, 64); sky.addColorStop(0, '#6f95a8'); sky.addColorStop(0.6, '#c0d6d8'); sky.addColorStop(0.64, '#879088'); sky.addColorStop(1, '#50616c');
+      g.fillStyle = sky; g.beginPath(); g.roundRect(8, 8, 48, 48, 6); g.fill();
+    });
+    mirror.material.map = mirrorMap;
+    const mirrorUV = mirror.geometry.attributes.uv;
+    for (let i = 0; i < mirrorUV.count; i++) if (Math.floor(i / 4) !== 1) mirrorUV.setXY(i, 0.02, 0.98);
+    h.add(panel, b(0.16, 0.04, 0.03, dark, -0.95, 0.86, z * 0.05), mirror);
     shell.add(h); return h;
   };
   const doorL = door(-1), doorR = door(1);
-  const wheelRim = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.025, 8, 20), mat(dark)); wheelRim.position.set(0.34, 1.0, -0.4); wheelRim.rotation.y = PI / 2; wheelRim.add(b(0.03, 0.3, 0.03, dark));
+  const wheelRim = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.025, 8, 20), mat(dark)); wheelRim.position.set(0.34, 1.0, -0.4); wheelRim.rotation.y = PI / 2; wheelRim.add(sculpt(fuse([mould(0.105, 0.085, 0.055, 0.025), '#35434a'],
+    ...[-1, 1].map(side => [mould(0.113, 0.028, 0.022, 0.009).clone(), '#9ba5a6', side * 0.105, 0.02, 0, side * 0.16]),
+    [mould(0.035, 0.1, 0.025, 0.012), '#8d999d', 0, -0.097, 0])));
   shell.add(wheelRim);
   const wheels = [wheel(body, 1.25, -0.76), wheel(body, 1.25, 0.76), wheel(body, -1.25, -0.76), wheel(body, -1.25, 0.76)];
   return { root, pitch, roll, body, shell, doorL, doorR, wheels, wheelRim };
@@ -270,8 +431,8 @@ function toyCar(world, color) {
   const b = world.box, g = new THREE.Group();
   const body = extrude((s) => { s.moveTo(-1.8, 0.4); arch(s, -1.2); arch(s, 1.2); s.lineTo(1.8, 0.4); s.lineTo(1.8, 0.8); s.lineTo(1.66, 0.95); s.lineTo(0.75, 1.0); s.lineTo(0.3, 1.5); s.lineTo(-1.0, 1.5); s.lineTo(-1.25, 1.0); s.lineTo(-1.75, 1.0); s.lineTo(-1.8, 0.9); }, 1.6, mat('#ffffff', { roughness: 0.26, metalness: 0.25 }));
   // Front and rear lamp clusters printed on the original end faces keep every parked footprint exact.
-  body.material.map = tex(256, 128, (g) => {
-    g.fillStyle = color; g.fillRect(0, 0, 256, 128);
+  body.material.map = tex(512, 128, (g) => {
+    g.fillStyle = color; g.fillRect(0, 0, 512, 128);
     for (const dx of [0, 128]) {
       for (const u of [12, 92]) {
         g.fillStyle = dx ? '#742830' : '#4c5662'; g.fillRect(dx + u, 35, 24, 19);
@@ -281,16 +442,30 @@ function toyCar(world, color) {
       g.fillStyle = '#39434d'; g.fillRect(dx + 37, 41, 54, 19);
       g.fillStyle = dx ? '#edba36' : '#929fa3'; g.fillRect(dx + 41, 45, 46, dx ? 11 : 3);
     }
+    // Doors, sill protection and handles are stamped into the original parked-car flanks.
+    for (const x of [333, 395]) {
+      g.strokeStyle = 'rgba(35,44,47,.58)'; g.lineWidth = 2; g.beginPath(); g.moveTo(x, 39); g.lineTo(x + 2, 102); g.lineTo(x + 49, 105); g.stroke();
+      g.fillStyle = '#48525a'; g.fillRect(x + 9, 58, 12, 4);
+    }
+    g.fillStyle = '#50575a'; g.fillRect(329, 109, 92, 6); g.fillStyle = '#d3d7d3'; g.fillRect(329, 109, 92, 1.5);
   });
   const { position, normal, uv } = body.geometry.attributes;
   for (let i = 0; i < uv.count; i++) {
     const x = position.getX(i), end = Math.abs(x) > 1.71 && Math.abs(normal.getX(i)) > 0.7;
-    if (end) uv.setXY(i, (x < 0 ? 0.5 : 0) + (position.getZ(i) / 1.65 + 0.5) * 0.5, clamp((position.getY(i) - 0.33) / 0.68, 0, 1));
-    else uv.setXY(i, 0.015, 0.98);
+    if (end) uv.setXY(i, (x < 0 ? 0.25 : 0) + (position.getZ(i) / 1.65 + 0.5) * 0.25, clamp((position.getY(i) - 0.33) / 0.68, 0, 1));
+    else if (Math.abs(normal.getZ(i)) > 0.88) uv.setXY(i, 0.75 + x / 7.5, clamp((position.getY(i) - 0.3) / 1.24, 0, 1));
+    else uv.setXY(i, 0.007, 0.98);
   }
   g.add(body);
-  const win = mat('#22344a', { roughness: 0.2 });
-  g.add(pane(1.1, 0.34, 1.62, -0.33, 1.25, 0, 0, win), pane(0.04, 0.5, 1.3, 0.566, 1.287, 0, 0.73, win), pane(0.04, 0.42, 1.3, -1.174, 1.275, 0, -0.464, win));
+  const glass = (kind) => mat('#ffffff', { map: tex(256, 96, (g) => {
+    const tint = g.createLinearGradient(0, 0, 0, 96);
+    for (const [v, c] of [[0, '#526c82'], [0.46, '#3e586c'], [0.64, '#32495b'], [0.65, '#263b4c'], [1, '#2d424e']]) tint.addColorStop(v, c);
+    g.fillStyle = '#253039'; g.fillRect(0, 0, 256, 96); g.fillStyle = tint; g.fillRect(5, 5, 246, 84);
+    if (kind === 'side') { g.fillStyle = '#25313b'; g.fillRect(129, 2, 12, 91); g.fillRect(35, 3, 6, 88); }
+    else if (kind === 'rear') { g.fillStyle = '#7c837c'; for (let y = 25; y < 83; y += 10) g.fillRect(10, y, 236, 1.2); }
+    g.strokeStyle = '#899da8'; g.lineWidth = 2; g.beginPath(); g.moveTo(12, 10); g.lineTo(230, 10); g.stroke();
+  }), metalness: 0.19, roughness: 0.20 });
+  g.add(pane(1.1, 0.34, 1.62, -0.33, 1.25, 0, 0, glass('side')), pane(0.04, 0.5, 1.3, 0.566, 1.287, 0, 0.73, glass('front')), pane(0.04, 0.42, 1.3, -1.174, 1.275, 0, -0.464, glass('rear')));
   g.add(b(0.7, 0.36, 1.2, '#1c1e23', 1.2, 0.58, 0), b(0.7, 0.36, 1.2, '#1c1e23', -1.2, 0.58, 0));
   for (const x of [-1.2, 1.2]) for (const z of [-0.7, 0.7]) wheel(g, x, z);
   return g;
@@ -372,6 +547,13 @@ export function buildCast(scene, world, drive) {
       g.fillStyle = '#6b392a'; g.beginPath(); g.ellipse(u, 115, 11, 15, 0, 0, PI * 2); g.fill();
       g.fillStyle = '#c8c9bf'; g.beginPath(); g.ellipse(u, 115, 6, 9, 0, 0, PI * 2); g.fill();
     }
+    for (const u of [165, 347]) {
+      g.strokeStyle = '#33373a'; g.lineWidth = 2.7; g.beginPath(); g.moveTo(u - 3, 113); g.lineTo(u + 3, 117); g.stroke();
+    }
+    for (const u of [218, 233, 264, 279]) {
+      g.fillStyle = '#773a28'; g.beginPath(); g.roundRect(u, 165, 9, 16, 4); g.fill();
+      g.fillStyle = '#b75a2c'; g.fillRect(u + 2, 178, 5, 2);
+    }
     g.fillStyle = '#7b3a23'; g.fillRect(0, 210, 512, 6);
   });
   const shellM = new THREE.Mesh(new THREE.SphereGeometry(0.285, 24, 16), mat('#ffffff', { map: enamel, roughness: 0.24, metalness: 0.17 })); shellM.castShadow = true;
@@ -388,8 +570,29 @@ export function buildCast(scene, world, drive) {
   const moods = Object.fromEntries(['calm', 'nervous', 'scream', 'dazed', 'angry', 'pray'].map((k) => [k, examinerFace(k)]));
   for (const k of ['calm', 'nervous', 'angry']) moods[k + '!'] = examinerFace(k, true);
   const ex = person(b, { skin: '#f1c9a5', shirt: '#dfe9f5', pants: '#3a3f4f', face: moods.calm, hair: null, shoes: '#5a3b26' });
-  const fringe = new THREE.Mesh(new THREE.CylinderGeometry(0.212, 0.212, 0.15, 18, 1, true, 1.5 * PI - 1.9, 3.8), mat('#9a9da6', { side: THREE.DoubleSide })); fringe.position.y = 0.04;
-  ex.head.add(fringe); ex.g.add(b(0.02, 0.3, 0.08, '#d7263d', 0.135, 0.34, 0));
+  // A bald crown with swept silver temple locks and real spectacle arms, following the painted frame.
+  const temples = [[new THREE.CylinderGeometry(0.212, 0.212, 0.15, 18, 1, true, 1.5 * PI - 1.9, 3.8), '#8e919a', 0, 0.04, 0]];
+  for (const side of [-1, 1]) {
+    temples.push([ell(0.117, 0.085, 0.058).rotateZ(-0.22), '#a3a4a6', -0.038, 0.07, side * 0.157],
+      [ell(0.065, 0.057, 0.036).rotateZ(-0.28), '#bdc0c4', 0.068, 0.078, side * 0.164],
+      [ell(0.042, 0.05, 0.026), '#85878a', 0.086, 0.034, side * 0.171]);
+    const points = [[0.185, 0.038, 0.093 * side], [0.112, 0.039, 0.181 * side], [-0.03, 0.033, 0.204 * side], [-0.075, 0.004, 0.196 * side]];
+    for (let j = 0; j < points.length - 1; j++) {
+      const a = new THREE.Vector3(...points[j]), d = new THREE.Vector3(...points[j + 1]).sub(a), mid = a.clone().addScaledVector(d, 0.5);
+      const arm = new THREE.CylinderGeometry(0.009, 0.009, d.length(), 6);
+      arm.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()));
+      temples.push([arm, '#424852', ...mid.toArray()]);
+    }
+  }
+  ex.head.add(sculpt(fuse(...temples)));
+  const shirtFront = [];
+  for (const side of [-1, 1]) {
+    shirtFront.push([facet([[side * 0.145, 0.515], [side * 0.048, 0.515], [side * 0.017, 0.469], [side * 0.103, 0.413]], 0.119, 0.044), '#d3deea']);
+  }
+  shirtFront.push([facet([[-0.031, 0.46], [0.031, 0.46], [0.026, 0.417], [0, 0.392], [-0.025, 0.417]], 0.148, 0.023), '#aa2032'],
+    [facet([[-0.016, 0.417], [0.016, 0.417], [0.044, 0.219], [0, 0.172], [-0.043, 0.219]], 0.125, 0.031), '#c72d43'],
+    [mould(0.025, 0.014, 0.071, 0.004), '#c5c7bc', 0.151, 0.267, 0]);
+  ex.g.add(sculpt(fuse(...shirtFront)));
   const paper = (stamped) => tex(256, 340, (g) => {
     g.fillStyle = '#fffdf4'; g.fillRect(0, 0, 256, 340); g.fillStyle = '#14213d'; g.font = `400 26px ${FONT}`; g.fillText('RIJEXAMEN', 20, 44);
     g.strokeStyle = '#9aa3b5'; g.lineWidth = 4; for (let i = 0; i < 8; i++) { g.strokeRect(20, 64 + i * 32, 20, 20); g.beginPath(); g.moveTo(54, 76 + i * 32); g.lineTo(150 + ((i * 37) % 70), 76 + i * 32); g.stroke(); }
@@ -453,7 +656,15 @@ export function buildCast(scene, world, drive) {
   const WHITE = '#ffffff', tintMat = () => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75 }), box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
   const watchers = world.people.map((o, i) => { const k = Math.imul(i + 3, 2654435761) >>> 8, sc = k % 9 === 4 ? 0.68 : 0.92 + (k % 5) * 0.035; return { x: o.x, z: o.z, k, sc, phi0: atan2(-o.side * cos(o.a), o.side * sin(o.a)) }; }); // phi0: facing the street
   const crowdOf = (geo, material, n = watchers.length) => { const m = new THREE.InstancedMesh(geo, material, n); m.castShadow = true; m.frustumCulled = false; scene.add(m); return m; };
-  const wShirt = crowdOf(fuse([box(0.26, 0.52, 0.5), WHITE, 0, 0.26, 0], [box(0.17, 0.15, 0.17), WHITE, 0, 0.46, 0.33], [box(0.17, 0.15, 0.17), WHITE, 0, 0.46, -0.33]), tintMat());
+  const spectatorShirt = fuse([box(0.26, 0.52, 0.5), WHITE, 0, 0.26, 0], [box(0.17, 0.15, 0.17), WHITE, 0, 0.46, 0.33], [box(0.17, 0.15, 0.17), WHITE, 0, 0.46, -0.33]);
+  const shirtP = spectatorShirt.attributes.position, shirtN = spectatorShirt.attributes.normal, shirtUV = [];
+  for (let i = 0; i < shirtP.count; i++) {
+    const torso = shirtN.getX(i) > 0.9 && Math.abs(shirtP.getZ(i)) <= 0.251;
+    shirtUV.push(torso ? 0.5 - shirtP.getZ(i) / 0.5 : 0.04, torso ? shirtP.getY(i) / 0.52 : 0.96);
+  }
+  spectatorShirt.setAttribute('uv', new THREE.Float32BufferAttribute(shirtUV, 2));
+  const shirtMat = tintMat(); shirtMat.map = shirtPrint();
+  const wShirt = crowdOf(spectatorShirt, shirtMat);
   const wSkin = crowdOf(fuse([HEAD.clone(), WHITE, 0, 0.73, 0], [box(0.05, 0.09, 0.03), WHITE, 0, 0.73, 0.205], [box(0.05, 0.09, 0.03), WHITE, 0, 0.73, -0.205], [box(0.2, 0.05, 0.34), WHITE, 0, 0.535, 0]), tintMat());
   const wHair = crowdOf(fuse([HAIR.clone().scale(1, 0.55, 1), WHITE, 0, 0.85, 0], [box(0.06, 0.2, 0.36), WHITE, -0.19, 0.79, 0], ...[0.13, -0.13].flatMap((z) => [[box(0.2, 0.55, 0.22), '#c4c4c4', 0, -0.275, z], [box(0.28, 0.1, 0.25), '#2a2a2a', 0.04, -0.51, z]])), tintMat());
   const wArm = crowdOf(fuse([box(0.15, 0.5, 0.15), WHITE, 0, -0.2, 0]), tintMat(), watchers.length * 2);
