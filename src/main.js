@@ -28,7 +28,7 @@ scene.add(new THREE.HemisphereLight('#e2efff', '#bf9776', 1.36)); // less fill t
 const sun = new THREE.DirectionalLight('#fff1d7', 3.05); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.radius = 2.1; sun.shadow.bias = -0.00045; sun.shadow.normalBias = 0.06;
 Object.assign(sun.shadow.camera, { left: -80, right: 80, top: 80, bottom: -80, near: 10, far: 460 }); scene.add(sun, sun.target);
 const cam = new THREE.PerspectiveCamera(55, 1, 0.45, 7000);
-const world = buildWorld(scene, map, drive), cast = buildCast(scene, world, drive), stunts = buildStunts(scene, world, drive), snel = buildSnelweg(scene), polder = buildPolder(scene, { rect: world.city });
+const world = buildWorld(scene, map, drive, renderer.extensions.has('WEBGL_multi_draw')), cast = buildCast(scene, world, drive), stunts = buildStunts(scene, world, drive), snel = buildSnelweg(scene), polder = buildPolder(scene, { rect: world.city });
 { // the signpost at the fork after the Sint Annabrug. She reads it her own way
   const w = layout.wegwijzer, arrow = (g, x, y, a) => { g.save(); g.translate(x, y); g.rotate(a); g.beginPath(); for (const [px, py] of [[28, 0], [-2, -26], [-2, -11], [-28, -11], [-28, 11], [-2, 11], [-2, 26]]) g.lineTo(px, py); g.fill(); g.restore(); };
   const face = canvasTex(600, 300, (g) => {

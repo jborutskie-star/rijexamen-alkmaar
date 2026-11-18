@@ -58,11 +58,14 @@ class Soup {
       for (let k = 0; k < 8; k++) { const a0 = (k / 8) * PI * 2, a1 = ((k + 1) / 8) * PI * 2; this.tri([cx, y, cz], [cx + cos(a0) * w / 2, y, cz + sin(a0) * w / 2], [cx + cos(a1) * w / 2, y, cz + sin(a1) * w / 2], [0, 1, 0], col); }
     }
   }
-  mesh(material, shadow = 'receive') {
+  geometry() {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.p, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(this.n, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.c, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
-    const m = new THREE.Mesh(g, material); m.receiveShadow = true; m.castShadow = shadow === 'cast'; return m;
+    return g;
+  }
+  mesh(material, shadow = 'receive') {
+    const m = new THREE.Mesh(this.geometry(), material); m.receiveShadow = true; m.castShadow = shadow === 'cast'; return m;
   }
 }
 
@@ -125,7 +128,7 @@ const BRIGHT = ['#e9503a', '#2f6fc9', '#f2c230', '#3aa66a', '#f08a2c', '#ffffff'
 const KERK_A = 0.2523990323078452; // the angle of the Grote Kerk's nave on the map (debug/kerk-footprint.json)
 const MILL_FACE = -0.36, STAIR = 1.0; // which way the windmill's sails look (rotation.y), and the bearing of the steps up its bastion
 
-export function buildWorld(scene, map, drive) {
+export function buildWorld(scene, map, drive, multiDraw = false) {
   const world = { update() {}, lights: [] };
   const { layout, m: mk } = drive, M = new THREE.Matrix4(), R = rnd(5);
   const waters = map.water.map((p) => ({ p, bb: bbox(p) }));
@@ -688,7 +691,26 @@ export function buildWorld(scene, map, drive) {
       if (church) steeple(b, h, t, false); else if (h > 4 && !layout.clear(cx, cz, 55)) { ledge(t.trim, p, h); crowns.push(...crown); }
     }
   }
-  for (const t of tiles.values()) { for (const k in wallMats) if (t[k].p.length) scene.add(t[k].mesh(wallMats[k], 'cast')); scene.add(t.roofs.mesh(roofMat, 'cast')); if (t.flat.p.length) scene.add(t.flat.mesh(flatMat, 'cast')); if (t.ao.p.length) { const me = t.ao.mesh(aoMat); me.renderOrder = -10; me.receiveShadow = false; scene.add(me); } }
+  // Keep each tile's own bounds in both the sun and film camera passes. With
+  // WEBGL_multi_draw the visible tiles of one finish share a GPU submission.
+  for (const [key, material] of Object.entries({ ...wallMats, roofs: roofMat, flat: flatMat, ao: aoMat })) {
+    const sections = [...tiles.values()].map(tile => tile[key]).filter(soup => soup.p.length);
+    if (!sections.length) continue;
+    const add = (mesh) => {
+      mesh.castShadow = mesh.receiveShadow = key !== 'ao';
+      if (key === 'ao') mesh.renderOrder = -10;
+      scene.add(mesh);
+    };
+    if (multiDraw) {
+      const vertices = sections.reduce((sum, soup) => sum + soup.p.length / 3, 0);
+      const batch = new THREE.BatchedMesh(sections.length, vertices, 0, material);
+      for (const section of sections) batch.addInstance(batch.addGeometry(section.geometry()));
+      add(batch);
+    } else {
+      for (const section of sections) add(new THREE.Mesh(section.geometry(), material));
+    }
+  }
+
   streetInstances(Box(1, 1, 1), mat('#ffffff'), relief, false); streetInstances(Box(1, 1, 1), mat('#ffffff'), crowns);
   // The flared sockets and straight zinc tube share one revolved skin.
   const pipeProfile = [[.05,0],[.05,.035],[.039,.053],[.039,.45],[.05,.45],[.05,.47],[.039,.49],[.039,.92],[.05,.92],[.05,1]];
