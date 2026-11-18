@@ -7,6 +7,20 @@ registerHooks({ resolve: (spec, ctx, next) => (spec === 'three' ? { url: new URL
 const THREE = await import('three'), L = await import('../src/landmarks.js');
 
 const problems = [], rows = [], bad = (m) => problems.push(m);
+// Express the tracked OSM outline in the church model's local frame.
+function churchOutline() {
+  const map = JSON.parse(readFileSync(new URL('data/alkmaar.json', root)));
+  const { p } = map.buildings.find((b) => b.k === 'church' && /^Grote/.test(b.n));
+  const n = p.length / 2;
+  let cx = 0, cz = 0;
+  for (let i = 0; i < p.length; i += 2) { cx += p[i]; cz += p[i + 1]; }
+  cx /= n; cz /= n;
+  const points = Array.from({ length: n }, (_, i) => [p[2 * i] - cx, p[2 * i + 1] - cz]);
+  let xx = 0, xz = 0, zz = 0;
+  for (const [x, z] of points) { xx += x * x; xz += x * z; zz += z * z; }
+  const a = 0.5 * Math.atan2(2 * xz, xx - zz), c = Math.cos(a), s = Math.sin(a);
+  return points.flatMap(([x, z]) => [x * c + z * s, z * c - x * s]);
+}
 // [min x, min y, min z, max x, max y, max z] the model has to stay inside (null = no limit), and its triangle budget
 const B = (x, y0, y1, z) => [-x, y0, -z, x, y1, z];
 const GROUPS = {
@@ -56,7 +70,7 @@ for (const [name, lim] of Object.entries(GROUPS)) {
   if (name === 'molen' && !(made.sails && made.sails.isObject3D)) bad('molen: no sails object');
   judge(name, measure(name, list), lim.box, ...lim.tris);
   if (name === 'groteKerk') { // every vertex inside the real outline, or at most 0.3 m outside it
-    const P = JSON.parse(readFileSync(new URL('debug/kerk-footprint.json', root))).p, n = P.length / 2, v = new THREE.Vector3(); let worst = 0, at = null, out = 0;
+    const P = churchOutline(), n = P.length / 2, v = new THREE.Vector3(); let worst = 0, at = null, out = 0;
     const inside = (x, z) => { let c = false; for (let i = 0, j = n - 1; i < n; j = i++) { const xi = P[2 * i], zi = P[2 * i + 1], xj = P[2 * j], zj = P[2 * j + 1]; if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c; } return c; };
     const dist = (x, z) => { let d = Infinity; for (let i = 0, j = n - 1; i < n; j = i++) { const ax = P[2 * j], az = P[2 * j + 1], bx = P[2 * i] - ax, bz = P[2 * i + 1] - az, t = Math.max(0, Math.min(1, ((x - ax) * bx + (z - az) * bz) / (bx * bx + bz * bz || 1))); d = Math.min(d, Math.hypot(x - ax - t * bx, z - az - t * bz)); } return d; };
     for (const [g, m] of list) { const p = g.attributes.position; for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i).applyMatrix4(m); if (!inside(v.x, v.z)) { const d = dist(v.x, v.z); if (d > 0.3) out++; if (d > worst) { worst = d; at = v.toArray().map((q) => q.toFixed(1)).join(', '); } } } }
