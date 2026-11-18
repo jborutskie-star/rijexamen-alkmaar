@@ -1,6 +1,7 @@
 // The city: real Alkmaar footprints, streets and canals (OpenStreetMap) built as a chunky toy town.
 import * as THREE from 'three';
 import { streetFinish } from './street-finish.js';
+import * as Street from './street-props.js';
 import { canalReflections, sunOffset } from './atmosphere.js';
 import { FACADES, pantiles, recessedBay, bricks } from './facade-detail.js';
 import { inPoly, lerp } from './drive.js';
@@ -216,15 +217,15 @@ export function buildWorld(scene, map, drive, multiDraw = false) {
   const ripple = canvasTex(128, 128, (g) => swell(g, false)), rippleN = reliefTex(128, 128, (g) => swell(g, true), 1.4); rippleN.repeat.set(2.3, 2.3);
   const quayWall = (g, bump) => { // 2.56 m of quay, street level at the top: a stone coping, brick courses, and the dark band the water leaves
     g.fillStyle = bump ? '#5a5a5a' : '#6d4a3c'; g.fillRect(0, 0, 256, 128);
-    for (let y = 18, row = 0; y < 128; y += 7, row++) for (let x = -1; x < 9; x++) { const v = hash(row * 31 + ((x + 9) % 8)); g.fillStyle = bump ? grey(150 + v * 70) : `hsl(${13 + v * 9},${38 + v * 12}%,${40 + v * 11}%)`; g.fillRect(x * 32 + (row % 2) * 16 + 1, y + 1, 30, 5.5); }
+    for (let y = 18, row = 0; y < 128; y += 7, row++) for (let x = -1; x < 9; x++) { const v = hash(row * 31 + ((x + 9) % 8)); g.fillStyle = bump ? grey(150 + v * 70) : `hsl(${13 + v * 9},${25 + v * 10}%,${33 + v * 12}%)`; g.fillRect(x * 32 + (row % 2) * 16 + 1, y + 1, 30, 5.5); }
     if (!bump) { const wg = g.createLinearGradient(0, 80, 0, 120); wg.addColorStop(0, 'rgba(30,38,28,0)'); wg.addColorStop(0.5, 'rgba(30,38,28,.6)'); wg.addColorStop(1, 'rgba(24,46,32,.9)'); g.fillStyle = wg; g.fillRect(0, 80, 256, 48); }
     for (let x = 0; x < 4; x++) { g.fillStyle = bump ? '#f4f4f4' : `hsl(42,15%,${77 + hash(x + 90) * 7}%)`; g.fillRect(x * 64 + 1, 0, 62, 15); } // the coping stones, standing proud of the brick
     g.fillStyle = bump ? '#383838' : 'rgba(0,0,0,.45)'; g.fillRect(0, 15, 256, 3);
   };
-  const sea = new Soup(1 / 9), hole = new Soup(), quay = new Soup(), coping = new Soup(), shade = new Soup(), dusk = C('#7f8da3'), clear = C('#ffffff');
+  const sea = new Soup(1 / 9), hole = new Soup(), quay = new Soup(), coping = new Soup(), shade = new Soup(), dusk = C('#738a76'), clear = C('#ffffff');
   for (const { p } of waters) {
     let run = 0;
-    try { sea.flat(p, -1.2, C('#2f9fd8')); hole.flat(p, Y0, C('#000000')); } catch { continue; }
+    try { sea.flat(p, -1.2, C('#328fa1')); hole.flat(p, Y0, C('#000000')); } catch { continue; }
     for (let i = 0, j = p.length - 2; i < p.length; j = i, i += 2) {
       const ax = p[j], az = p[j + 1], bx = p[i], bz = p[i + 1], l = hypot(bx - ax, bz - az); if (l < 0.05) continue;
       let nx = -(bz - az) / l, nz = (bx - ax) / l; const mx = (ax + bx) / 2, mz = (az + bz) / 2;
@@ -958,10 +959,19 @@ export function buildWorld(scene, map, drive, multiDraw = false) {
     }));
     for (let k = 0; k < 6; k++) lf.add(box(0.5, 0.3, 5.8, k % 2 ? '#e9503a' : '#f6f1e4', len - 0.25 - k * 0.5, -0.15, 0)); // warning stripes: their own planks, end to end
     for (const z of [-2.7, 2.7]) { lf.add(box(len, 0.17, 0.3, '#f6f1e4', len / 2, 0.045, z), box(len, 0.1, 0.1, '#f6f1e4', len / 2, 0.95, z)); for (let k = 0; k <= 4; k++) lf.add(box(0.1, 0.84, 0.1, '#f6f1e4', 0.05 + ((len - 0.1) * k) / 4, 0.5, z)); }
-    // white wooden railings with a St Andrew's cross in every panel, as on the drawbridges over the Alkmaar canals; one bar of each cross 4 cm deeper, so no two faces share a plane
-    const crosses = (x0, x1, n, y0, y1, z) => { const P = [], d = (x1 - x0) / n; for (let k = 0; k < n; k++) { const a = x0 + d * k + 0.05, b = a + d - 0.1, l = hypot(b - a, y1 - y0), t = atan2(y1 - y0, b - a); P.push([Box(l, 0.06, 0.05), '#f6f1e4', (a + b) / 2, (y0 + y1) / 2, z, t], [Box(l, 0.06, 0.09), '#f6f1e4', (a + b) / 2, (y0 + y1) / 2, z, -t]); } return P; };
+    // The Eenhoornbrug has two horizontal rails and iron posts with turned collars.
+    function railing(x0, x1, n, y0, y1, z) {
+      const parts = [[Box(x1-x0, .055, .064), '#dadbd1', (x0+x1)/2, (y0+y1)/2, z]];
+      for (let i=0; i<=n; i++) {
+        const x = lerp(x0,x1,i/n);
+        parts.push([Cyl(.082,.10,.11,8), '#707573', x, y0+.035,z],
+          [Cyl(.077,.07,.075,8), '#dddcd0', x,(y0+y1)/2,z],
+          [Cyl(.083,.095,.085,8), '#f4f0df', x,y1-.025,z]);
+      }
+      return parts;
+    }
     const solid = (geo) => { const me = new THREE.Mesh(geo, tinted); me.castShadow = me.receiveShadow = true; return me; };
-    lf.add(solid(fuse(...crosses(0.05, len - 0.05, 4, 0.13, 0.9, -2.7), ...crosses(0.05, len - 0.05, 4, 0.13, 0.9, 2.7))));
+    lf.add(solid(fuse(...railing(.05,len-.05,4,.13,.90,-2.7), ...railing(.05,len-.05,4,.13,.90,2.7))));
     g.add(lf);
     const top = 7.2, arm = 0.62, tip = [cos(r.angle) * len, sin(r.angle) * len];
     for (const z of [-3.3, 3.3]) {
@@ -980,6 +990,13 @@ export function buildWorld(scene, map, drive, multiDraw = false) {
           [Box(0.56, 0.16, 0.56), '#636b70', -0.8, 1.07, z],
           [Cyl(0.45, 0.45, 0.17, 16).rotateX(PI / 2), '#39464b', -0.8, top, z + out * 0.26],
           [Cyl(0.21, 0.25, 0.13, 8).rotateX(PI / 2), '#a98b55', -0.8, top, z + out * 0.40]);
+        // Painted bands and curved knees on the two portal posts, seen in the RCE photograph.
+        for (let y = 1.48; y < top-.55; y += .68) P.push([Box(.51,.075,.51), '#b9b9a8', -.8,y,z]);
+        const knee = new THREE.Shape();
+        knee.moveTo(0,0); knee.lineTo(.90,0); knee.quadraticCurveTo(.22,-.18,0,-1.32); knee.closePath();
+        const fill = new THREE.ExtrudeGeometry(knee,{depth:.29,bevelEnabled:false,curveSegments:6});
+        fill.rotateY(out*PI/2);
+        P.push([fill,'#e1dfca',-.8-out*.145,top-.24,z-out*.19]);
         for (const t of [0.08, 0.22, 0.58, 0.83, 0.96]) {
           const [px, py] = A(t); P.push([Box(0.18, 0.40, 0.43).rotateZ(arm), '#546268', px, py, z]);
         }
@@ -1003,7 +1020,16 @@ export function buildWorld(scene, map, drive, multiDraw = false) {
     // fixed far half of the bridge
     const far = mk.bridgeS - mk.bridgeN - 1.5, fx0 = r.s1 - r.s0 + 2.2;
     g.add(box(far - fx0 + 1.5, 0.5, 5.8, '#8b8f9c', (fx0 + far + 1.5) / 2, -0.26, 0));
-    for (const z of [-2.7, 2.7]) { const L = far - fx0 + 1.5, cx = (fx0 + far + 1.5) / 2, P = [[Box(L, 0.17, 0.3), '#f6f1e4', cx, 0.045, z], [Box(L, 0.1, 0.1), '#f6f1e4', cx, 0.84, z]]; for (let k = 0; k <= 5; k++) P.push([Box(0.1, 0.74, 0.1), '#f6f1e4', fx0 + 0.05 + ((L - 0.1) * k) / 5, 0.47, z]); g.add(solid(fuse(...P, ...crosses(fx0 + 0.05, fx0 + L - 0.05, 5, 0.13, 0.79, z)))); } // the same railing, no higher than the boards it replaces
+    for (const z of [-2.7, 2.7]) { const L = far - fx0 + 1.5, cx = (fx0 + far + 1.5) / 2, P = [[Box(L, 0.17, 0.3), '#f6f1e4', cx, 0.045, z], [Box(L, 0.1, 0.1), '#f6f1e4', cx, 0.84, z]]; for (let k = 0; k <= 5; k++) P.push([Box(0.1, 0.74, 0.1), '#f6f1e4', fx0 + 0.05 + ((L - 0.1) * k) / 5, 0.47, z]); g.add(solid(fuse(...P, ...railing(fx0 + 0.05, fx0 + L - 0.05, 5, 0.13, 0.79, z)))); } // the same railing, no higher than the boards it replaces
+    const bridgeName = canvasTex(384,64,(ctx) => {
+      ctx.fillStyle='#e7e4d1'; ctx.fillRect(0,0,384,64);
+      ctx.fillStyle='#323d35'; ctx.font='bold 38px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('EENHOORNSBRUG',192,34);
+    },false);
+    for (const sign of [-1,1]) {
+      const plate = new THREE.Mesh(new THREE.PlaneGeometry(1.38,.22), mat('#ffffff',{map:bridgeName,roughness:.8}));
+      plate.rotation.y=sign<0?PI:0; plate.position.set(len*.48,-.15,sign*2.925); lf.add(plate);
+    }
     scene.add(g);
     // half barriers with flashing lights
     const lamps = [];
@@ -1032,21 +1058,21 @@ export function buildWorld(scene, map, drive, multiDraw = false) {
       ['#c8102e', '#ffffff', '#21468b'].forEach((c, k) => cloth.add(box(1.9, 0.4, 0.05, c, 1.02, 0.4 - k * 0.4, 0)));
       g.add(cloth); g.traverse((q) => { q.castShadow = true; }); scene.add(g); flags.push(cloth); world.solid(o.x, o.z, 0.4, 8);
     }
-    inst(fuse([Cyl(0.04, 0.04, 2.3, 6), '#e8e8e8', 0, 1.15, 0], [Cyl(0.46, 0.46, 0.05, 10), '#f6f1e4', 0, 0.74, 0], [Cyl(0.05, 0.07, 0.72, 6), '#3a3f47', 0, 0.37, 0], [Box(0.4, 0.46, 0.4), '#3a3f47', 0.9, 0.23, 0], [Box(0.4, 0.46, 0.4), '#3a3f47', -0.9, 0.23, 0]), tinted, shade.map((o, i) => ({ x: o.x, z: o.z, a: i * 1.3 })));
-    inst(new THREE.ConeGeometry(1.6, 0.6, 8), mat('#ffffff', { flatShading: true }), shade.map((o, i) => ({ x: o.x, y: Y0 + 2.5, z: o.z, a: i * 1.3, c: o.c })));
+    inst(Street.cafeSet(), tinted, shade.map((o, i) => ({ x: o.x, z: o.z, a: i * 1.3 })));
+    inst(Street.parasol(), mat('#ffffff', { vertexColors: true, side: THREE.DoubleSide, roughness: 0.91 }), shade.map((o,i) => ({ x: o.x, y: Y0 + 2.5, z: o.z, a: i * 1.3, c: o.c })));
     for (const o of shade) world.solid(o.x, o.z, 1.7, 2.9);
   }
 
   // --- street furniture along the route (placed by props.js, which the clipping check shares) ---
   const props = placeProps(map, drive); world.people = props.filter((o) => o.kind === 'person' && ![[0, 0], [0.5, 0], [-0.5, 0], [0, 0.5], [0, -0.5]].some(([i, j]) => world.inside(o.x + i, 0.5, o.z + j))); // not the ones who would stand in a market stall
   const of = (kind) => props.filter((o) => o.kind === kind).map((o, i) => ({ x: o.x, z: o.z, a: o.a + (o.side < 0 ? PI : 0), i }));
-  inst(fuse([Cyl(0.06, 0.09, 4, 6), '#26352f', 0, 2, 0], [Cyl(0.14, 0.16, 0.5, 6), '#26352f', 0, 0.25, 0], [Box(0.36, 0.46, 0.36), '#fff1b8', 0, 4.2, 0], [Cyl(0.05, 0.31, 0.24, 6), '#26352f', 0, 4.55, 0]), tinted, of('lamp'));
-  inst(fuse([Cyl(0.1, 0.13, 0.8, 8), '#8c2f2a', 0, 0.4, 0], [Cyl(0.127, 0.127, 0.1, 8), '#f6f1e4', 0, 0.6, 0], [Ico(0.125, 1), '#8c2f2a', 0, 0.83, 0]), tinted, of('bollard'));
+  inst(Street.streetLamp(), tinted, of('lamp'));
+  inst(Street.bollard(), tinted, of('bollard'));
   inst(bikeGeo.all(),
     tinted, of('bike').map((o) => ({ ...o, rx: 0.16, a: o.a + (o.i % 2) * PI, c: BRIGHT[o.i % 6] })));
   mine('benches', LM.benchGeo(), of('bench'));
-  inst(fuse([Box(1.05, 0.52, 1.05), '#b5653f', 0, 0.26, 0], [Box(1.17, 0.09, 1.17), '#c97a50', 0, 0.5, 0], [Ico(0.5, 1), '#4ca649', 0, 0.9, 0], [Ico(0.17, 0), '#ff6fa3', 0.3, 1.12, 0.2], [Ico(0.17, 0), '#ffd23f', -0.26, 1.16, -0.2], [Ico(0.15, 0), '#ff6fa3', -0.08, 1.24, 0.3], [Ico(0.15, 0), '#ffffff', 0.12, 1.3, -0.24]), tinted, of('planter'));
-  inst(fuse([Cyl(0.24, 0.2, 0.8, 10), '#2f5d46', 0, 0.45, 0], [Cyl(0.262, 0.262, 0.09, 10), '#f2c230', 0, 0.66, 0], [Cyl(0.27, 0.27, 0.08, 10), '#26352f', 0, 0.89, 0]), tinted, of('bin'));
+  inst(Street.flowerPlanter(), tinted, of('planter'));
+  inst(Street.litterBin(), tinted, of('bin'));
 
   // --- the cheese market on the Waagplein: stacks of Gouda in rows square to the Waag, the weighing scale at their head, a herring cart and a flower stall at the edge ---
   {
@@ -1088,7 +1114,17 @@ export function buildWorld(scene, map, drive, multiDraw = false) {
       const sc = [0.8 + R() * 0.6, 0.62, 0.44].find(fits); if (sc) trees.push({ x, z, s: sc, k: R(), c: ['#58b84a', '#6cc74f', '#3fa348', '#84cf52'][i % 4] });
     }
     streetInstances(Cyl(0.22, 0.3, 3.2, 6), mat('#7a5236'), trees.map((t) => ({ x: t.x, y: 1.6, z: t.z, sx: t.s, sy: 1, sz: t.s })));
-    const leaf = mat('#ffffff', { flatShading: true, vertexColors: true, roughness: 0.9 });
+    const foliage = canvasTex(256, 128, (g) => {
+      const roll = rnd(709); g.fillStyle = '#c0c9b6'; g.fillRect(0, 0, 256, 128);
+      for (let i = 0; i < 1600; i++) {
+        const x = roll()*256, y = roll()*128, angle = roll()*PI, light = Math.round(169 + 85*roll());
+        g.fillStyle = 'rgb(' + [light, Math.min(255,light+8), light-13].join(',') + ')';
+        for (const dx of [-256,0,256]) for (const dy of [-128,0,128]) {
+          g.beginPath(); g.ellipse(x+dx,y+dy,3.6,1.3,angle,0,2*PI); g.fill();
+        }
+      }
+    });
+    const leaf = mat('#ffffff', { map: foliage, flatShading: true, vertexColors: true, roughness: 0.94 });
     const crownGeo = (r) => {
       const g = Ico(r, 1), p = g.attributes.position, colors = [];
       for (let i = 0; i < p.count; i += 3) {
@@ -1113,7 +1149,12 @@ export function buildWorld(scene, map, drive, multiDraw = false) {
       const ox = sin(c.h) * side * 1.05, oz = -cos(c.h) * side * 1.05, col = C(BRIGHT[(hsh >>> 8) % 5]), N = 8; // (ox, oz): from the wall out over the pavement
       for (let k = 0; k < N; k++) {
         const p0 = [lerp(a.x, b.x, k / N), 3.22, lerp(a.z, b.z, k / N)], p1 = [lerp(a.x, b.x, (k + 1) / N), 3.22, lerp(a.z, b.z, (k + 1) / N)], q0 = [p0[0] + ox, 2.74, p0[2] + oz], q1 = [p1[0] + ox, 2.74, p1[2] + oz], cl = k % 2 ? cream : col;
-        trim.quad(p0, p1, q1, q0, UP, cl); trim.quad(q0, q1, [q1[0], 2.52, q1[2]], [q0[0], 2.52, q0[2]], [ox, 0, oz], cl);
+        trim.quad(p0, p1, q1, q0, UP, cl);
+        for (let j = 0; j < 4; j++) {
+          const at = (u, y) => [lerp(q0[0], q1[0], u), y, lerp(q0[2], q1[2], u)];
+          const u = j / 4, v = (j + 1) / 4;
+          trim.quad(at(u, 2.74), at(v, 2.74), at(v, 2.61 - .09 * sin(PI*v)), at(u, 2.61 - .09 * sin(PI*u)), [ox, 0, oz], cl);
+        }
       }
     }
     for (let i = 0, s = mk.lange + 24; s < mk.mient - 12; i++, s += 21) { // bunting across the Langestraat, well above the roofs of the cars

@@ -472,24 +472,51 @@ function toyCar(world, color) {
 }
 
 // ---------- particles ----------
+let puffMap;
+function smokeTexture() {
+  if (puffMap) return puffMap;
+  puffMap = tex(128, 128, (ctx) => {
+    // Overlapping tufts catch a little light at the top and fray toward the edge.
+    for (let i = 0; i < 15; i++) {
+      const a = i * 2.4, d = i === 0 ? 0 : 10 + (i * 7 % 22);
+      const x = 64 + cos(a) * d, y = 65 + sin(a) * d, r = 23 + (i * 11 % 14);
+      const grad = ctx.createRadialGradient(x - 3, y - 3, 0, x, y, r);
+      const value = Math.round(198 + (86 - y) * .55);
+      grad.addColorStop(0, 'rgba(' + [value + 4,value + 3,value].join(',') + ',.68)');
+      grad.addColorStop(.56, 'rgba(222,220,214,.42)');
+      grad.addColorStop(1, 'rgba(237,234,226,0)');
+      ctx.fillStyle = grad; ctx.fillRect(x-r,y-r,2*r,2*r);
+    }
+  });
+  return puffMap;
+}
 export function puffs(scene, n, color = '#f6f6f2') {
-  const mesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.5, 1), mat(color, { flatShading: true, roughness: 1 }), n);
-  const P = Array.from({ length: n }, () => ({ life: 0 })), M = new THREE.Matrix4(), ZERO = new THREE.Matrix4().makeScale(0, 0, 0); let next = 0;
-  for (let i = 0; i < n; i++) mesh.setMatrixAt(i, ZERO);
-  mesh.frustumCulled = false; scene.add(mesh);
+  const material = new THREE.MeshBasicMaterial({ color, map: smokeTexture(), transparent: true, depthWrite: false });
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', [
+      'vec4 mvPosition = modelViewMatrix * vec4(instanceMatrix[3].xyz, 1.0);',
+      'mvPosition.xy += mat2(instanceMatrix[0].xy, instanceMatrix[1].xy) * position.xy;',
+      'gl_Position = projectionMatrix * mvPosition;',
+    ].join('\n'));
+  };
+  const mesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), material, n);
+  const P = Array.from({ length: n }, () => ({ life: 0 })), M = new THREE.Matrix4(), scale = new THREE.Vector3();
+  mesh.count = 0; mesh.frustumCulled = false; scene.add(mesh);
+  let next = 0;
   return {
     emit(x, y, z, size = 1, vx = 0, vz = 0) { Object.assign(P[next], { x, y, z, vx: vx + (random() - 0.5) * 1.6, vy: 0.7 + random(), vz: vz + (random() - 0.5) * 1.6, age: 0, life: 0.9 + random() * 0.8, size: size * (0.6 + random() * 0.7) }); next = (next + 1) % n; },
     update(dt) {
+      let active = 0;
       P.forEach((p, i) => {
         if (p.life <= 0) return;
-        p.age += dt; if (p.age >= p.life) { p.life = 0; mesh.setMatrixAt(i, ZERO); return; }
+        p.age += dt; if (p.age >= p.life) { p.life = 0; return; }
         p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; p.vx *= 1 - 1.5 * dt; p.vz *= 1 - 1.5 * dt;
         const k = p.age / p.life, s = p.size * Math.min(1, 0.3 + k * 2.4) * (1 - ramp(k, 0.5, 1));
-        mesh.setMatrixAt(i, M.makeScale(s, s, s).setPosition(p.x, p.y, p.z));
+        mesh.setMatrixAt(active++, M.makeRotationZ(i * 2.4).scale(scale.setScalar(s)).setPosition(p.x, p.y, p.z));
       });
-      mesh.instanceMatrix.needsUpdate = true;
+      mesh.count = active; mesh.instanceMatrix.needsUpdate = true;
     },
-    clear() { P.forEach((p, i) => { p.life = 0; mesh.setMatrixAt(i, ZERO); }); },
+    clear() { for (const p of P) p.life = 0; mesh.count = 0; },
   };
 }
 function skids(scene, n) {
