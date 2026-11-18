@@ -1,6 +1,7 @@
 // The cast: the lesson car, Nikki, the examiner, cyclists, parked cars, cheese carriers, the crowd,
 // plus tyre smoke, skid marks and confetti. Everything faces local +x, with its right side on +z.
 import * as THREE from 'three';
+import { loft, duckBill } from './fauna.js';
 import { mat, canvasTex, GROUND, bikeGeo, fuse } from './world.js';
 import { clamp, lerp, smooth } from './drive.js';
 import { berrieGeo, cheeseWheelGeo, duckGeo, rondvaartboot } from './landmarks.js';
@@ -493,11 +494,27 @@ export function buildCast(scene, world, drive) {
 
   // The duck family of the emergency stop: a mother and five ducklings. drive.js says where each one is at any moment.
   const tour = rondvaartboot(); tour.traverse((o) => { o.castShadow = true; }); scene.add(tour); // the canal tour boat the drawbridge stands open for
-  const DK = layout.ducks, BILL = '#f08a1c', sph = (r) => new THREE.SphereGeometry(r, 10, 8);
-  const ducklingGeo = fuse([sph(0.09).scale(1.25, 0.85, 0.95), '#f7d84a', 0, 0.065, 0], [sph(0.065), '#fbe37a', 0.1, 0.165, 0], [new THREE.ConeGeometry(0.024, 0.07, 6).rotateZ(-PI / 2), BILL, 0.185, 0.155, 0], [sph(0.013), '#1b1b1b', 0.14, 0.185, 0.045], [sph(0.013), '#1b1b1b', 0.14, 0.185, -0.045]);
+  const DK = layout.ducks, BILL = '#ee9627';
+  const down = loft([[-.114,.088,0,0],[-.085,.073,.044,.047],[-.042,.065,.068,.078],[.013,.068,.079,.083],[.064,.07,.066,.071],[.099,.073,.034,.044],[.11,.075,0,0]],10);
+  const bill = duckBill(.063,.036,.032,true).translate(.157,.151,0);
+  const chick = [[bill,'#ffffff'],[down,'#f7d54a'], [new THREE.SphereGeometry(1,14,9).scale(.065,.067,.062),'#ffe274',.098,.164,0]];
+  for (const side of [-1,1]) {
+    const wing = loft([[-.092,.085,0,0],[-.065,.086,.018,.011],[-.044,.083,.029,.016],[-.015,.085,.034,.021],[.015,.086,.027,.015],[.037,.087,0,0]],8);
+    chick.push([wing,'#e9ad35',0,0,side*.062],
+      [wing.clone().scale(.82,.77,.57),'#ffe779',.003,.027,side*.073],
+      [new THREE.SphereGeometry(1,8,5).scale(.018,.017,.006),'#d7983c',.128,.176,side*.05],
+      [new THREE.SphereGeometry(1,10,6).scale(.013,.014,.009),'#33271d',.13,.18,side*.052],
+      [new THREE.SphereGeometry(.0038,6,4),'#fff7cd',.134,.185,side*.06]);
+  }
+  const ducklingGeo = fuse(...chick);
+  ducklingGeo.attributes.color.array.set(bill.attributes.color.array);
   const ducks = Array.from({ length: DK.n }, (_, i) => {
-    const g = new THREE.Group(), leg = i ? 0.05 : 0.1, body = tinted(i ? ducklingGeo : duckGeo().scale(1.5, 1.5, 1.5)), w = i ? 0.035 : 0.06;
-    const feet = tinted(fuse(...[w, -w].flatMap((z) => [[box(0.02, leg, 0.02), BILL, 0, leg / 2, z], [box(w * 1.3, 0.016, w * 0.9), BILL, w * 0.5, 0.008, z]])));
+    const g = new THREE.Group(), leg = i ? .05 : .1, body = tinted(i ? ducklingGeo : duckGeo().scale(1.5,1.5,1.5)), w = i ? .035 : .06;
+    const toes = new THREE.Shape([[-.22,0],[.15,-.41],[.94,-.43],[.68,-.13],[1.15,0],[.68,.13],[.94,.43],[.15,.41]].map(([x,z])=>new THREE.Vector2(x*w,-z*w)));
+    const foot = new THREE.ExtrudeGeometry(toes,{depth:.011,bevelEnabled:false}).rotateX(-PI/2);
+    const feet = tinted(fuse(...[w,-w].flatMap((z)=>[
+      [new THREE.CylinderGeometry(.009,.007,leg,7),BILL,0,leg/2,z],[foot.clone(),BILL,0,0,z]
+    ])));
     g.add(body, feet); scene.add(g); return { g, body, feet, leg, wet: false, h: 0 };
   });
 

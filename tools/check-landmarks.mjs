@@ -33,7 +33,7 @@ const GROUPS = {
   woonboot: { tris: [0, 1800], box: B(6.1, -0.35, 4.1, 2.1) },
 };
 const GEOS = { // props are under 400 triangles unless a bigger budget is stated here
-  duckGeo: { box: B(0.25, -0.06, 0.25, 0.13) }, swanGeo: { box: B(0.62, -0.11, 0.9, 0.3) }, lilyGeo: { box: B(0.62, 0, 0.0601, 0.62) }, reedGeo: { box: B(0.5, -0.31, 1.65, 0.5) },
+  duckGeo: { tris: 1080, box: B(0.25, -0.06, 0.25, 0.13) }, swanGeo: { tris: 980, box: B(0.62, -0.11, 0.9, 0.3) }, lilyGeo: { box: B(0.62, 0, 0.0601, 0.62) }, reedGeo: { box: B(0.5, -0.31, 1.65, 0.5) },
   mooringPostGeo: { box: B(0.21, -0.31, 1.55, 0.21) }, gullGeo: { box: B(0.32, -0.08, 0.15, 0.6) },
   cheeseWheelGeo: { box: B(0.361, 0, 0.1101, 0.361) }, cheeseStackGeo: { tris: 900, box: B(0.651, 0, 0.75, 0.501) }, edamGeo: { box: B(0.161, 0, 0.29, 0.161) },
   berrieGeo: { box: B(1.13, 0.4, 0.92, 0.36) }, scaleGeo: { tris: 450, box: B(1.3, 0, 2.5, 0.45) },

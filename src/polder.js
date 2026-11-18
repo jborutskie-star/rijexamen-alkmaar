@@ -1,6 +1,7 @@
 // De polder: North Holland all round the town, out to the dunes and the sea. Flat fields, ditches, tulips, cows, mills.
 // The ground is one patchwork of rectangles that never overlap (so nothing can flicker); the town and the motorway each keep their own hole.
 import * as THREE from 'three';
+import { loft } from './fauna.js';
 import { GROUND, mat, canvasTex, fuse } from './world.js';
 import { CORRIDOR, Z0, countryWater, getPlan } from './snelweg.js';
 
@@ -150,11 +151,105 @@ export function buildPolder(scene, { rect = [-1090, -730, 860, 760] } = {}) {
     const light = (tp.getY(i) - 1) * 0.12;
     tc.setXYZ(i, 0.68 + light, 0.73 + light, 0.59 + light);
   }
-  regional(treeGeo, trees, 850);
-  const leg = (x, z, h, c) => [Box(0.2, h, 0.2), c, x, h / 2, z];
-  regional(fuse([Box(2.0, 1.0, 0.84), '#fbfaf2', 0, 1.25, 0], [Box(0.7, 0.75, 0.9), '#22232a', -0.35, 1.32, 0], [Box(0.5, 0.5, 0.9), '#22232a', 0.5, 1.2, 0], [Box(0.6, 0.55, 0.5), '#22232a', 1.25, 1.5, 0], [Box(0.22, 0.26, 0.4), '#f3a6a0', 1.6, 1.36, 0],
-    leg(0.78, 0.26, 0.8, '#fbfaf2'), leg(0.78, -0.26, 0.8, '#fbfaf2'), leg(-0.78, 0.26, 0.8, '#fbfaf2'), leg(-0.78, -0.26, 0.8, '#22232a')), cows);
-  regional(fuse([Box(1.15, 0.72, 0.74), '#f4efe0', 0, 0.78, 0], [Box(0.34, 0.32, 0.34), '#3a3530', 0.72, 0.95, 0], leg(0.4, 0.2, 0.45, '#3a3530'), leg(0.4, -0.2, 0.45, '#3a3530'), leg(-0.4, 0.2, 0.45, '#3a3530'), leg(-0.4, -0.2, 0.45, '#3a3530')), sheep);
+  // On the approaches and in farmyards the camera resolves individual clusters and the forks of the trunk.
+  const groves = [], distantTrees = [];
+  for (const t of trees) {
+    const closeToFlight = abs(t.x-XV)<95 && t.z>RZ1 && t.z<CORRIDOR.z0+100;
+    const byRoad = abs(t.x)<1500 && min(abs(t.z-CORRIDOR.z0),abs(t.z-CORRIDOR.z1))<34;
+    (closeToFlight || byRoad || yard.some(([x,z])=>abs(t.x-x)<.01&&abs(t.z-z)<.01) ? groves : distantTrees).push(t);
+  }
+  regional(treeGeo, distantTrees, 850);
+  const canopy = [[treeGeo,'#ffffff']];
+  for(const [x,y,z,s,col] of [[-.39,1.74,.27,.54,'#dae2bd'],[.36,1.79,-.28,.55,'#f1efc9'],[.22,2.12,.31,.51,'#edf1d8'],[-.23,2.40,-.12,.39,'#faf5dc']])
+    canopy.push([new THREE.IcosahedronGeometry(1,0).scale(s,.52,s),col,x,y,z]);
+  for (const side of [-1,1]) canopy.push([Cyl(.057,.086,.75,5).rotateZ(side*.58),'#846948',-side*.19,1.13,.02]);
+  const groveGeo=fuse(...canopy); groveGeo.attributes.color.array.set(treeGeo.attributes.color.array);
+  regional(groveGeo,groves,850);
+  // Build the cream and black coat on one continuous skin. The other parts sample a white texel.
+  const coat = canvasTex(512,256,(ctx,w,h)=>{
+    ctx.fillStyle='#fffdf4'; ctx.fillRect(0,0,w,h);
+    const spots=[[-.04,.25,.12,.15],[.29,.36,.11,.20],[.58,.17,.095,.12],[.89,.43,.12,.16],[.18,.76,.095,.13],[.54,.69,.135,.19],[.94,.84,.11,.14]];
+    for(const [u,v,rx,ry] of spots) {
+      ctx.fillStyle='#252b2c'; ctx.beginPath();
+      for(let k=0;k<=50;k++) {
+        const a=k*2*PI/50, wobble=1+.19*sin(3*a+u*8)+.13*cos(5*a+v*4);
+        const x=w*(u+rx*cos(a)*wobble), y=h*(v+ry*sin(a)*wobble);
+        if(k)ctx.lineTo(x,y);else ctx.moveTo(x,y);
+      }
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,12,12);
+  },false);
+  const oval=(x,y,z,radial=8,vertical=5)=>new THREE.SphereGeometry(1,radial,vertical).scale(x,y,z);
+  const stem=(a,b,r0,r1,sides=6)=>{
+    const start=new THREE.Vector3(...a),end=new THREE.Vector3(...b),dir=end.clone().sub(start);
+    const g=Cyl(r1,r0,dir.length(),sides).applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),dir.normalize()));
+    return g.translate(...start.lerp(end,.5).toArray());
+  };
+  const hoofLeg=(parts,x,z,top,hip,knee,hoof,cream,hoofColour)=>{
+    const bend=x<0 ? .08 : -.055;
+    parts.push([stem([x,top,z],[x+bend,top*.47,z],hip,knee),cream],
+      [stem([x+bend,top*.47,z],[x,.12,z],knee,hoof*.65),cream],
+      [loft([[-.1,.055,0,0],[-.077,.065,.065,.061],[0,.058,.058,.077],[.094,.046,.046,.06],[.12,.044,0,0]],6).scale(hoof/.077,1,hoof/.077),hoofColour,x,0,z]);
+  };
+  const cowBody=loft([[-1,1.26,0,0],[-.90,1.28,.38,.32],[-.64,1.27,.47,.425],[-.23,1.24,.49,.443],[.26,1.24,.485,.43],[.65,1.27,.44,.40],[.93,1.31,.34,.31],[1.04,1.37,.20,.19],[1.07,1.40,0,0]],10);
+  const cowParts=[[cowBody,'#fffdf4'],[loft([[.76,1.38,.26,.23],[.99,1.44,.28,.22],[1.20,1.51,.22,.20],[1.27,1.52,0,0]],8),'#ebe4d6'],
+    [loft([[1.03,1.51,0,0],[1.11,1.55,.20,.19],[1.27,1.53,.23,.217],[1.44,1.45,.162,.175],[1.57,1.38,.10,.16],[1.59,1.37,0,0]],10),'#2f3030'],
+    [oval(.132,.105,.18),'#e6a69f',1.57,1.37,0],[oval(.164,.136,.154),'#e3b4a4',-.52,.83,0]];
+  for(const side of [-1,1]) {
+    hoofLeg(cowParts,-.74,side*.27,.98,.114,.061,.083,side<0?'#322e2a':'#eee9dc','#534945');
+    hoofLeg(cowParts,.72,side*.25,1.02,.098,.058,.084,'#eee9dc','#4d4744');
+    cowParts.push([oval(.16,.065,.071).rotateZ(side*.20),'#292d2d',1.126,1.657,side*.269],
+      [oval(.085,.036,.025),'#b37b76',1.151,1.655,side*.32],
+      [oval(.047,.049,.018),'#b1a888',1.336,1.574,side*.196],
+      [oval(.035,.038,.017),'#171b1b',1.344,1.574,side*.208],
+      [oval(.031,.023,.016),'#80574f',1.659,1.39,side*.109]);
+  }
+  cowParts.push([stem([-.934,1.43,.10],[-.973,.66,.144],.04,.022),'#eee9dc'],
+    [oval(.059,.109,.051),'#393a35',-.936,.60,.153], [oval(.074,.12,.15),'#e6e1d7',1.256,1.626,0]);
+  const cattle = fuse(...cowParts), bodyUV=cowBody.attributes.uv.array;
+  const coatUV = new Float32Array(cattle.attributes.position.count*2).fill(.012);
+  for(let i=1;i<coatUV.length;i+=2) coatUV[i]=.988;
+  coatUV.set(bodyUV); cattle.setAttribute('uv',new THREE.BufferAttribute(coatUV,2));
+
+  const sheepBody=loft([[-.57,.79,0,0],[-.50,.78,.225,.24],[-.34,.77,.328,.34],[-.06,.765,.354,.363],[.22,.76,.34,.34],[.43,.77,.275,.25],[.54,.84,.14,.15],[.57,.85,0,0]],9);
+  const lambParts=[[sheepBody,'#eee9d8'],[loft([[.40,.89,0,0],[.51,.935,.15,.135],[.66,.96,.154,.153],[.80,.92,.113,.124],[.885,.888,.063,.079],[.896,.88,0,0]],8),'#514639']];
+  for(const s of [-1,1]) {
+    for(const x of [-.37,.36]) hoofLeg(lambParts,x,s*.19,.58,.067,.047,.052,'#534c42','#383531');
+    lambParts.push([oval(.10,.045,.050),'#52483f',.58,1.014,s*.144],[oval(.022,.024,.009),'#1c211f',.732,.983,s*.139]);
+    for(const [x,y,z,r] of [[-.39,.83,.21,.125],[-.22,.93,.230,.17],[-.035,.845,.258,.14],[.16,.945,.248,.124],[.32,.875,.21,.124]])
+      lambParts.push([oval(r*1.22,r,r*.79,7,5),s<0?'#e7e1d2':'#f3efdd',x,y,s*z]);
+  }
+  for(const [x,z,r] of [[-.30,.05,.11],[-.13,-.105,.095],[.05,.072,.12],[.25,-.045,.10]])
+    lambParts.push([oval(r*1.24,r*.69,r,7,4),'#f0ebda',x,1.046,z]);
+  lambParts.push([oval(.103,.163,.095,6,4),'#dfd8c5',-.473,.672,0],[oval(.121,.068,.133,8,4),'#f1eddc',.603,1.06,0]);
+  const sheepGeo=fuse(...lambParts);
+
+  // The pasture cells share one draw per herd, and trade the tiny eye/hoof details for a simpler
+  // figure beyond the distance at which they occupy a pixel. Both levels share instance transforms.
+  const herd=(detailed, low, animals, skin)=>{
+    const batches=new Map();
+    for(const o of animals) {
+      const key=floor(o.x/320)+','+floor(o.z/320);
+      if(!batches.has(key))batches.set(key,[]);
+      batches.get(key).push(o);
+    }
+    for(const batch of batches.values()) {
+      const origin=batch[0], local=batch.map(o=>({...o,x:o.x-origin.x,z:o.z-origin.z})), lod=new THREE.LOD();
+      const near=inst(detailed,local),far=inst(low,local);
+      if(skin) near.material=skin;
+      lod.position.set(origin.x,0,origin.z); lod.addLevel(near,0);
+      const radius=Math.max(...local.map(o=>Math.hypot(o.x,o.z)));
+      lod.addLevel(far,145+radius,.12); group.add(lod);
+    }
+  };
+  const distantCow=fuse([loft([[-1,1.25,0,0],[-.8,1.25,.48,.40],[.6,1.25,.48,.40],[.99,1.3,.31,.30],[1.17,1.44,0,0]],6),'#f5f1e3'],[oval(.30,.22,.205,5,3),'#373630',1.25,1.49,0],
+    [oval(.13,.10,.167,5,3),'#dda69a',1.58,1.37,0],...[-.68,.68].flatMap(x=>[-.25,.25].map(z=>[Cyl(.105,.072,.86,4),'#d9d2c3',x,.43,z])));
+  const farCowPos=distantCow.attributes.position,farCowCol=distantCow.attributes.color;
+  for(let i=0;i<farCowPos.count;i++) if(farCowPos.getY(i)>.81&&farCowPos.getX(i)<.72&&sin(farCowPos.getX(i)*7+farCowPos.getY(i)*3)>0) farCowCol.setXYZ(i,.034,.036,.032);
+  const distantSheep=fuse([oval(.575,.36,.37,7,4),'#eee8d8',0,.78,0],[oval(.18,.15,.15,6,4),'#554638',.70,.95,0],...[-.38,.38].flatMap(x=>[-.19,.19].map(z=>[Cyl(.056,.044,.48,4),'#584e40',x,.24,z])));
+  herd(cattle,distantCow,cows,mat('#ffffff',{vertexColors:true,map:coat,roughness:.8}));
+  herd(sheepGeo,distantSheep,sheep);
   // the stolp: a square farm under one big pyramid roof
   const farm = [
     [Box(15, 3.6, 15), '#f3ead8', 0, 1.8, 0], [new THREE.ConeGeometry(11.6, 8.5, 4).rotateY(PI / 4), '#b5532e', 0, 7.85, 0],
@@ -171,6 +266,23 @@ export function buildPolder(scene, { rect = [-1090, -730, 860, 760] } = {}) {
   }
   for (const z of [-4.6, 4.6]) farm.push([Box(0.16, 1.42, 1.25), '#fbfaf2', 7.55, 2, z], [Box(0.08, 1.13, 0.94), '#577783', 7.63, 2, z]);
   for (const z of [-0.7, 0.7]) farm.push([Box(0.07, 0.12, 1.25), '#8eac85', 7.6, 2.2, z]);
+  for(const side of [-1,1]) {
+    // Fascia boards, alternating brick quoins and the shutters' painted iron straps.
+    farm.push([Box(15.5,.20,.15),'#744737',0,3.34,side*7.65]);
+    for (const x of [-7.18,7.18]) for(let row=0;row<4;row++) farm.push([Box(.64,.21,.18),'#c6977a',x,.46+row*.78,side*7.53]);
+    for (const x of [-4.6,4.6]) for (const offset of [-.93,.93]) for(const h of [1.53,2.45])
+      farm.push([Box(.35,.08,.065),'#273f39',x+offset,h,side*7.615]);
+    farm.push([Box(5.8,.15,.22),'#ddb688',-3,2.87,-11+side*2.56],
+      [Box(9.3,.16,.22),'#9e684d',-3,3.14,-11+side*2.55]);
+    for(const x of [-6.55,-3,.55]) farm.push([Box(.17,2.88,.16),'#8a7159',x,1.47,-11+side*2.54]);
+  }
+  for (const sign of [-1,1]) {
+    const z=sign*.85;
+    farm.push([Box(.095,2.75,.12),'#aec3a7',7.641,1.4,z*1.75],
+      [Box(.074,.12,1.45),'#a8bc9a',7.67,.38,z],
+      [Box(.075,.12,1.45),'#a8bc9a',7.67,2.56,z],
+      [Box(.065,2.42,.13).rotateX(sign*.51),'#a8bc9a',7.702,1.44,z]);
+  }
   inst(fuse(...farm), farms);
   // glasshouses, in two clusters
   { const list = []; for (const c of cells) { if (c.kind === 'road' || c.kind === 'tulip' || !c.near) continue; const cx = (c.x0 + c.x1) / 2, cz = (c.z0 + c.z1) / 2; if (!((cx > 1250 && cx < 2100 && cz > 950 && cz < 1650) || (cx > -2500 && cx < -1750 && cz > 2350 && cz < 2950))) continue;

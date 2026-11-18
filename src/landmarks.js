@@ -2,6 +2,7 @@
 // One-off models return a THREE.Group (a few meshes); instanced props return one fused, vertex-coloured BufferGeometry (position, normal, color).
 // Metres; x east, z south, y up. Geometry builds without a DOM (node): textures are only made when `document` exists.
 import * as THREE from 'three';
+import { loft, duckBill } from './fauna.js';
 import { fuse, canvasTex, reliefTex, bikeGeo } from './world.js';
 
 const { PI, sin, cos, hypot, min, max, atan2, abs, sqrt } = Math;
@@ -555,19 +556,49 @@ const turn = (pts, seg, cols, a0 = 0, len = PI * 2) => {
 // A mallard drake swimming towards +x, 0.46 m long
 export function duckGeo() {
   const K = new Kit();
-  K.add(Sph(1, 8, 5).scale(0.19, 0.1, 0.125), '#9c9186', -0.02, 0.045, 0).add(Sph(1, 6, 4).scale(0.09, 0.085, 0.1), '#6b3f2a', 0.11, 0.055, 0);
-  for (const o of [-1, 1]) K.add(Sph(1, 6, 4).scale(0.13, 0.06, 0.035), '#7d7166', -0.05, 0.085, o * 0.1).box(0.06, 0.03, 0.02, '#2f6fc9', -0.1, 0.09, o * 0.128);
-  K.add(Cone(0.05, 0.13, 4).rotateZ(0.95), '#2a2a2a', -0.22, 0.1, 0);
-  K.add(Cyl(0.036, 0.046, 0.1, 6), '#f4f4f0', 0.15, 0.14, 0).add(Sph(0.066, 6, 5), '#1f6b45', 0.165, 0.215, 0).box(0.085, 0.022, 0.05, GOLD, 0.25, 0.2, 0).box(0.014, 0.014, 0.137, '#111111', 0.19, 0.235, 0);
-  return K.geo().scale(0.8, 0.8, 0.8);
+  const body = loft([[-.235,.09,0,0],[-.195,.075,.054,.071],[-.12,.061,.089,.114],[-.01,.052,.106,.124],[.09,.057,.089,.106],[.155,.066,.07,.079],[.19,.066,0,0]], 10,
+    (i, j) => i > 3 ? '#82462d' : j > 2 && j < 7 ? '#92867b' : '#b2a494');
+  K.pre(body);
+  for (const side of [-1, 1]) {
+    // The blue speculum and its cream borders are part of the curved wing surface.
+    const wing = loft([[-.235,.125,0,0],[-.195,.113,.018,.012],[-.169,.105,.031,.021],[-.156,.103,.037,.025],[-.10,.098,.048,.034],[-.061,.10,.055,.040],[-.051,.102,.057,.042],[-.009,.105,.055,.040],[.065,.106,0,0]], 10,
+      (i, j) => {
+        const outer = side > 0 ? j : 9 - j;
+        if (outer >= 1 && outer <= 3 && i >= 2 && i <= 5) return i===2 || i===5 ? '#c6c3aa' : '#375986';
+        return i<2 ? '#584e40' : '#897d69';
+      });
+    K.pre(wing.translate(0, 0, side * .093));
+    K.add(loft([[-.17,.137,0,0],[-.097,.138,.018,.01],[-.034,.131,.025,.016],[.032,.128,.022,.013],[.060,.12,0,0]],7),
+      '#a4977b',0,0,side*.105);
+  }
+  K.add(loft([[-.28,.13,0,0],[-.23,.12,.027,.034],[-.16,.094,.024,.047],[-.12,.09,0,0]], 6), '#343e3b');
+  K.add(Cyl(.048,.055,.098,10), '#f3e9d3', .135,.145,0);
+  K.add(Sph(1,12,8).scale(.071,.066,.063), '#216947', .162,.215,0);
+  K.pre(duckBill(.09,.062,.046).translate(.204,.201,0));
+  for (const side of [-1,1]) {
+    K.add(Sph(1,8,5).scale(.014,.014,.0075), '#b59850', .191,.229,side*.0515)
+      .add(Sph(1,8,5).scale(.010,.011,.006), '#171e1a', .194,.231,side*.056)
+      .add(Sph(.0038,5,3), '#fff5d7', .197,.235,side*.061);
+  }
+  return K.geo().scale(.8,.8,.8);
 }
 // A mute swan, 1.0 m long, head 0.83 m above the water
 export function swanGeo() {
-  const K = new Kit(), w = '#ffffff', w2 = '#eef0ee';
-  K.add(Sph(1, 8, 5).scale(0.42, 0.2, 0.25), w, 0, 0.1, 0).add(Cone(0.11, 0.3, 4).rotateZ(1.05), w2, -0.42, 0.2, 0);
-  for (const o of [-1, 1]) K.add(Sph(1, 6, 4).scale(0.3, 0.19, 0.07), w2, -0.08, 0.25, o * 0.19);
-  rod(K, [0.3, 0.14, 0], [0.45, 0.5, 0], 0.07, w, 6, 0.05); rod(K, [0.455, 0.46, 0], [0.38, 0.76, 0], 0.052, w, 6, 0.045);
-  K.add(Sph(0.075, 6, 4).scale(1.25, 1, 1), w, 0.41, 0.78, 0).box(0.12, 0.035, 0.05, '#f08a2c', 0.53, 0.76, 0).box(0.045, 0.045, 0.058, '#111111', 0.478, 0.79, 0).box(0.014, 0.014, 0.155, '#111111', 0.44, 0.805, 0);
+  const K = new Kit(), pearl = '#f8f8ef', shaded = '#d4dfdf';
+  K.add(loft([[-.51,.24,0,0],[-.38,.18,.12,.14],[-.20,.13,.19,.23],[.02,.10,.20,.25],[.21,.13,.18,.21],[.35,.17,.11,.12],[.42,.18,0,0]], 10), pearl);
+  for (const side of [-1,1]) {
+    for (let k = 0; k < 3; k++) {
+      const wing = loft([[-.45,.32,0,0],[-.32,.29,.07,.035],[-.16,.27,.125,.06],[.01,.25,.11,.055],[.14,.22,0,0]], 8);
+      K.add(wing.scale(1 - .12*k,1 - .09*k,1).translate(.02*k,-.028*k,side*(.12+.035*k)), [shaded,'#e6e9e3',pearl][k]);
+    }
+  }
+  const neck = new THREE.CatmullRomCurve3([[.29,.16,0],[.38,.32,0],[.45,.50,0],[.444,.64,0],[.385,.755,0],[.431,.78,0]].map(p=>new THREE.Vector3(...p)));
+  const section = new THREE.TubeGeometry(neck, 12, .052, 8, false);
+  K.add(section,pearl).add(Sph(1,10,6).scale(.089,.071,.067),pearl,.421,.78,0);
+  K.add(loft([[0,0,.024,.035],[.03,-.002,.024,.037],[.077,-.012,.014,.03],[.11,-.013,0,0]],8), '#e78136', .477,.763,0);
+  for (const side of [-1,1]) K.add(Sph(1,7,5).scale(.028,.018,.012),'#323333',.461,.793,side*.049)
+    .add(Sph(1,6,4).scale(.011,.011,.007),'#141919',.449,.801,side*.057);
+  K.add(Sph(1,7,5).scale(.028,.029,.034),'#2b2a29',.493,.783,0);
   return K.geo();
 }
 // A patch of water lilies 1.15 m across, 0 to 0.06 m high: five notched pads and two flowers
@@ -597,9 +628,26 @@ export function mooringPostGeo() {
 }
 // A gull gliding towards +x, wings out along z: span 1.17 m, origin in the middle of the body
 export function gullGeo() {
-  const K = new Kit(), w = '#fbfbf7', gr = '#b4bcc6';
-  K.add(Sph(1, 6, 4).scale(0.2, 0.065, 0.07), w).add(Sph(0.055, 6, 4), w, 0.18, 0.03, 0).box(0.07, 0.02, 0.026, GOLD, 0.255, 0.025, 0).box(0.14, 0.014, 0.1, w, -0.24, 0.005, 0).box(0.012, 0.012, 0.113, '#111111', 0.2, 0.045, 0);
-  for (const o of [-1, 1]) K.add(Box(0.17, 0.02, 0.3).rotateX(-o * 0.42), gr, 0.02, 0.07, o * 0.17).add(Box(0.13, 0.018, 0.22).rotateX(o * 0.18), gr, 0, 0.112, o * 0.41).add(Box(0.09, 0.016, 0.07).rotateX(o * 0.18), '#22262d', -0.01, 0.086, o * 0.552);
+  const K = new Kit(), white = '#faf9ed';
+  K.add(loft([[-.30,.004,0,0],[-.23,.005,.017,.055],[-.13,.005,.049,.069],[.01,0,.064,.073],[.135,.015,.045,.051],[.17,.021,0,0]],8),white);
+  K.add(Sph(1,8,5).scale(.067,.052,.052),white,.18,.033,0)
+    .add(loft([[0,0,.016,.022],[.044,0,.014,.018],[.078,-.006,0,0]],6), '#edab35',.216,.029,0);
+  for (const side of [-1,1]) {
+    K.add(Sph(.008,6,4),'#161e20',.206,.045,side*.043);
+    // Chord, height and sweep follow the gliding pose. Dark flight feathers taper to a cream tip.
+    const wing = new Skin(), rows = [[0,.08,-.10,.018],[.13,.13,-.085,.063],[.29,.099,-.10,.127],[.41,.034,-.109,.118],[.52,-.02,-.115,.097],[.586,-.075,-.097,.079]];
+    for (let i=0;i<rows.length-1;i++) {
+      const [a,b]=[rows[i],rows[i+1]], point=(r,t,h)=>[r[1]+(r[2]-r[1])*t,r[3]+h,side*r[0]];
+      for(const [t,u] of [[0,.34],[.34,1]]) {
+        const colour=i===4 ? (t ? '#343c41' : white) : i===3 && t ? '#667179' : t ? '#acb9be' : '#d8dedc';
+        const crown=t ? .012 : 0, tip=u===1 ? -.005 : .012;
+        wing.poly([point(a,t,crown),point(b,t,crown),point(b,u,tip),point(a,u,tip)],[0,1,0],colour)
+          .poly([point(a,t,-.012),point(b,t,-.012),point(b,u,-.012),point(a,u,-.012)],[0,-1,0],i===4 ? '#51585e' : white);
+      }
+      wing.poly([point(a,0,0),point(b,0,0),point(b,0,-.012),point(a,0,-.012)],[1,0,0],white);
+    }
+    K.skin(wing);
+  }
   return K.geo();
 }
 
