@@ -1,5 +1,6 @@
 // The city: real Alkmaar footprints, streets and canals (OpenStreetMap) built as a chunky toy town.
 import * as THREE from 'three';
+import { canalReflections, sunOffset } from './atmosphere.js';
 import { FACADES, pantiles, recessedBay, bricks } from './facade-detail.js';
 import { inPoly, lerp } from './drive.js';
 import { placeProps, planBridges } from './props.js';
@@ -23,6 +24,16 @@ class Soup {
     let [ca, cb, cc] = col.isColor ? [col, col, col] : col;
     if (this.wuv) { const k = this.wuv; ua = [a[0] * k, a[2] * k]; ub = [b[0] * k, b[2] * k]; uc = [c[0] * k, c[2] * k]; }
     const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+    const ab = ux * ux + uy * uy + uz * uz, ac = vx * vx + vy * vy + vz * vz;
+    const bc = (vx - ux) ** 2 + (vy - uy) ** 2 + (vz - uz) ** 2;
+    if (Math.max(ab, ac, bc) > 128 * 128) {
+      if (bc >= ab && bc >= ac) { [a,b,c] = [b,c,a]; [ca,cb,cc] = [cb,cc,ca]; [ua,ub,uc] = [ub,uc,ua]; }
+      else if (ac >= ab) { [a,b,c] = [c,a,b]; [ca,cb,cc] = [cc,ca,cb]; [ua,ub,uc] = [uc,ua,ub]; }
+      const mid = a.map((v,i) => (v + b[i]) * 0.5), uv = ua.map((v,i) => (v + ub[i]) * 0.5);
+      const shade = ca.clone().lerp(cb, 0.5);
+      this.tri(a,mid,c,want,[ca,shade,cc],ua,uv,uc);
+      this.tri(mid,b,c,want,[shade,cb,cc],uv,ub,uc); return;
+    }
     let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx; const l = hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
     if (nx * want[0] + ny * want[1] + nz * want[2] < 0) { [b, c] = [c, b]; [ub, uc] = [uc, ub]; [cb, cc] = [cc, cb]; nx = -nx; ny = -ny; nz = -nz; }
     this.p.push(...a, ...b, ...c); this.n.push(nx, ny, nz, nx, ny, nz, nx, ny, nz);
@@ -146,6 +157,25 @@ export function buildWorld(scene, map, drive) {
   const tallyGroup = (name, g) => { let n = 0; g.traverse((o) => { if (o.geometry) n += trisOf(o.geometry) * (o.count ?? 1); }); tally(name, 1, n); };
   const mine = (name, geo, list, material = tinted, shadow = true) => { tally(name, list.length, trisOf(geo) * list.length); return inst(geo, material, list, shadow); };
 
+  // Static city fittings can be culled a district at a time. Boats and rotating pieces use the original single batch.
+  const regions = (list, width) => {
+    const cells = new Map();
+    for (const item of list) {
+      const key = Math.floor(item.x / width) + ',' + Math.floor(item.z / width);
+      if (!cells.has(key)) cells.set(key, []);
+      cells.get(key).push(item);
+    }
+    return cells.values();
+  };
+  const streetInstances = (geo, material, list, shadow = true) => {
+    const cells = list.length < 100 ? [list] : regions(list, 360);
+    for (const cell of cells) inst(geo, material, cell, shadow);
+  };
+  const roofInstances = (name, geo, list, material = tinted, shadow = true) => {
+    tally(name, list.length, trisOf(geo) * list.length);
+    streetInstances(geo, material, list, shadow);
+  };
+
   // --- ground: one big paved slab with a subtle klinker pattern. `cut` leaves a hole wherever there is a canal ---
   const cut = { stencilWrite: true, stencilRef: 1, stencilFunc: THREE.NotEqualStencilFunc };
   const grey = (v) => `rgb(${v | 0},${v | 0},${v | 0})`, hash = (i) => ((Math.imul(i + 7, 2654435761) >>> 9) % 1000) / 1000;
@@ -156,7 +186,7 @@ export function buildWorld(scene, map, drive) {
   const paving = canvasTex(256, 256, (g) => pavers(g, false)), pavingN = reliefTex(256, 256, (g) => pavers(g, true), 1.6);
   const CITY = [-1090, -730, 860, 760]; // the paved slab stops here; beyond it lies the polder
   for (const t of [paving, pavingN]) t.repeat.set((CITY[2] - CITY[0]) / 3.2, (CITY[3] - CITY[1]) / 3.2);
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(CITY[2] - CITY[0], CITY[3] - CITY[1]), mat('#ffffff', { map: paving, normalMap: pavingN, roughness: 0.86, ...cut }));
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(CITY[2] - CITY[0], CITY[3] - CITY[1], 32, 24), mat('#ffffff', { map: paving, normalMap: pavingN, roughness: 0.86, ...cut }));
   ground.rotation.x = -PI / 2; ground.position.set((CITY[0] + CITY[2]) / 2, Y0, (CITY[1] + CITY[3]) / 2); ground.receiveShadow = true; ground.renderOrder = -20; scene.add(ground);
   world.city = CITY; world.cut = cut;
 
@@ -172,10 +202,6 @@ export function buildWorld(scene, map, drive) {
     }
   };
   const ripple = canvasTex(128, 128, (g) => swell(g, false)), rippleN = reliefTex(128, 128, (g) => swell(g, true), 1.4); rippleN.repeat.set(2.3, 2.3);
-  const skyEnv = canvasTex(256, 128, (g) => { // what the water mirrors: the same sky as the dome, with a few clouds in it
-    const sg = g.createLinearGradient(0, 0, 0, 128); [[0, '#0a47b8'], [0.3, '#1670e0'], [0.42, '#3f9cf2'], [0.475, '#8ccafa'], [0.5, '#cfe8fb'], [1, '#6f8fae']].forEach(([t, c]) => sg.addColorStop(t, c)); g.fillStyle = sg; g.fillRect(0, 0, 256, 128);
-    const r = rnd(9); g.fillStyle = 'rgba(255,255,255,.9)'; for (let i = 0; i < 40; i++) { const x = r() * 256, y = 14 + r() * 40, w = 8 + r() * 16; for (const dx of [-256, 0, 256]) { g.beginPath(); g.ellipse(x + dx, y, w, w * 0.32, 0, 0, PI * 2); g.fill(); } }
-  }, false); skyEnv.mapping = THREE.EquirectangularReflectionMapping;
   const quayWall = (g, bump) => { // 2.56 m of quay, street level at the top: a stone coping, brick courses, and the dark band the water leaves
     g.fillStyle = bump ? '#5a5a5a' : '#6d4a3c'; g.fillRect(0, 0, 256, 128);
     for (let y = 18, row = 0; y < 128; y += 7, row++) for (let x = -1; x < 9; x++) { const v = hash(row * 31 + ((x + 9) % 8)); g.fillStyle = bump ? grey(150 + v * 70) : `hsl(${13 + v * 9},${38 + v * 12}%,${40 + v * 11}%)`; g.fillRect(x * 32 + (row % 2) * 16 + 1, y + 1, 30, 5.5); }
@@ -193,14 +219,17 @@ export function buildWorld(scene, map, drive) {
       if (!inPoly(p, mx + nx * 0.25, mz + nz * 0.25)) { nx = -nx; nz = -nz; } // n looks into the canal
       if (wet(mx - nx * 0.25, mz - nz * 0.25)) continue; // open water on both sides: no wall here
       quay.wall(ax, az, bx, bz, -1.3, Y0, [nx, 0, nz], clear, [[run, 0], [run + l / 2.56, 0], [run + l / 2.56, 1], [run, 1]]); run = (run + l / 2.56) % 1; // the stones run on round the corner
-      shade.quad([ax, -1.2, az], [bx, -1.2, bz], [bx + nx * 1.8, -1.2, bz + nz * 1.8], [ax + nx * 1.8, -1.2, az + nz * 1.8], [0, 1, 0], [dusk, dusk, clear, clear]); // the water darkens towards the quay
+      shade.quad([ax, -1.175, az], [bx, -1.175, bz], [bx + nx * 1.8, -1.175, bz + nz * 1.8], [ax + nx * 1.8, -1.175, az + nz * 1.8], [0, 1, 0], [dusk, dusk, clear, clear]); // the water darkens towards the quay
     }
     coping.ribbon([...p, p[0], p[1]], 1.0, Y0, C('#c9c2b4'));
   }
-  const seaMesh = sea.mesh(new THREE.MeshStandardMaterial({ vertexColors: true, map: ripple, normalMap: rippleN, normalScale: new THREE.Vector2(0.32, 0.32), envMap: skyEnv, envMapIntensity: 1.25, roughness: 0.1, metalness: 0.5 }));
-  // multiplied over the water (same plane, pulled forward by the polygon offset); everything solid is drawn after it, so boats and bridges still cover it
-  const shadeMesh = shade.mesh(new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, fog: false, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.DstColorFactor, blendDst: THREE.ZeroFactor, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8 }));
-  seaMesh.renderOrder = -29; shadeMesh.renderOrder = -28; shadeMesh.receiveShadow = false; scene.add(shadeMesh); // straight after the sea, before the ground and all that stands on the water: the offset that lifts the shade off the sea also lifted it onto hulls and posts, and far off onto whole facades
+  const seaMesh = sea.mesh(new THREE.MeshStandardMaterial({ vertexColors: true, map: ripple, normalMap: rippleN, normalScale: new THREE.Vector2(0.25, 0.25), roughness: 0.16, metalness: 0.36 }));
+  const banks = canalReflections(seaMesh.material, CITY);
+  world.canalMaterial = seaMesh.material;
+  world.setBankReflections = banks.setDetail;
+  // Bank shade is drawn before solids, 2.5 cm above the water with no depth write.
+  const shadeMesh = shade.mesh(new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, fog: false, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.DstColorFactor, blendDst: THREE.ZeroFactor }));
+  seaMesh.renderOrder = -29; shadeMesh.renderOrder = -28; shadeMesh.receiveShadow = false; scene.add(shadeMesh);
   // the hole itself: marks every pixel of canal, so the ground and the street layers skip it
   const mask = hole.mesh(new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, depthTest: false, stencilWrite: true, stencilRef: 1, stencilFunc: THREE.AlwaysStencilFunc, stencilZPass: THREE.ReplaceStencilOp }));
   mask.renderOrder = -30; mask.receiveShadow = false;
@@ -545,6 +574,7 @@ export function buildWorld(scene, map, drive) {
     const gf = !church && h >= 5.5 ? 3.3 : 0, plinth = wall.clone().lerp(white, 0.4), foot = dim(wall, 0.72), low = dim(wall, 0.9), pfoot = dim(plinth, 0.72); let inWater = false;
     for (let i = 0; i < n && !inWater; i++) inWater = wet(p[2 * i], p[2 * i + 1]);
     const crown = [], hex = '#' + wall.getHexString(), side = []; // side: which way each wall faces, if it stands free
+    banks.paint(p, h, hex);
     for (let i = 0; i < n; i++) {
       const j = (i + 1) % n, ax = p[2 * i], az = p[2 * i + 1], bx = p[2 * j], bz = p[2 * j + 1], len = hypot(bx - ax, bz - az); if (len < 0.05) { side.push(null); continue; }
       const want = [-(bz - az), 0, bx - ax], plain = len < 1.6 || h < 4, bays = max(1, round(len / 3.2));
@@ -659,12 +689,12 @@ export function buildWorld(scene, map, drive) {
     }
   }
   for (const t of tiles.values()) { for (const k in wallMats) if (t[k].p.length) scene.add(t[k].mesh(wallMats[k], 'cast')); scene.add(t.roofs.mesh(roofMat, 'cast')); if (t.flat.p.length) scene.add(t.flat.mesh(flatMat, 'cast')); if (t.ao.p.length) { const me = t.ao.mesh(aoMat); me.renderOrder = -10; me.receiveShadow = false; scene.add(me); } }
-  inst(Box(1, 1, 1), mat('#ffffff'), relief, false); inst(Box(1, 1, 1), mat('#ffffff'), crowns);
+  streetInstances(Box(1, 1, 1), mat('#ffffff'), relief, false); streetInstances(Box(1, 1, 1), mat('#ffffff'), crowns);
   // The flared sockets and straight zinc tube share one revolved skin.
   const pipeProfile = [[.05,0],[.05,.035],[.039,.053],[.039,.45],[.05,.45],[.05,.47],[.039,.49],[.039,.92],[.05,.92],[.05,1]];
   const pipe = new THREE.LatheGeometry(pipeProfile.map(([r,y]) => new THREE.Vector2(r,y-.5)),8);
-  mine('zinc downpipes', pipe, downpipes, mat('#ffffff',{metalness:.44,roughness:.47}),false);
-  inst(Box(0.3, 0.46, 0.52), mat('#f4ecdb'), blocks);
+  roofInstances('zinc downpipes', pipe, downpipes, mat('#ffffff',{metalness:.44,roughness:.47}),false);
+  streetInstances(Box(0.3, 0.46, 0.52), mat('#f4ecdb'), blocks);
 
   // --- roof life, for the shots from above: brick chimneys, dormers and roof windows on the pitched roofs; vents, skylights and a roof terrace here and
   // there on the flat ones. Only where a camera comes (along the route and round the landmarks); everything further off keeps a plain chimney ---
@@ -728,9 +758,9 @@ export function buildWorld(scene, map, drive) {
       g.fillStyle='#cfbda8'; g.fillRect(64,0,64,128);
       g.fillStyle='#332b29'; g.fillRect(73,16,46,96);
     },false);
-    inst(stack,mat('#8f4a36',{map:stackTile}),plain);
-    mine('ridge tiles',prof(1,[[-.17,-.08],[-.135,.006],[-.074,.065],[0,.08],[.074,.065],[.135,.006],[.17,-.08]]),caps,mat('#ffffff'));
-    for (const [name, geo, list] of [['chimneys', LM.chimneyGeo('tint'), cT], ['chimneys', LM.chimneyGeo('rest'), cR], ['dormers', LM.dormerGeo('tint'), dT], ['dormers', LM.dormerGeo('rest'), dR], ['roof windows', LM.skylightGeo(), sky.filter((_, i) => i % 5 < 2)], ['roof vents', LM.ventGeo(), vents.filter((_, i) => i % 3 < 1)], ['roof terraces', LM.roofTerraceGeo(), terr]]) mine(name, geo, list);
+    streetInstances(stack,mat('#8f4a36',{map:stackTile}),plain);
+    roofInstances('ridge tiles',prof(1,[[-.17,-.08],[-.135,.006],[-.074,.065],[0,.08],[.074,.065],[.135,.006],[.17,-.08]]),caps,mat('#ffffff'));
+    for (const [name, geo, list] of [['chimneys', LM.chimneyGeo('tint'), cT], ['chimneys', LM.chimneyGeo('rest'), cR], ['dormers', LM.dormerGeo('tint'), dT], ['dormers', LM.dormerGeo('rest'), dR], ['roof windows', LM.skylightGeo(), sky.filter((_, i) => i % 5 < 2)], ['roof vents', LM.ventGeo(), vents.filter((_, i) => i % 3 < 1)], ['roof terraces', LM.roofTerraceGeo(), terr]]) roofInstances(name, geo, list);
   }
 
   // --- clouds: flat-bottomed cumulus heaped up in the middle and lit from the sun's side; far banks of them stand along the horizon ---
@@ -754,15 +784,20 @@ export function buildWorld(scene, map, drive) {
     if (flat) for (let k = 0; k < p.count; k++) if (p.getY(k) < -0.3) { p.setY(k, -0.3); nn.setXYZ(k, 0, -1, 0); }
     return g;
   };
-  world.sun = [-105, 118, 96]; // where the sun stands: a morning sun, low enough for long shadows down the streets
+  world.sun = sunOffset; // where the sun stands: a morning sun, low enough for long shadows down the streets
   const cloudMat = new THREE.ShaderMaterial({ // three painted tones by how much a face looks at the sun, a shaded underside, and haze with distance
     uniforms: { sun: { value: new THREE.Vector3(...world.sun).normalize() }, lit: { value: C('#fffaf0') }, mid: { value: C('#e6ecf8') }, dark: { value: C('#a4b7dc') }, haze: { value: C('#cfe8fb') } },
     vertexShader: 'varying vec3 vN; varying vec3 vP; void main() { mat3 m = mat3( instanceMatrix ); vec4 w = modelMatrix * instanceMatrix * vec4( position, 1.0 ); vP = w.xyz; vN = m * ( normal / vec3( dot( m[0], m[0] ), dot( m[1], m[1] ), dot( m[2], m[2] ) ) ); gl_Position = projectionMatrix * viewMatrix * w; }',
     fragmentShader: `uniform vec3 sun, lit, mid, dark, haze; varying vec3 vN; varying vec3 vP;
       void main() {
         vec3 n = normalize( vN ); float d = dot( n, sun ) * 0.5 + 0.5;
-        vec3 c = mix( dark, mid, smoothstep( 0.2, 0.55, d ) ); c = mix( c, lit, smoothstep( 0.55, 0.95, d ) );
+        // Broad, soft lobes and a warm sunward edge retain the chunky cloud silhouette.
+        float eddy = 0.025 * sin(vP.x * 0.12 + sin(vP.z * 0.16)) + 0.016 * sin(vP.y * 0.25 + vP.z * 0.09);
+        d += eddy;
+        vec3 c = mix( dark, mid, smoothstep( 0.12, 0.60, d ) ); c = mix( c, lit, smoothstep( 0.55, 0.95, d ) );
         c = mix( dark * 0.93, c, smoothstep( 0.02, 0.4, n.y * 0.5 + 0.5 ) );
+        float rim = pow(1.0 - abs(dot(n, normalize(cameraPosition-vP))), 3.0);
+        c += lit * rim * 0.105 * smoothstep(0.48,0.88,d);
         c = mix( c, haze, 0.8 * smoothstep( 1100.0, 5200.0, distance( vP, cameraPosition ) ) );
         gl_FragColor = vec4( c, 1.0 );
         #include <tonemapping_fragment>
@@ -770,7 +805,11 @@ export function buildWorld(scene, map, drive) {
       }`,
   });
   const clouds = new THREE.Group(); scene.add(clouds);
-  for (const [geo, list] of [[ball(true), puff], [ball(false), heap]]) { const im = inst(geo, cloudMat, list, false); im.receiveShadow = false; im.frustumCulled = false; clouds.add(im); }
+  for (const [geo, list] of [[ball(true), puff], [ball(false), heap]]) {
+    for (const bank of regions(list, 850)) {
+      const im = inst(geo, cloudMat, bank, false); im.receiveShadow = false; clouds.add(im);
+    }
+  }
 
   // --- landmarks ---
   const box = (w, h, d, color, x = 0, y = 0, z = 0, o) => { const me = new THREE.Mesh(Box(w, h, d), mat(color, o)); me.position.set(x, y, z); me.castShadow = me.receiveShadow = true; return me; };
@@ -1023,8 +1062,17 @@ export function buildWorld(scene, map, drive) {
       const fits = (sc) => { const r = 2.5 * sc; for (let k = 0; k < 12; k++) if (hitB(x + cos((k * PI) / 6) * r, z + sin((k * PI) / 6) * r)) return false; return !tall.some((o) => hypot(o.x - x, o.z - z) < r + o.r); };
       const sc = [0.8 + R() * 0.6, 0.62, 0.44].find(fits); if (sc) trees.push({ x, z, s: sc, k: R(), c: ['#58b84a', '#6cc74f', '#3fa348', '#84cf52'][i % 4] });
     }
-    inst(Cyl(0.22, 0.3, 3.2, 6), mat('#7a5236'), trees.map((t) => ({ x: t.x, y: 1.6, z: t.z, sx: t.s, sy: 1, sz: t.s })));
-    const leaf = mat('#ffffff', { flatShading: true }), blob = (r, off, turn, up) => inst(Ico(r, 1), leaf, trees.map((t) => ({ x: t.x + cos(t.k * 9 + turn) * off * t.s, y: BASE + up(t) * t.s, z: t.z + sin(t.k * 9 + turn) * off * t.s, sx: t.s, sy: t.s * (off ? 1 : 0.9 + t.k * 0.3), sz: t.s, c: t.c })));
+    streetInstances(Cyl(0.22, 0.3, 3.2, 6), mat('#7a5236'), trees.map((t) => ({ x: t.x, y: 1.6, z: t.z, sx: t.s, sy: 1, sz: t.s })));
+    const leaf = mat('#ffffff', { flatShading: true, vertexColors: true, roughness: 0.9 });
+    const crownGeo = (r) => {
+      const g = Ico(r, 1), p = g.attributes.position, colors = [];
+      for (let i = 0; i < p.count; i += 3) {
+        const v = 0.86 + 0.12 * (p.getY(i) / r) + 0.11 * hash(i);
+        for (let k = 0; k < 3; k++) colors.push(v * 1.02, v, v * 0.91);
+      }
+      g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3)); return g;
+    };
+    const blob = (r, off, turn, up) => streetInstances(crownGeo(r), leaf, trees.map((t) => ({ x: t.x + cos(t.k * 9 + turn) * off * t.s, y: BASE + up(t) * t.s, z: t.z + sin(t.k * 9 + turn) * off * t.s, sx: t.s, sy: t.s * (off ? 1 : 0.9 + t.k * 0.3), sz: t.s, c: t.c })));
     blob(1.9, 0, 0, (t) => 1.9 * (0.9 + t.k * 0.3)); blob(1.25, 1.1, 0, (t) => 2.6 + t.k * 0.5); blob(1.05, 1.2, 2.6, (t) => 1.7 + t.k * 0.4);
   }
 

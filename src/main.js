@@ -7,6 +7,7 @@ import { buildStunts } from './stunts.js';
 import { makeAudio } from './audio.js';
 import { buildSnelweg } from './snelweg.js';
 import { buildPolder } from './polder.js';
+import { daylight } from './atmosphere.js';
 
 const { PI, sin, cos, atan, tan } = Math, $ = (id) => document.getElementById(id);
 const ramp = (t, a, b) => smooth((t - a) / (b - a));
@@ -20,14 +21,11 @@ const A9 = { s: m.annabrug + 32, t: 0 }, hw = {}; // the film cuts away to the m
 const renderer = new THREE.WebGLRenderer({ canvas: $('view'), antialias: true, stencil: true }); // stencil: the canals are cut out of the ground with it
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5)); renderer.shadowMap.enabled = true; renderer.toneMapping = THREE.NeutralToneMapping;
 const scene = new THREE.Scene();
-// the sky is a dome round the camera, so it turns with the view: deep blue overhead, pale only right at the horizon
-const sky = new THREE.Mesh(new THREE.SphereGeometry(6200, 24, 24), new THREE.MeshBasicMaterial({ side: THREE.BackSide, fog: false, depthWrite: false, map: canvasTex(4, 512, (g) => {
-  const s = g.createLinearGradient(0, 0, 0, 512); [[0, '#0a47b8'], [0.3, '#1670e0'], [0.42, '#3f9cf2'], [0.475, '#8ccafa'], [0.5, '#cfe8fb'], [1, '#cfe8fb']].forEach(([t, c]) => s.addColorStop(t, c)); g.fillStyle = s; g.fillRect(0, 0, 4, 512);
-}, false) }));
-sky.renderOrder = -1; sky.frustumCulled = false; sky.onBeforeRender = (r, sc, c) => { sky.position.copy(c.position); sky.updateMatrixWorld(); }; scene.add(sky);
+const morning = daylight();
+scene.background = morning.sky;
 scene.fog = new THREE.Fog('#cfe8fb', 260, 5600); // thin haze: the polder and the horizon stay in view from the rooftops
-scene.add(new THREE.HemisphereLight('#dcecff', '#b98f66', 1.25)); // less fill than sun, so shapes keep a lit and a shaded side
-const sun = new THREE.DirectionalLight('#ffedc4', 3.1); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.06;
+scene.add(new THREE.HemisphereLight('#e2efff', '#bf9776', 1.36)); // less fill than sun, so shapes keep a lit and a shaded side
+const sun = new THREE.DirectionalLight('#fff1d7', 3.05); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.radius = 2.1; sun.shadow.bias = -0.00045; sun.shadow.normalBias = 0.06;
 Object.assign(sun.shadow.camera, { left: -80, right: 80, top: 80, bottom: -80, near: 10, far: 460 }); scene.add(sun, sun.target);
 const cam = new THREE.PerspectiveCamera(55, 1, 0.45, 7000);
 const world = buildWorld(scene, map, drive), cast = buildCast(scene, world, drive), stunts = buildStunts(scene, world, drive), snel = buildSnelweg(scene), polder = buildPolder(scene, { rect: world.city });
@@ -41,6 +39,17 @@ const world = buildWorld(scene, map, drive), cast = buildCast(scene, world, driv
   const g = new THREE.Group(), pole = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 3.2, 10), edge); board.position.y = 2.6; pole.position.set(0, 1.6, -0.09);
   g.add(board, pole); g.position.set(w.x, GROUND, w.z); const hd = drive.place(w.s, 0).h; g.rotation.y = Math.atan2(-cos(hd), -sin(hd)); board.castShadow = pole.castShadow = true; scene.add(g); // it faces the traffic coming off the bridge
 }
+
+// Only glossy finishes need the extra sky lookup. Three shares one prefiltered probe between them.
+scene.traverse((object) => {
+  if (!object.isMesh) return;
+  for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+    if (material.isMeshStandardMaterial && (material.roughness <= 0.5 || material.metalness > 0.1)) {
+      material.envMap = morning.reflection;
+      material.envMapIntensity = material === world.canalMaterial ? 1.0 : 0.58;
+    }
+  }
+});
 
 // ---- camera work ----
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -351,12 +360,24 @@ function step(dt) {
 
 const resize = () => { renderer.setSize(innerWidth, innerHeight, false); cam.aspect = innerWidth / innerHeight; };
 addEventListener('resize', resize); resize();
-let last = performance.now(), slow = 0, tier = 0; // ponytail: a phone that cannot hold 24 frames a second gets a softer picture, then no cast shadows; it never steps back up
-renderer.setAnimationLoop((t) => { const raw = (t - last) / 1000, dt = clamp(raw, 0, 0.1); last = t; slow = raw > 1 / 24 && raw < 0.25 ? slow + 1 : 0; /* slower than 4 a second is a tab in the background, not a slow phone */ if (slow > 60 && tier < 2) { slow = 0; if (tier++) sun.castShadow = false; else renderer.setPixelRatio(1); } if (!window.exam.hold) step(dt); renderer.render(scene, cam); });
+let last = performance.now(), slow = 0, tier = 0;
+document.addEventListener('visibilitychange', () => { slow = 0; });
+renderer.setAnimationLoop((t) => {
+  const raw = (t - last) / 1000, dt = clamp(raw, 0, 0.1); last = t;
+  slow = !document.hidden && raw > 1 / 24 ? slow + 1 : 0;
+  if (slow > 60 && tier < 3) {
+    slow = 0; tier++;
+    if (tier === 1) world.setBankReflections(false);
+    else if (tier === 2) renderer.setPixelRatio(1);
+    else sun.castShadow = false;
+  }
+  if (!window.exam.hold) step(dt);
+  renderer.render(scene, cam);
+});
 
 const go = async () => { $('go').disabled = true; try { await audio.start(); } catch (e) { console.warn('continuing without sound', e); } begin(); };
 $('go').textContent = 'Start het examen'; $('go').disabled = false; $('go').onclick = go; $('again').onclick = begin;
 
 // Camera check, the partner of tools/check.mjs: plays the whole film without drawing it and counts the frames where
 // the camera is inside a building or cannot see the car. Run exam.audit() in the browser console; {} means clean.
-window.exam = { hold: false, dbg: { world, drive, cam, SHOTS, snel, polder, A9, audio, tooClose, hidden, P, cast, stunts, carPt, get st() { return st; } }, ff(secs) { for (let i = 0; i < secs * 30; i++) step(1 / 30); renderer.render(scene, cam); return `${phase} T=${T.toFixed(1)} s=${st.s.toFixed(0)} shot=${shotKey}`; }, audit() { begin(); const bad = {}; this.where = {}; /* exam.where: the first spot each problem was seen */ for (let i = 0; i < 9000 && $('end').hidden; i++) { const ph = phase; step(1 / 30); const k = `${phase} ${shotKey}`; if (tooClose(cam.position)) { bad[k + ' inside'] = (bad[k + ' inside'] || 0) + 1; this.where[k] ??= [cam.position.x, cam.position.y, cam.position.z, st.s, fly?.t].map((v) => +(v ?? -1).toFixed(2)); } else if (phase !== 'intro' && ph === phase /* on a cut the picture is still the old scene */ && shotKey !== 'fly' && hidden(cam.position, carPt(st, 0, 1, 0))) bad[k + ' blocked'] = (bad[k + ' blocked'] || 0) + 1; for (const h of cast.poke()) bad[`${phase} clipboard in ${h}`] = (bad[`${phase} clipboard in ${h}`] || 0) + 1; } return bad; } };
+window.exam = { hold: false, dbg: { world, renderer, get qualityTier() { return tier; }, drive, cam, SHOTS, snel, polder, A9, audio, tooClose, hidden, P, cast, stunts, carPt, get st() { return st; } }, ff(secs) { for (let i = 0; i < secs * 30; i++) step(1 / 30); renderer.render(scene, cam); return `${phase} T=${T.toFixed(1)} s=${st.s.toFixed(0)} shot=${shotKey}`; }, audit() { begin(); const bad = {}; this.where = {}; /* exam.where: the first spot each problem was seen */ for (let i = 0; i < 9000 && $('end').hidden; i++) { const ph = phase; step(1 / 30); const k = `${phase} ${shotKey}`; if (tooClose(cam.position)) { bad[k + ' inside'] = (bad[k + ' inside'] || 0) + 1; this.where[k] ??= [cam.position.x, cam.position.y, cam.position.z, st.s, fly?.t].map((v) => +(v ?? -1).toFixed(2)); } else if (phase !== 'intro' && ph === phase /* on a cut the picture is still the old scene */ && shotKey !== 'fly' && hidden(cam.position, carPt(st, 0, 1, 0))) bad[k + ' blocked'] = (bad[k + ' blocked'] || 0) + 1; for (const h of cast.poke()) bad[`${phase} clipboard in ${h}`] = (bad[`${phase} clipboard in ${h}`] || 0) + 1; } return bad; } };
