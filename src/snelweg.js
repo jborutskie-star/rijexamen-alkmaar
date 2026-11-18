@@ -502,6 +502,23 @@ function makeAtlas() {
   return { tex, uv };
 }
 
+// The motorway stunt follows an authored path. Keep the ordinary asphalt
+// shader on the opposite carriageway and other pavement the tyres never mark.
+function motorwaySkidZones(plan) {
+  const zones = [], state = {};
+  let run;
+  for (let i=0; i<=Math.ceil(plan.duration*60); i++) {
+    plan.state(i/60, state);
+    if (state.air || state.slide < .18) { run = null; continue; }
+    // Covers both rear wheels, the rubber strip and the motion between samples.
+    const x=state.x, z=state.z, margin=4;
+    if (!run) { run=[x-margin,z-margin,x+margin,z+margin]; zones.push(run); }
+    run[0]=Math.min(run[0],x-margin); run[1]=Math.min(run[1],z-margin);
+    run[2]=Math.max(run[2],x+margin); run[3]=Math.max(run[3],z+margin);
+  }
+  return zones;
+}
+
 // flat pieces of ground that never overlap in plan, so nothing can flicker: trapezoids between two x and two z (z measured from the centre line)
 class Flat {
   constructor() { this.p = []; this.u = []; this.c = []; this.k = new THREE.Color(); }
@@ -519,9 +536,28 @@ class Flat {
       }
     }
   }
-  mesh(material) {
+  mesh(material, rubber, zones) {
     const g = new THREE.BufferGeometry(), n = new Float32Array(this.p.length); for (let i = 1; i < n.length; i += 3) n[i] = 1;
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.p, 3)); g.setAttribute('normal', new THREE.BufferAttribute(n, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(this.c, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(this.u, 2));
+    if (rubber) {
+      const plain=[], ink=[];
+      for (let i=0; i<this.p.length; i+=18) {
+        const x0=this.p[i], x1=this.p[i+6];
+        const z0=Math.min(this.p[i+2],this.p[i+5],this.p[i+8],this.p[i+17]);
+        const z1=Math.max(this.p[i+2],this.p[i+5],this.p[i+8],this.p[i+17]);
+        const canMark=zones.some(([a,b,c,d])=>x1>=a && x0<=c && z1>=b && z0<=d);
+        const indices=canMark?ink:plain, first=i/3;
+        for (let k=0;k<6;k++) indices.push(first+k);
+      }
+      if (ink.length) {
+        const marked = rubber.surface(material.clone());
+        if (plain.length) {
+          g.setIndex(plain.concat(ink));
+          g.addGroup(0,plain.length,0); g.addGroup(plain.length,ink.length,1);
+          material = [material, marked];
+        } else material = marked;
+      }
+    }
     const m = new THREE.Mesh(g, material); m.receiveShadow = true; return m;
   }
 }
@@ -586,9 +622,10 @@ export function buildSnelweg(scene, rubber) {
     verge.quad(a, b, 0.79, 1.5, 0.79, 1.5, '#95935e'); }
   const grass = canvasTex(128, 128, (g, w, h) => { g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); const r = rnd(4); for (let i = 0; i < 900; i++) { g.fillStyle = r() < 0.5 ? `rgba(20,70,10,${0.05 + r() * 0.12})` : `rgba(255,255,200,${0.05 + r() * 0.1})`; g.fillRect(r() * w, r() * h, 2 + r() * 3, 2 + r() * 5); } });
   const rampTex = canvasTex(64, 128, (g, w, h) => { g.fillStyle = '#474a51'; g.fillRect(0, 0, w, h); grain(g, w, h, 700, 9); asphaltGrain(g, w, h, 4); g.fillStyle = '#f4f3ea'; g.fillRect(0, 7, w, 4); g.fillRect(0, h - 11, w, 4); });
+  const skidZones=motorwaySkidZones(plan);
   [[roadA, asphalt(EDGE - 1.5, false)], [roadB, asphalt(WIDE - 1.5, true)], [roadC, rampTex], [verge, grass]].forEach(([f, map], i) => {
     const road = mat('#ffffff', { map, bumpMap: map, bumpScale: 0.023, roughness: 0.89, vertexColors: i === 3 });
-    still.add(f.mesh(i < 3 ? rubber.surface(road) : road));
+    still.add(f.mesh(road, i < 3 ? rubber : null, skidZones));
   });
 
   // ---- everything that stands still ----
