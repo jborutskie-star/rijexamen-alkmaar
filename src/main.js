@@ -13,6 +13,11 @@ import { daylight } from './atmosphere.js';
 
 const { PI, sin, cos, atan, tan } = Math, $ = (id) => document.getElementById(id);
 const ramp = (t, a, b) => smooth((t - a) / (b - a));
+const compactLayout = document.createElement('link');
+compactLayout.rel = 'stylesheet';
+compactLayout.href = new URL('./short-landscape.css', import.meta.url).href;
+compactLayout.media = '(orientation: landscape) and (max-height: 440px)';
+document.head.append(compactLayout);
 const audio = makeAudio();
 const [map, route] = await Promise.all(['data/alkmaar.json', 'data/route.json'].map((f) => fetch(f).then((r) => r.json())));
 await Promise.race([Promise.all(['400 40px "Lilita One"', '600 16px Rubik', '700 16px Caveat'].map((f) => document.fonts.load(f))), new Promise((r) => setTimeout(r, 3000))]);
@@ -198,7 +203,7 @@ function film(key, shot, dt) {
   shake = Math.max(0, shake - dt * 2.2);
   cam.position.copy(eye); if (shake > 0) { cam.position.x += sin(now * 53) * shake * 0.16; cam.position.y += sin(now * 67 + 1.3) * shake * 0.16; } // a rumble, not a rattle
   cam.lookAt(look);
-  const aspect = innerWidth / innerHeight; // on a tall phone, widen the view so the action still fits
+  const aspect = cam.aspect; // on a tall phone, widen the view so the action still fits
   cam.fov = aspect >= 1.4 ? fovNow : clamp((2 * atan((tan((fovNow * PI) / 360) * 1.4) / aspect) * 180) / PI, fovNow, 100);
   cam.updateProjectionMatrix();
   sun.target.position.copy(look); sun.position.copy(look).add(V(...world.sun));
@@ -362,8 +367,16 @@ function step(dt) {
 }
 
 cullInstances(scene, sun, cast.watchersInView);
-const resize = () => { renderer.setSize(innerWidth, innerHeight, false); cam.aspect = innerWidth / innerHeight; };
-addEventListener('resize', resize); resize();
+// Safari may finish laying out its controls after the window's rotation event.
+// Match the actual canvas box for both the drawing buffer and the lens.
+const resize = ({width, height}) => {
+  if (!width || !height) return;
+  renderer.setSize(width, height, false);
+  cam.aspect = width / height;
+  cam.updateProjectionMatrix();
+};
+resize(renderer.domElement.getBoundingClientRect());
+new ResizeObserver(([entry]) => resize(entry.contentRect)).observe(renderer.domElement);
 let last = performance.now(), slow = 0, tier = 0;
 document.addEventListener('visibilitychange', () => { slow = 0; });
 renderer.setAnimationLoop((t) => {
