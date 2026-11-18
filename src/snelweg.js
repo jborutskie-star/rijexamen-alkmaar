@@ -414,6 +414,20 @@ function makeAtlas() {
     g.fillStyle = '#6b787e'; g.fillRect(0, 0, w, h); g.fillStyle = '#24333d'; g.fillRect(3, 3, w - 6, h - 6);
     g.fillStyle = '#a1b0b6'; for (let y = 8; y < h - 5; y += 8) g.fillRect(8, y, w - 16, 2);
   });
+  put('headlight', 88, 42, (g, w, h) => {
+    g.fillStyle = '#333f47'; g.fillRect(0, 0, w, h); g.fillStyle = '#a9b5b8'; g.fillRect(3, 3, w - 6, h - 6);
+    for (const x of [24, 54]) {
+      const r = g.createRadialGradient(x - 3, 18, 2, x, 21, 15); r.addColorStop(0, '#fffce7'); r.addColorStop(0.42, '#d9dccb');
+      r.addColorStop(0.74, '#79848a'); r.addColorStop(1, '#ede4c7');
+      g.fillStyle = r; g.beginPath(); g.arc(x, 21, 15, 0, 2 * PI); g.fill();
+    }
+    g.fillStyle = '#eeb246'; g.fillRect(w - 13, 6, 8, h - 12);
+  });
+  put('rearLamp', 96, 40, (g, w, h) => {
+    g.fillStyle = '#593644'; g.fillRect(0, 0, w, h); g.fillStyle = '#d64e46'; g.fillRect(4, 4, 57, h - 8);
+    g.fillStyle = '#ef9540'; g.fillRect(65, 4, 27, 14); g.fillStyle = '#c8d3d4'; g.fillRect(65, 22, 27, 13);
+    g.fillStyle = 'rgba(255,247,235,.26)'; for (let x = 6; x < 94; x += 7) g.fillRect(x, 5, 2, h - 10);
+  });
   put('hub', 64, 64, (g) => {
     g.translate(32, 32);
     const ring = (r, c) => { g.fillStyle = c; g.beginPath(); g.arc(0, 0, r, 0, PI * 2); g.fill(); };
@@ -580,21 +594,64 @@ export function buildSnelweg(scene) {
 
   // ---- the vehicles: each kind is one geometry ----
   const tyre = '#1b1c20', dark = '#2c3038';
+  const rod = (k, a, b, radius, color, sides = 6) => {
+    const start = new THREE.Vector3(...a), delta = new THREE.Vector3(...b).sub(start), midpoint = start.addScaledVector(delta, 0.5);
+    const g = cyl(radius, radius, delta.length(), sides);
+    g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), delta.normalize()));
+    k.part(g, color, ...midpoint.toArray()); return k;
+  };
   const truck = (cab, body, sign) => { const k = kit(uv);
     k.part(box(16.2, 0.36, 2.2), dark, -0.1, 0.82, 0).part(rb(2.5, 2.95, 2.5, 0.4), cab, 7.0, 0.6, 0).part(box(0.06, 1.0, 2.1), '#ffffff', 8.26, 2.55, 0, 'glass').part(box(1.1, 0.8, 2.56), '#ffffff', 7.35, 2.6, 0, 'glass').part(box(0.06, 0.7, 1.7), '#ffffff', 8.26, 1.4, 0, 'grille').part(box(0.34, 0.36, 2.54), '#d9dde0', 8.14, 0.62, 0);
-    for (const z of [-0.95, 0.95]) k.part(box(0.06, 0.2, 0.34), '#fff3b8', 8.27, 0.98, z).part(box(0.06, 0.24, 0.3), '#e02630', -8.23, 1.22, z);
-    k.part(rb(13.7, 3.0, 2.56, 0.22), body, -1.35, 1.0, 0).part(box(13.0, 0.2, 2.4), dark, -1.35, 0.98, 0).both(sign, 11.2, sign === 'transport' ? 2.8 : 2.6, -1.35, 2.5, 1.31).decal(sign, 10, sign === 'transport' ? 2.4 : 2.3, -1.35, 4.03, 0, 'y+').decal('plate', 0.6, 0.15, -8.24, 0.8, 0, 'x-');
+    for (const z of [-0.95, 0.95]) k.part(box(0.06, 0.2, 0.34), '#ffffff', 8.27, 0.98, z, 'headlight').part(box(0.06, 0.24, 0.3), '#ffffff', -8.23, 1.22, z, 'rearLamp');
+    k.part(rb(13.7, 3.0, 2.44, 0.22), body, -1.35, 1.0, 0).part(box(13.0, 0.2, 2.4), dark, -1.35, 0.98, 0).both(sign, 11.2, sign === 'transport' ? 2.8 : 2.6, -1.35, 2.5, 1.31).decal(sign, 10, sign === 'transport' ? 2.4 : 2.3, -1.35, 4.03, 0, 'y+').decal('plate', 0.6, 0.15, -8.24, 0.8, 0, 'x-');
+    // The trailer is framed by corner posts and an underrun guard. They fit inside the previous body and axle extents.
+    for (const side of [-1, 1]) {
+      for (const x of [-8.03, 5.31]) k.part(box(0.18, 2.68, 0.10), '#a6b0ae', x, 2.48, side * 1.23);
+      for (const y of [0.48, 0.83]) k.part(box(5.9, 0.13, 0.12), '#b6bebd', -0.55, y, side * 1.14);
+      for (const x of [-3.12, 1.98]) k.part(box(0.13, 0.64, 0.12), '#647077', x, 0.76, side * 1.07);
+      k.part(box(1.02, 0.16, 0.32), '#64757b', 6.63, 0.64, side * 1.08);
+    }
+    k.part(box(0.07, 0.95, 0.07), '#71858e', 8.255, 2.55, 0);
     if (sign === 'kaas') k.decal('kaasrek', 2.4, 2.5, -8.212, 2.65, 0, 'x-'); // behind her rear doors
     return k.geo(); };
-  const carParts = (k, x, body) => { k.part(rb(4.2, 0.85, 1.8, 0.28), body, x, 0.3, 0).part(rb(2.4, 0.6, 1.62, 0.26), body, x - 0.3, 0.9, 0).part(box(2.0, 0.34, 1.68), '#ffffff', x - 0.3, 1.2, 0, 'glass').part(box(2.46, 0.3, 1.3), '#ffffff', x - 0.3, 1.2, 0, 'glass');
-    for (const z of [-0.6, 0.6]) k.part(box(0.06, 0.16, 0.34), '#fff3b8', x + 2.1, 0.78, z).part(box(0.06, 0.14, 0.34), '#e02630', x - 2.1, 0.8, z); return k.decal('plate', 0.52, 0.13, x - 2.115, 0.52, 0, 'x-'); };
+  // A pressed body with real wheel wells and a tapered glazed cabin. The revised model shares
+  // the previous axles, overall height, bumpers and A9 audit envelope.
+  const carParts = (k, x, body) => {
+    const shell = new THREE.Shape(); shell.moveTo(-2.055, 0.38);
+    for (const axle of [-1.3, 1.3]) { shell.lineTo(axle - 0.405, 0.38); shell.absarc(axle, 0.38, 0.405, PI, 0, true); }
+    shell.lineTo(2.055, 0.38); shell.lineTo(2.055, 0.76); shell.lineTo(1.83, 0.95);
+    shell.lineTo(0.87, 1.04); shell.lineTo(-1.52, 1.04); shell.lineTo(-2.055, 0.86); shell.closePath();
+    const pressed = new THREE.ExtrudeGeometry(shell, { depth: 1.72, bevelThickness: 0.04, bevelSize: 0.04, bevelSegments: 1, curveSegments: 6 }).translate(0, 0, -0.86);
+    k.part(pressed, body, x, 0, 0);
+    const lower = [[-1.53, 1.02, -0.83], [0.91, 1.02, -0.83], [0.91, 1.02, 0.83], [-1.53, 1.02, 0.83]];
+    const upper = [[-1.18, 1.46, -0.70], [0.44, 1.46, -0.70], [0.44, 1.46, 0.70], [-1.18, 1.46, 0.70]];
+    for (let i = 0; i < 4; i++) {
+      const j = (i + 1) % 4, corners = [lower[i], upper[i], upper[j], lower[j]], cab = new THREE.BufferGeometry();
+      cab.setAttribute('position', new THREE.Float32BufferAttribute(corners.flat(), 3));
+      cab.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 0, 1, 1, 1, 1, 0], 2));
+      cab.setIndex([0, 1, 2, 2, 3, 0]); cab.computeVertexNormals(); k.part(cab, '#ffffff', x, 0, 0, 'glass');
+      rod(k, [x + lower[i][0], lower[i][1], lower[i][2]], [x + upper[i][0], upper[i][1], upper[i][2]], 0.032, body);
+    }
+    k.part(rb(1.7, 0.08, 1.45, 0.12, 0.018), body, x - 0.37, 1.42, 0);
+    for (const side of [-1, 1]) {
+      rod(k, [x - 0.45, 1.04, side * 0.828], [x - 0.45, 1.443, side * 0.715], 0.031, '#26343c');
+      k.part(box(0.2, 0.05, 0.06), '#afb8b7', x - 0.52, 0.93, side * 0.87);
+      k.part(box(0.25, 0.11, 0.13), body, x + 0.59, 1.08, side * 0.82);
+      k.part(box(0.13, 0.15, 0.38), '#ffffff', x + 2.045, 0.77, side * 0.56, 'headlight');
+      k.part(box(0.14, 0.15, 0.35), '#ffffff', x - 2.04, 0.78, side * 0.59, 'rearLamp');
+    }
+    k.part(box(0.12, 0.12, 1.59), '#43535c', x + 2.04, 0.48, 0).part(box(0.14, 0.16, 1.62), '#44505b', x - 2.03, 0.45, 0);
+    k.part(box(0.09, 0.20, 0.69), '#ffffff', x + 2.075, 0.70, 0, 'grille');
+    return k.decal('plate', 0.52, 0.13, x - 2.115, 0.52, 0, 'x-');
+  };
   const bike = (k, x, c) => { const wheel = () => new THREE.TorusGeometry(0.33, 0.04, 5, 12).rotateY(PI / 2); k.part(wheel(), tyre, x, 1.45, -0.52).part(wheel(), tyre, x, 1.45, 0.52).part(box(0.05, 0.06, 1.0), c, x, 1.62, 0).part(box(0.05, 0.5, 0.06), c, x, 1.72, -0.18).part(box(0.05, 0.42, 0.06), c, x, 1.68, 0.4).part(box(0.1, 0.06, 0.26), tyre, x, 1.98, -0.18).part(box(0.4, 0.05, 0.05), tyre, x, 1.9, 0.4); };
   const GEO = {
     truck: truck('#f2f2ee', '#f6f6f2', 'transport'), kaas: truck('#d3202c', '#ffd43a', 'kaas'), tulp: truck('#2f9a4a', '#ff7fb2', 'tulp'),
     car: carParts(kit(uv), 0, '#f4f4f0').geo(),
     caravan: (() => { const k = carParts(kit(uv), 3.7, '#f4f4f0'); k.part(box(1.5, 0.1, 0.12), dark, 0.9, 0.55, 0).part(rb(7.2, 2.3, 2.24, 0.55), '#fbf8ee', -2.1, 0.5, 0).part(box(6.3, 0.2, 2.3), '#ff7a1a', -2.1, 1.25, 0).part(box(6.3, 0.08, 2.3), '#19a0c9', -2.1, 1.05, 0).part(box(1.4, 0.6, 2.3), '#ffffff', -0.6, 1.95, 0, 'glass').part(box(1.2, 0.6, 2.3), '#ffffff', -3.6, 1.95, 0, 'glass').part(box(0.5, 0.08, 1.5), dark, -5.95, 1.05, 0).part(box(0.06, 0.9, 0.06), dark, -5.76, 1.5, -0.3).part(box(0.06, 0.9, 0.06), dark, -5.76, 1.5, 0.3); bike(k, -5.95, '#e02630'); bike(k, -6.25, '#19a0c9'); return k.decal('plate', 0.52, 0.13, -5.72, 0.75, 0.6, 'x-').geo(); })(),
     bus: (() => { const k = kit(uv); k.part(rb(12.6, 3.15, 2.56, 0.55), '#fdfdf8', 0, 0.4, 0).part(box(11.0, 0.95, 2.62), '#ffffff', -0.2, 2.6, 0, 'coachGlass').part(box(0.06, 1.5, 2.2), '#ffffff', 6.3, 2.3, 0, 'glass').part(box(11.6, 0.2, 2.62), '#19a0c9', 0, 0.75, 0).both('bus', 7.5, 1.44, -0.2, 1.48, 1.34).decal('plate', 0.6, 0.15, -6.33, 0.9, 0, 'x-');
-      for (const z of [-0.95, 0.95]) k.part(box(0.06, 0.2, 0.36), '#fff3b8', 6.3, 0.95, z).part(box(0.06, 0.3, 0.24), '#e02630', -6.3, 1.3, z); return k.geo(); })(),
+      for (const x of [-4.5, -2.1, 0.3, 2.7, 4.65]) for (const side of [-1, 1]) k.part(box(0.045, 0.32, 0.07), '#b4c1bd', x, 0.99, side * 1.25);
+      for (const z of [-0.95, 0.95]) k.part(box(0.06, 0.2, 0.36), '#ffffff', 6.3, 0.95, z, 'headlight').part(box(0.06, 0.3, 0.24), '#e02630', -6.3, 1.3, z); return k.geo(); })(),
     tractor: (() => { const k = kit(uv), green = '#3d9a3a'; k.part(box(3.7, 0.5, 0.7), dark, 0.2, 0.85, 0).part(rb(2.1, 0.9, 0.92, 0.25), green, 1.2, 1.0, 0).part(rb(1.6, 1.62, 1.5, 0.3), green, -0.75, 1.15, 0).part(box(1.1, 0.8, 1.56), '#ffffff', -0.75, 2.1, 0, 'glass').part(box(1.66, 0.75, 1.1), '#ffffff', -0.75, 2.1, 0, 'glass').part(cyl(0.07, 0.07, 1.0, 6), dark, 1.7, 2.3, 0.28).part(cyl(0.13, 0.13, 0.2, 8), '#ff8a1e', -0.75, 2.86, 0).part(box(0.06, 0.24, 0.6), '#ffd21f', 2.26, 1.45, 0);
       for (const z of [-0.84, 0.84]) k.part(box(1.5, 0.12, 0.56), green, -0.95, 1.9, z); return k.geo(); })(),
     blade: (() => { const k = kit(uv), white = '#f4f4f0';
@@ -638,7 +695,20 @@ export function buildSnelweg(scene) {
   // ---- the helicopters ----
   const heliBody = (body, belly, sign, news) => { const k = kit(uv);
     k.part(rb(5.0, 2.4, 2.2, 1.0), body, 0.4, -1.1, 0).part(rb(1.5, 1.3, 2.27, 0.6), '#455b6a', 2.2, -0.35, 0).part(box(5.2, 0.42, 0.42), body, -4.6, 0.6, 0).part(box(0.9, 1.6, 0.14), belly, -7.0, 1.1, 0).part(box(1.2, 0.12, 1.4), belly, -6.9, 0.62, 0).part(cyl(0.16, 0.2, 0.5, 8), dark, 0.3, 1.5, 0).part(box(2.2, 0.5, 2.26), belly, -0.3, -0.75, 0);
-    for (const z of [-0.95, 0.95]) { k.part(box(3.6, 0.1, 0.14), dark, 0.5, -1.6, z); for (const x of [-0.6, 1.6]) k.part(box(0.1, 0.5, 0.1), dark, x, -1.33, z); }
+    for (const side of [-1, 1]) {
+      const skid = side * 0.95;
+      rod(k, [-1.3, -1.59, skid], [2.02, -1.59, skid], 0.073, '#34434a', 8);
+      rod(k, [2.02, -1.59, skid], [2.29, -1.45, skid], 0.073, '#616e72', 8);
+      for (const x of [-0.79, 1.22]) rod(k, [x, -1.55, skid], [x + 0.31, -1.10, side * 0.68], 0.055, '#7f8c8f');
+      k.part(box(0.20, 0.22, 0.21), '#ffc24b', -6.88, 0.63, side * 0.57);
+    }
+    k.part(rb(2.15, 0.23, 1.34, 0.22), belly, -0.03, -1.23, 0);
+    k.part(cyl(0.46, 0.55, 0.22, 12), '#62747a', 0.36, 1.21, 0);
+    k.part(cyl(0.22, 0.40, 0.21, 10), '#9ca6a6', 0.36, 1.42, 0);
+    for (const side of [-1, 1]) {
+      k.part(box(0.95, 0.19, 0.05), '#ffffff', -1.05, 0.52, side * 1.104, 'grille');
+      k.part(box(0.68, 0.10, 0.04), '#687c82', -1.18, -0.25, side * 1.102);
+    }
     k.part(box(1.95, 0.56, 2.19), '#ffffff', 0.22, 0.83, 0, 'glass');
     for (const z of [-1.095, 1.095]) {
       k.part(box(0.09, 0.58, 0.045), body, 0.09, 0.83, z);
@@ -647,13 +717,17 @@ export function buildSnelweg(scene) {
     for (const x of [-3.55, -5.45]) k.part(box(0.24, 0.45, 0.47), belly, x, 0.6, 0);
     k.both(sign, 2.2, 0.55, -0.3, 0.42, 1.14).decal(sign, 2.2, 0.55, 0.2, -1.14, 0, 'y-');
     if (news) k.part(new THREE.IcosahedronGeometry(0.4, 1), dark, 2.3, -1.42, 0).part(cyl(0.16, 0.16, 0.12, 10).rotateZ(PI / 2), '#7fd4ff', 2.68, -1.5, 0).part(box(0.5, 0.3, 0.3), dark, 2.3, -1.1, 0);
-    else k.both('stripes', 2.2, 0.42, -0.3, -0.75, 1.165).part(cyl(0.3, 0.22, 0.3, 10), '#fff6c9', HELI.lamp[0], HELI.lamp[1] + 0.2, 0).part(cyl(0.1, 0.1, 0.2, 8), '#3f7fe0', -1.0, 1.4, 0);
+    else k.both('stripes', 2.2, 0.42, -0.3, -0.75, 1.165).part(cyl(0.34, 0.33, 0.28, 12), '#667782', HELI.lamp[0], HELI.lamp[1] + 0.2, 0).part(cyl(0.26, 0.26, 0.085, 12), '#ffffff', HELI.lamp[0], HELI.lamp[1] + 0.03, 0, 'headlight').part(cyl(0.1, 0.1, 0.2, 8), '#3f7fe0', -1.0, 1.4, 0);
     return k.geo(); };
   const rotor = kit(uv);
   for (const sign of [-1, 1]) for (const axis of [0, 1]) {
     const len = HELI.rotor - 0.45, along = (d) => axis ? [0, 0, sign * d] : [sign * d, 0, 0];
     rotor.part(axis ? box(0.34, 0.06, len) : box(len, 0.06, 0.34), dark, ...along(len / 2));
     rotor.part(axis ? box(0.34, 0.06, 0.45) : box(0.45, 0.06, 0.34), '#d9b64b', ...along(len + 0.225));
+  }
+  for (const sign of [-1, 1]) {
+    rotor.part(box(1.04, 0.105, 0.17), '#88989a', sign * 0.48, 0.001, 0);
+    rotor.part(box(0.17, 0.105, 1.04), '#88989a', 0, 0.001, sign * 0.48);
   }
   const rotorGeo = rotor.part(cyl(0.3, 0.3, 0.2, 8), '#8d959c').geo();
   const tailGeo = kit(uv).part(box(1.7, 0.2, 0.05), dark).part(box(0.2, 1.7, 0.05), dark).geo();
