@@ -1,5 +1,6 @@
 // The city: real Alkmaar footprints, streets and canals (OpenStreetMap) built as a chunky toy town.
 import * as THREE from 'three';
+import { FACADES, pantiles, recessedBay, bricks } from './facade-detail.js';
 import { inPoly, lerp } from './drive.js';
 import { placeProps, planBridges } from './props.js';
 import * as LM from './landmarks.js'; // (landmarks.js imports this file too: fine, as long as neither calls the other while loading)
@@ -391,45 +392,6 @@ export function buildWorld(scene, map, drive) {
   }
 
   // --- buildings, split into tiles so only what is on screen is drawn ---
-  const bricks = (g, bump, w, h) => { // brick courses, faint enough that the colour of the wall shows through
-    g.fillStyle = bump ? '#b4b4b4' : '#fff'; g.fillRect(0, 0, w, h); g.fillStyle = bump ? '#707070' : 'rgba(70,45,30,.15)';
-    for (let y = 0; y < h; y += 16) { g.fillRect(0, y, w, 2); for (let x = ((y / 16) % 2) * 16; x < w; x += 32) g.fillRect(x, y, 2, 16); }
-  };
-  // Windows, shutters and doors keep their own colours whatever the wall is painted: they go on half see-through, and the wall material reads that as "do not tint"
-  const own = (g, bump, x, y, w, h, draw) => {
-    if (bump) return draw(g);
-    const c = document.createElement('canvas'); c.width = g.canvas.width; c.height = g.canvas.height; draw(c.getContext('2d'));
-    g.clearRect(x, y, w, h); g.globalAlpha = 0.5; g.drawImage(c, x, y, w, h, x, y, w, h); g.globalAlpha = 1;
-  };
-  const pane = (g, bump, x, y, w, h) => own(g, bump, x - 12, y - 12, w + 24, h + 24, (c) => { // a window: white frame, the glass set back in it with the sky in the top of it, glazing bars
-    c.fillStyle = bump ? '#fff' : '#f7f4ec'; c.fillRect(x - 12, y - 12, w + 24, h + 24);
-    if (bump) c.fillStyle = '#303030'; else { const sky = c.createLinearGradient(0, y, 0, y + h); sky.addColorStop(0, '#7fa6cf'); sky.addColorStop(0.45, '#33527a'); sky.addColorStop(1, '#22344f'); c.fillStyle = sky; }
-    c.fillRect(x, y, w, h);
-    if (!bump) { c.fillStyle = 'rgba(255,255,255,.22)'; c.beginPath(); c.moveTo(x, y); c.lineTo(x + w * 0.6, y); c.lineTo(x, y + h * 0.58); c.fill(); c.fillStyle = 'rgba(0,0,0,.35)'; c.fillRect(x, y, w, 7); }
-    c.fillStyle = bump ? '#d8d8d8' : '#f7f4ec'; c.fillRect(x + w / 2 - 4, y, 8, h); c.fillRect(x, y + h * 0.45, w, 8);
-  });
-  const slab = (g, bump, x, y, w, h, a) => { g.fillStyle = bump ? '#fff' : `rgba(0,0,0,${a})`; g.fillRect(x, y, w, h); }; // a sill, lintel or fascia: darker paint, standing proud of the wall
-  const FACE = {
-    a: [256, 256, (g, b) => { bricks(g, b, 256, 256); pane(g, b, 72, 52, 112, 152); slab(g, b, 52, 216, 152, 10, 0.18); }],
-    b: [256, 256, (g, b) => { // narrower window with shutters and a lintel
-      bricks(g, b, 256, 256);
-      for (const x of [34, 188]) own(g, b, x, 56, 34, 152, (c) => { c.fillStyle = b ? '#e0e0e0' : '#2f5d46'; c.fillRect(x, 56, 34, 152); c.fillStyle = b ? '#9a9a9a' : 'rgba(0,0,0,.25)'; for (let y = 64; y < 204; y += 12) c.fillRect(x + 4, y, 26, 4); });
-      pane(g, b, 86, 68, 84, 128); slab(g, b, 66, 28, 124, 14, 0.16); slab(g, b, 66, 216, 124, 10, 0.16);
-    }],
-    shop: [512, 256, (g, b) => { // two bays of ground floor: a shop window, then a door and a small window
-      bricks(g, b, 512, 256); slab(g, b, 0, 10, 512, 38, 0.3); slab(g, b, 0, 224, 512, 32, 0.22);
-      pane(g, b, 32, 80, 192, 120); pane(g, b, 404, 84, 76, 92);
-      own(g, b, 284, 64, 92, 160, (c) => { c.fillStyle = b ? '#fff' : '#f7f4ec'; c.fillRect(284, 64, 92, 160); c.fillStyle = b ? '#555' : '#22503b'; c.fillRect(292, 72, 76, 152); c.fillStyle = b ? '#2a2a2a' : '#5f86b0'; c.fillRect(306, 88, 48, 52); if (!b) { c.fillStyle = '#f2c230'; c.fillRect(354, 152, 8, 8); } });
-    }],
-  };
-  const pantiles = (g, bump) => { // rows of roof tiles: each row tucks under the one above it, each tile has a hollow down its middle
-    for (let y = 0; y < 128; y += 32) for (let x = 0; x < 128; x += 32) {
-      if (bump) {
-        const gy = g.createLinearGradient(0, y, 0, y + 32); gy.addColorStop(0, '#6a6a6a'); gy.addColorStop(1, '#f2f2f2'); g.fillStyle = gy; g.fillRect(x, y, 32, 32);
-        const gx = g.createLinearGradient(x, 0, x + 32, 0); gx.addColorStop(0, 'rgba(0,0,0,.4)'); gx.addColorStop(0.5, 'rgba(0,0,0,0)'); gx.addColorStop(1, 'rgba(0,0,0,.4)'); g.fillStyle = gx; g.fillRect(x, y, 32, 32);
-      } else { g.fillStyle = grey(224 + hash(x / 32 + y * 7) * 31); g.fillRect(x, y, 32, 32); g.fillStyle = 'rgba(0,0,0,.2)'; g.fillRect(x, y, 32, 3); g.fillStyle = 'rgba(0,0,0,.09)'; g.fillRect(x, y, 2, 32); }
-    }
-  };
   const churchTex = canvasTex(128, 256, (g) => { // stone bay with a tall pointed window and a buttress
     g.fillStyle = '#fff'; g.fillRect(0, 0, 128, 256); g.fillStyle = 'rgba(0,0,0,.07)'; for (let y = 0; y < 256; y += 16) g.fillRect(0, y, 128, 1.5);
     g.fillStyle = 'rgba(0,0,0,.16)'; g.fillRect(0, 0, 13, 256); g.fillRect(0, 0, 128, 9); g.fillRect(0, 236, 128, 20);
@@ -437,10 +399,16 @@ export function buildWorld(scene, map, drive) {
     g.fillStyle = '#efe8d8'; lancet(44, 52, 42, 200); g.fillStyle = '#27395c'; lancet(51, 38, 52, 193); g.fillStyle = '#efe8d8'; g.fillRect(68, 60, 4, 133); g.fillRect(51, 120, 38, 4);
   });
   const wallMats = { church: churchTex, trim: null }, wallN = {};
-  for (const k in FACE) { const [w, h, draw] = FACE[k]; wallMats[k] = canvasTex(w, h, (g) => draw(g, false)); wallN[k] = reliefTex(w, h, (g) => draw(g, true), 2.2); }
+  for (const k in FACADES) { const [w, h, draw] = FACADES[k]; wallMats[k] = canvasTex(w, h, (g) => draw(g, false)); wallN[k] = reliefTex(w, h, (g) => draw(g, true), 2.2); }
   for (const k in wallMats) {
     wallMats[k] = new THREE.MeshStandardMaterial({ vertexColors: true, map: wallMats[k], normalMap: wallN[k] || null, roughness: 0.85 });
-    if (FACE[k]) wallMats[k].onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <color_fragment>', 'diffuseColor.rgb *= mix( vec3( 1.0 ), vColor.rgb, smoothstep( 0.6, 0.9, sampledDiffuseColor.a ) );'); }; // the wall colour, except on the parts painted half see-through
+    if (FACADES[k]) wallMats[k].onBeforeCompile = (sh) => {
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <color_fragment>', 'diffuseColor.rgb *= mix(vec3(1.0), vColor.rgb, smoothstep(0.6, 0.9, sampledDiffuseColor.a));')
+        .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+          float glass = (1.0 - smoothstep(0.55, 0.8, sampledDiffuseColor.a)) * smoothstep(0.025, 0.09, sampledDiffuseColor.b - sampledDiffuseColor.r);
+          roughnessFactor *= mix(1.0, 0.32, glass);`);
+    };
   }
   const roofMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: canvasTex(128, 128, (g) => pantiles(g, false)), normalMap: reliefTex(128, 128, (g) => pantiles(g, true), 2.4), roughness: 0.7, side: THREE.DoubleSide }); // both sides: the eaves overhang
   const gravel = (g, bump) => { // a flat roof: ballast gravel over roofing felt, with a few fresh patches
@@ -480,7 +448,7 @@ export function buildWorld(scene, map, drive) {
   world.solid = (x, z, r, h) => extra.push({ x, z, r, h }); // something else a camera must not sit inside
   for (const o of layout.solids) extra.push(o);
 
-  const cream = C('#f4ecdb'), white = C('#ffffff'), blocks = [], relief = [], crowns = [];
+  const cream = C('#f4ecdb'), white = C('#ffffff'), blocks = [], relief = [], crowns = [], downpipes = [];
   const ledge = (soup, p, h) => { // a cornice round a flat roof: sticks out 22 cm, with a low parapet
     const q = []; for (let i = 0; i < p.length; i += 2) { const j = (i + 2) % p.length; if (hypot(p[j] - p[i], p[j + 1] - p[i + 1]) > 0.3) q.push(p[i], p[i + 1]); }
     const n = q.length / 2, O = []; if (n < 3) return;
@@ -492,8 +460,15 @@ export function buildWorld(scene, map, drive) {
     }
     for (let i = 0; i < n; i++) {
       const j = (i + 1) % n, [nx, nz] = N(i), y0 = h - 0.37, y1 = h + 0.23, ax = q[2 * i], az = q[2 * i + 1], bx = q[2 * j], bz = q[2 * j + 1], Ax = O[2 * i], Az = O[2 * i + 1], Bx = O[2 * j], Bz = O[2 * j + 1];
-      soup.wall(Ax, Az, Bx, Bz, y0, y1, [nx, 0, nz], cream); soup.wall(ax, az, bx, bz, h, y1, [-nx, 0, -nz], cream);
-      for (const [y, d] of [[y1, 1], [y0, -1]]) soup.quad([ax, y, az], [Ax, y, Az], [Bx, y, Bz], [bx, y, bz], [0, d, 0], cream);
+      const at = (x, z, X, Z, d, y) => [lerp(x, X, d), y, lerp(z, Z, d)];
+      const profile = [[0, y0], [0.42, y0], [0.42, h-0.25], [0.75, h-0.19], [0.75, h+0.06], [1, h+0.11], [1, y1], [0, y1], [0, h]];
+      const colours = ['#afa693','#d5c8af','#ab9f87','#ebe0c7','#c3b59e','#f4ecdb','#f4ecdb','#ded3bd'];
+      for (let k=1;k<profile.length;k++) {
+        const [d0,lo]=profile[k-1], [d1,hi]=profile[k];
+        const sign = k===profile.length-1 ? -1 : 1;
+        soup.quad(at(ax,az,Ax,Az,d0,lo),at(bx,bz,Bx,Bz,d0,lo),at(bx,bz,Bx,Bz,d1,hi),at(ax,az,Ax,Az,d1,hi),
+          [nx*sign, d0-d1, nz*sign], C(colours[k-1]));
+      }
     }
   };
   // a church roof: finds the long axis of the footprint and lays a steep roof down it, with a transept and a ridge turret on the big one
@@ -525,6 +500,30 @@ export function buildWorld(scene, map, drive) {
     g.add(drum, spire, ball); g.traverse((o) => { o.castShadow = true; }); scene.add(g);
   };
 
+  function pitchedGable(t, a, b, ridge, wall, showVent) {
+    const dx=b[0]-a[0], dz=b[2]-a[2], width=hypot(dx,dz), height=ridge[1]-a[1], normal=[-dz/width,0,dx/width];
+    if (!showVent || width<3.6 || height<1.7) {
+      t.a.tri(a,b,ridge,normal,wall);
+      return;
+    }
+    const rx=min(.13,.57/width), ry=min(.2,.57/height);
+    const octagon=(scale) => Array.from({length:8},(_,i) => {
+      const angle=(i+.5)*PI/4;
+      return new THREE.Vector2(.5+rx*scale*cos(angle),.36+ry*scale*sin(angle));
+    });
+    const outline=[new THREE.Vector2(0,0),new THREE.Vector2(1,0),new THREE.Vector2(.5,1)], ring=octagon(1), opening=octagon(.73);
+    const pt=(uv,depth=0) => [a[0]+dx*uv.x-normal[0]*depth,a[1]+height*uv.y,a[2]+dz*uv.x-normal[2]*depth];
+    const points=[...outline,...ring].map(uv=>pt(uv));
+    for (const [i,j,k] of THREE.ShapeUtils.triangulateShape(outline,[ring])) t.trim.tri(points[i],points[j],points[k],normal,wall);
+    const centre=pt(new THREE.Vector2(.5,.36),.13);
+    for (let i=0;i<8;i++) {
+      const j=(i+1)%8, p=pt(opening[i],.13), q=pt(opening[j],.13);
+      t.trim.quad(pt(ring[i]),pt(ring[j]),q,p,normal,C(i%2?'#e3d5b9':'#f3e7d1'));
+      t.trim.tri(p,q,centre,normal,C(i<4?'#526f7d':'#364d5a'));
+    }
+    tally('attic oculi',1,34);
+  }
+
   const dim = (c, k) => c.clone().multiplyScalar(k), aoDark = C('#8a8a8a'), AO = 1.7, SK = 1.2, pitched = [], tops = []; // AO: width of the shading at the foot of a wall; SK: metres of roof to one repeat of the tile picture
   for (const b of B) {
     if (b.gone) continue;
@@ -548,18 +547,64 @@ export function buildWorld(scene, map, drive) {
       if (inWater) t.a.wall(ax, az, bx, bz, -1.6, 0, want, C('#8a5a48')); // standing in a canal: the wall goes on down to the water
       if (church) { const cb = max(1, round(len / 5)); t.church.wall(ax, az, bx, bz, 0, h, want, wall, plain ? undefined : [[0, 0], [cb, 0], [cb, 1], [0, 1]]); continue; }
       const y0 = plain ? 0 : gf, floors = max(1, round((h - y0) / 3.1));
-      if (y0) t.shop.wall(ax, az, bx, bz, 0, gf, want, pfoot, [[0, 0], [bays / 2, 0], [bays / 2, 1], [0, 1]], plinth);
-      soup.wall(ax, az, bx, bz, y0, h, want, y0 ? low : foot, plain ? undefined : [[0, 0], [bays, 0], [bays, floors], [0, floors]], wall); // every wall a shade darker towards the street
-      // Along the route the painted windows get real stone: a sill and a lintel each, flower boxes, a drainpipe, and a stepped gable up on the roof edge.
-      // Everything further off stays flat paint, which nobody is close enough to tell.
-      if (plain || !free || layout.clear(mx + nx * 3, mz + nz * 3, 12)) continue;
-      const ang = atan2(uz, ux), bw = len / bays, fh = (h - y0) / floors, sw = bw * (soup === t.a ? 0.6 : 0.5), put = (list, d, y, out, sx, sy, sz, c) => list.push({ x: ax + ux * d + nx * out, y, z: az + uz * d + nz * out, a: ang, sx, sy, sz, c });
+      const bw = len / bays, fh = (h-y0) / floors;
+      const detailed = !plain && free && !layout.clear(mx+nx*3, mz+nz*3, 12);
+      const roomForRebate = detailed && [.08,.3,.5,.7,.92].every(f => inPoly(p,ax+ux*len*f-nx*.19,az+uz*len*f-nz*.19));
+      if (roomForRebate && !special) {
+        // The rebates go into the shell; the original street-side wall plane stays the outer edge.
+        const startSize = soup.p.length + t.shop.p.length;
+        let openings = 0;
+        const skin = (geo, bottom, height, width, base, top) => (uv, depths) => {
+          const points = uv.map(([u,v],k) => [ax+ux*u*width-nx*depths[k], bottom+v*height, az+uz*u*width-nz*depths[k]]);
+          const colours = points.map((pt) => base.clone().lerp(top,(pt[1]-bottom)/(geo===t.shop ? gf : h-y0)));
+          geo.quad(...points,want,colours,uv);
+        };
+        const upper = skin(soup,y0,fh,bw,y0 ? low : foot,wall);
+        const [left,bottom,right,top] = soup===t.a ? [72,52,184,204] : [86,60,170,188];
+        for (let bay=0;bay<bays;bay++) for(let f=0;f<floors;f++) {
+          recessedBay(upper,[bay,f,bay+1,f+1],[bay+left/256,f+bottom/256,bay+right/256,f+top/256],0.14);
+          openings++;
+        }
+        if (y0) {
+          const ground = skin(t.shop,0,gf,2*bw,pfoot,plinth);
+          for (let bay=0;bay<bays;bay+=2) {
+            const u=bay/2;
+            recessedBay(ground,[u,0,u+.5,1],[u+32/512,56/256,u+224/512,176/256],0.16);
+            openings++;
+            if (bay+1===bays) continue;
+            recessedBay(ground,[u+.5,0,u+390/512,1],[u+292/512,8/256,u+368/512,184/256],0.16);
+            recessedBay(ground,[u+390/512,0,u+1,1],[u+404/512,80/256,u+480/512,172/256],0.14);
+            openings+=2;
+          }
+        }
+        tally('recessed window and door detail',openings,(soup.p.length+t.shop.p.length-startSize)/9-2-(y0 ? 2 : 0));
+      } else {
+        if (y0) t.shop.wall(ax, az, bx, bz, 0, gf, want, pfoot, [[0, 0], [bays / 2, 0], [bays / 2, 1], [0, 1]], plinth);
+        soup.wall(ax, az, bx, bz, y0, h, want, y0 ? low : foot, plain ? undefined : [[0, 0], [bays, 0], [bays, floors], [0, floors]], wall);
+      }
+      if (!detailed) continue;
+      const ang = atan2(uz, ux), sw = bw * (soup === t.a ? 0.6 : 0.5), put = (list, d, y, out, sx, sy, sz, c) => list.push({ x: ax + ux * d + nx * out, y, z: az + uz * d + nz * out, a: ang, sx, sy, sz, c });
       for (let u = 0; u < bays; u++) for (let f = 0; f < floors; f++) {
         const d = (u + 0.5) * bw, yb = y0 + f * fh, k = Math.imul(b.i * 31 + i * 7 + u * 3 + f, 2654435761) >>> 8;
         put(relief, d, yb + fh * 0.137, 0.06, sw, 0.1, 0.2, '#f4ecdb'); put(relief, d, yb + fh * (soup === t.a ? 0.83 : 0.863), 0.03, sw, 0.12, 0.12, '#f4ecdb');
         if (f === 0 && y0 && k % 4 === 0) { put(relief, d, yb + fh * 0.137 + 0.15, 0.19, sw * 0.9, 0.2, 0.24, '#a8573a'); put(relief, d, yb + fh * 0.137 + 0.32, 0.19, sw * 0.82, 0.14, 0.18, ['#e0202a', '#f7c400', '#ff5fa8', '#ffffff'][k % 4 ^ (k >> 4) % 4]); } // geraniums
       }
-      if (len > 5) put(relief, 0.2, (h - 0.4) / 2, 0.07, 0.1, h - 0.4, 0.1, '#7d858c');
+      if (len>5 && !special) {
+        put(downpipes,0.2,(h-0.50)/2,0.07,1,h-0.50,1,'#97a2a5');
+        // Folded zinc gutter under the cornice. The full run sits within 14 cm of the wall.
+        // Test the run so a shared wall partway along a crooked footprint cannot be dressed.
+        const clearRun=[.03,.25,.5,.75,.97].every(f=>!hitB(ax+ux*len*f+nx*.14,az+uz*len*f+nz*.14,b));
+        if (clearRun) {
+          const pts=[[0,-.40],[.03,-.47],[.07,-.50],[.12,-.47],[.14,-.40]];
+          const at=(d,[out,dy])=>[ax+ux*d+nx*out,h+dy,az+uz*d+nz*out];
+          for (let k=1;k<pts.length;k++) {
+            const u=pts[k-1],v=pts[k],w=[nx*(v[1]-u[1]),u[0]-v[0],nz*(v[1]-u[1])];
+            t.trim.quad(at(.14,u),at(len-.14,u),at(len-.14,v),at(.14,v),w,C(k%2?'#879194':'#a6aca8'));
+          }
+          tally('zinc gutters',1,8);
+        }
+      }
+      if (len>5 && special) put(relief,0.2,(h-0.4)/2,0.07,0.1,h-0.4,0.1,'#7d858c');
       if (len >= 3.5 && h > 6 && h < 16) for (let m = max(1, round(len / 5.2)), cw = len / m, k = 0; k < m; k++) {
         const d = (k + 0.5) * cw, neck = (b.i + i + k) % 3 === 0, W = neck ? [0.78, 0.36] : [0.8, 0.54, 0.28], Hs = neck ? [1.0, 1.5] : [1.0, 0.8, 0.8]; let y = h;
         W.forEach((w, q) => { const cwk = min(cw * w, cw - 1); put(crown, d, y + Hs[q] / 2, -0.13, cwk, Hs[q], 0.5, hex); y += Hs[q]; put(crown, d, y, -0.13, cwk + 0.1, 0.1, 0.6, '#f4ecdb'); }); // stops half a metre short of each corner, clear of the gable on the next wall
@@ -584,7 +629,9 @@ export function buildWorld(scene, map, drive) {
       const o = [eave(q[0], r0, eB, -g0), eave(q[1], r0, eA, -g0), eave(q[2], r1, eA, g1), eave(q[3], r1, eB, g1)], sl = hypot(gw / 2, rh) / SK, uv = [[0, 0], [rl / SK, 0], [rl / SK, sl], [0, sl]];
       const a0 = [r0[0] - dx * g0, r0[1], r0[2] - dz * g0], a1 = [r1[0] + dx * g1, r1[1], r1[2] + dz * g1], out = (u, v) => [(u[0] + v[0]) / 2 - cx, 0.6, (u[2] + v[2]) / 2 - cz];
       t.roofs.quad(o[1], o[2], a1, a0, out(q[1], q[2]), roof, uv); t.roofs.quad(o[3], o[0], a0, a1, out(q[3], q[0]), roof, uv);
-      t.a.tri(q[0], q[1], r0, out(q[0], q[1]), wall); t.a.tri(q[2], q[3], r1, out(q[2], q[3]), wall);
+      const nearStreet = !layout.clear(cx,cz,48);
+      pitchedGable(t,q[0],q[1],r0,wall,nearStreet && g0>0);
+      pitchedGable(t,q[2],q[3],r1,wall,nearStreet && g1>0);
       const ang = atan2(dz, dx), f = 0.25 + Rb() * 0.5;
       const chim = Rb() < 0.6 ? f : -1; // where along the ridge its chimney stands, if it has one
       blocks.push({ x: r0[0] + dx * 0.16, y: h + rh + 0.13, z: r0[2] + dz * 0.16, a: ang }, { x: r1[0] - dx * 0.16, y: h + rh + 0.13, z: r1[2] - dz * 0.16, a: ang });
@@ -605,6 +652,10 @@ export function buildWorld(scene, map, drive) {
   }
   for (const t of tiles.values()) { for (const k in wallMats) if (t[k].p.length) scene.add(t[k].mesh(wallMats[k], 'cast')); scene.add(t.roofs.mesh(roofMat, 'cast')); if (t.flat.p.length) scene.add(t.flat.mesh(flatMat, 'cast')); if (t.ao.p.length) { const me = t.ao.mesh(aoMat); me.renderOrder = -10; me.receiveShadow = false; scene.add(me); } }
   inst(Box(1, 1, 1), mat('#ffffff'), relief, false); inst(Box(1, 1, 1), mat('#ffffff'), crowns);
+  // The flared sockets and straight zinc tube share one revolved skin.
+  const pipeProfile = [[.05,0],[.05,.035],[.039,.053],[.039,.45],[.05,.45],[.05,.47],[.039,.49],[.039,.92],[.05,.92],[.05,1]];
+  const pipe = new THREE.LatheGeometry(pipeProfile.map(([r,y]) => new THREE.Vector2(r,y-.5)),8);
+  mine('zinc downpipes', pipe, downpipes, mat('#ffffff',{metalness:.44,roughness:.47}),false);
   inst(Box(0.3, 0.46, 0.52), mat('#f4ecdb'), blocks);
 
   // --- roof life, for the shots from above: brick chimneys, dormers and roof windows on the pitched roofs; vents, skylights and a roof terrace here and
@@ -658,7 +709,19 @@ export function buildWorld(scene, map, drive) {
         placed.push({ x, z, r }); [vents, sky, terr][kind].push({ x, y: y - 0.012, z, a: ang + (kind === 1 && j % 2 ? PI / 2 : 0) });
       }
     }
-    inst(Box(0.62, 1.3, 0.62), mat('#8f4a36'), plain); mine('ridge tiles', Box(1, 0.16, 0.34), caps, mat('#ffffff'));
+    const stack = Box(0.62, 1.3, 0.62), stackUV = stack.attributes.uv;
+    for (let i=0;i<stackUV.count;i++) {
+      const end = i>=8 && i<16;
+      stackUV.setX(i,(stackUV.getX(i)+(end ? 1 : 0))/2);
+    }
+    const stackTile = canvasTex(128,128,(g) => {
+      bricks(g,false,64,128);
+      g.fillStyle='#dacaba'; g.fillRect(0,0,64,10);
+      g.fillStyle='#cfbda8'; g.fillRect(64,0,64,128);
+      g.fillStyle='#332b29'; g.fillRect(73,16,46,96);
+    },false);
+    inst(stack,mat('#8f4a36',{map:stackTile}),plain);
+    mine('ridge tiles',prof(1,[[-.17,-.08],[-.135,.006],[-.074,.065],[0,.08],[.074,.065],[.135,.006],[.17,-.08]]),caps,mat('#ffffff'));
     for (const [name, geo, list] of [['chimneys', LM.chimneyGeo('tint'), cT], ['chimneys', LM.chimneyGeo('rest'), cR], ['dormers', LM.dormerGeo('tint'), dT], ['dormers', LM.dormerGeo('rest'), dR], ['roof windows', LM.skylightGeo(), sky.filter((_, i) => i % 5 < 2)], ['roof vents', LM.ventGeo(), vents.filter((_, i) => i % 3 < 1)], ['roof terraces', LM.roofTerraceGeo(), terr]]) mine(name, geo, list);
   }
 
