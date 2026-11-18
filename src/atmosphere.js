@@ -45,31 +45,60 @@ export function daylight() {
   return { sky: skyMap, reflection: panorama(probe) };
 }
 
-// World-space lengths and crossing directions keep the surface continuous across canal polygons.
+// A tile of short wind-driven crests. Each packet bends and fades before it meets the
+// next, so the surface has no continuous wave axes to form diamonds in an aerial view.
+function makeRippleSlopes() {
+  const size = 256, mask = size - 1, slopes = new Float32Array(size * size * 2);
+  let seed = 827;
+  const random = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
+  for (let i = 0; i < 170; i++) {
+    const x0 = Math.floor(random() * size), z0 = Math.floor(random() * size);
+    const angle = .45 + (random() - .5) * 1.0, dx = Math.cos(angle), dz = Math.sin(angle);
+    const along = 8 + random() * 11, across = 13 + random() * 15;
+    const frequency = 2 * Math.PI / (8 + random() * 14), phase = random() * 2 * Math.PI;
+    const bend = (random() - .5) * 3, amplitude = .035 + random() * .065;
+    const radius = Math.ceil(2 * Math.max(along, across));
+    for (let z = -radius; z <= radius; z++) for (let x = -radius; x <= radius; x++) {
+      const u = x * dx + z * dz, v = (-x * dz + z * dx) / across;
+      const extent = (u / along) ** 2 + v * v;
+      if (extent >= 4) continue;
+      const envelope = (1 - extent / 4) ** 3;
+      const slope = amplitude * envelope * Math.cos(frequency * u + bend * v * v + phase);
+      const turn = 2 * bend * v / (across * frequency);
+      const at = 2 * ((((z0 + z) & mask) * size) + ((x0 + x) & mask));
+      slopes[at] += slope * (dx - turn * dz);
+      slopes[at + 1] += slope * (dz + turn * dx);
+    }
+  }
+  const bytes = Uint8Array.from(slopes, s => Math.min(255, Math.max(0, Math.round(128 + s * 425))));
+  const map = new THREE.DataTexture(bytes, size, size, THREE.RGFormat);
+  map.wrapS = map.wrapT = THREE.RepeatWrapping;
+  map.magFilter = THREE.LinearFilter;
+  map.minFilter = THREE.LinearMipmapLinearFilter;
+  map.generateMipmaps = true;
+  map.needsUpdate = true;
+  return map;
+}
+
 const waterTime = { value: 0 };
+let rippleSlopes;
 export function waterWaves(shader, clock = waterTime) {
   shader.uniforms.waterClock = clock;
+  shader.uniforms.rippleSlopes = { value: rippleSlopes ||= makeRippleSlopes() };
   shader.vertexShader = 'varying vec3 waterPosition;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nwaterPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;');
   shader.fragmentShader = `
     uniform float waterClock;
+    uniform sampler2D rippleSlopes;
     varying vec3 waterPosition;
-    vec2 waterSlope(vec2 direction, float phase, float strength) {
-      float filterWidth = fwidth(phase);
-      return direction * (strength * cos(phase) / (1.0 + filterWidth * filterWidth));
-    }
   ` + shader.fragmentShader.replace('#include <normal_fragment_maps>', `
     #include <normal_fragment_maps>
     vec2 p = waterPosition.xz;
-    float t = waterClock;
-    float bend = sin(dot(p, vec2(.12,.079)) - .20*t) + .53*sin(dot(p,vec2(-.08,.15)) + .13*t);
-    vec2 slope = waterSlope(vec2(.88,.47), dot(p,vec2(1.53,.81)) - 1.12*t + bend, .066);
-    slope += waterSlope(vec2(-.41,.91),dot(p,vec2(-1.27,2.83)) + 1.39*t - .85*bend, .052);
-    float gust = .63 + .37*sin(dot(p,vec2(.19,-.13)) - .32*t);
-    slope += gust * waterSlope(vec2(.25,.97),dot(p,vec2(1.45,5.61)) - 1.9*t + 1.6*bend, .042);
-    slope += gust * waterSlope(vec2(-.65,.76),dot(p,vec2(-5.05,5.91)) + 2.15*t - .9*bend, .033);
-    float chop = sin(dot(p,vec2(1.91,-.82)) + t*.53) + .45*sin(dot(p,vec2(-2.2,1.23)) - t*.72);
-    slope += waterSlope(vec2(.77,.63),dot(p,vec2(9.86,8.07)) - t*2.61 + 1.4*chop, .047);
-    slope += gust*waterSlope(vec2(-.19,.98),dot(p,vec2(-4.4,22.7)) + t*3.03 - .8*chop, .031);
+    vec2 longWind = (p - waterClock * vec2(.45,.21)) / 38.;
+    const mat2 windTurn = mat2(.968,-.251,.251,.968);
+    vec2 shortWind = windTurn * (p - waterClock * vec2(.23,.06)) / 9.1 + vec2(.317,.694);
+    const vec2 still = vec2(128. / 255.);
+    vec2 slope = .68 * (texture2D(rippleSlopes, longWind).rg - still);
+    slope += .40 * ((texture2D(rippleSlopes, shortWind).rg - still) * windTurn);
     normal = normalize(mat3(viewMatrix) * vec3(-slope.x, 1.0, -slope.y));
   `);
 }
@@ -131,11 +160,15 @@ export function canalReflections(material, rect) {
       outgoingLight = mix(body, sky, .22 + .49*grazing);
       float glint = max(0.,dot(ray, normalize(vec3(-105.,118.,96.))));
       outgoingLight += vec3(.66,.54,.36)*pow(glint, 96.);
-      if (bankDetail) {
-        float horizontal = length(ray.xz), run = 0.0;
+      float footprint = max(length(dFdx(waterPosition.xz)), length(dFdy(waterPosition.xz)));
+      float windowDetail = 1. - smoothstep(.12, .65, footprint);
+      float horizontal = length(ray.xz);
+      if (bankDetail && horizontal >= .05) {
+        vec3 march = ray / horizontal;
+        float run = 0.0;
         for (int i = 0; i < 13; i++) {
-          if (horizontal < .05 || run > 90.) break;
-          vec3 at = waterPosition + ray * (run / max(.05, horizontal));
+          vec3 at = waterPosition + march * run;
+          if (run > 90. || at.y > ${(scale + 1).toFixed(1)}) break;
           vec2 uv = (at.xz - bankRect.xy) / bankRect.zw;
           if (any(lessThan(uv,vec2(0))) || any(greaterThan(uv,vec2(1)))) break;
           float d = texture2D(shoreDistance, uv).r * 63.75;
@@ -144,8 +177,13 @@ export function canalReflections(material, rect) {
             float top = bank.a * ${scale.toFixed(1)}, roofFade = smoothstep(-.40,1.10,top-at.y);
             if (roofFade > .001) {
               vec3 brick = pow(bank.rgb, vec3(2.2));
-              float bay = cos(at.x*1.52 + at.z*2.12), row = cos(at.y*2.10);
-              float windows = smoothstep(-.23,.26,bay)*smoothstep(-.34,.20,row);
+              // Average the reflected panes into the bank colour once individual windows
+              // cover less than a pixel in the aerial view.
+              float windows = .25;
+              if (windowDetail > 0.) {
+                float bay = cos(at.x*1.52 + at.z*2.12), row = cos(at.y*2.10);
+                windows = mix(windows, smoothstep(-.23,.26,bay)*smoothstep(-.34,.20,row), windowDetail);
+              }
               vec3 facade = mix(brick,vec3(.095,.16,.16),.48*windows);
               float fresnel = .22 + .36*grazing;
               outgoingLight = mix(outgoingLight, .76*facade + vec3(.026,.045,.036), fresnel*roofFade);
