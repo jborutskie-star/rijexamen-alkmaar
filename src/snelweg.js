@@ -783,18 +783,47 @@ export function buildSnelweg(scene) {
   };
   const tints = ['#ffffff', '#ffe3a1', '#bfe3ff', '#ffc2c2', '#d1f5c8', '#e7d2ff', '#ffd9b0', '#c9f2ee'], carTints = ['#e63b3b', '#3f7fe0', '#f4f4f0', '#ffc928', '#2f2f36', '#3fae5a', '#ff8a1e', '#9aa3ad', '#8d3fc4'];
   const enamel = paint.clone(); enamel.roughness = 0.39; enamel.metalness = 0.16;
-  const batch = {}, lone = [], wheels = [];
-  const sorted = { truck: [], car: [], caravan: [] };
+  const lone = [], fleets = new Map();
+  const palettes = { car: carTints, truck: tints, caravan: ['#ffffff', '#ffe9c4'] }, nextTint = { car: 0, truck: 0, caravan: 0 };
+  // Vehicles in one direction and stretch stay close enough to share a draw in both the camera and shadow passes.
+  function addTraffic(kind, vehicle, offset, y, z, radius, width, tint) {
+    const key = kind + '/' + vehicle.dir + '/' + floor(vehicle.x0 / 700);
+    if (!fleets.has(key)) fleets.set(key, { kind, rows: [] });
+    fleets.get(key).rows.push({ vehicle, offset, y, z, radius, width, tint });
+  }
   for (const o of plan.traffic) {
     const special = { 'tulip truck': 'tulp', 'cheese truck': 'kaas', 'tour bus': 'bus', tractor: 'tractor', 'blade transport': 'blade', transporter: 'transporter' }[o.name];
-    if (special) { const m = new THREE.Mesh(GEO[special], enamel); m.castShadow = m.receiveShadow = true; m.position.set(0, GROUND, o.z); m.frustumCulled = false; moving.add(m); lone.push([o, m]); } else sorted[o.kind].push(o);
-    for (const [wx, r, w, tr] of KINDS[o.kind].wheels) for (const s of [-1, 1]) wheels.push([o, wx * o.dir, r, w, o.z + s * tr]);
+    if (special) {
+      const m = new THREE.Mesh(GEO[special], enamel);
+      m.castShadow = m.receiveShadow = true; m.position.set(0, GROUND, o.z); moving.add(m); lone.push([o, m]);
+    } else {
+      const palette = palettes[o.kind], tint = palette[(nextTint[o.kind]++ * 5 + 1) % palette.length];
+      addTraffic(o.kind, o, 0, GROUND, o.z, 1, 1, tint);
+    }
+    for (const [wx, r, w, tr] of KINDS[o.kind].wheels) for (const sign of [-1, 1]) {
+      addTraffic('wheel', o, wx * o.dir, GROUND + r, o.z + sign * tr, r, w);
+    }
   }
-  for (const kind in sorted) {
-    const list = sorted[kind], im = new THREE.InstancedMesh(GEO[kind], enamel, list.length), pal = kind === 'car' ? carTints : kind === 'truck' ? tints : ['#ffffff', '#ffe9c4'], k = new THREE.Color();
-    list.forEach((o, i) => im.setColorAt(i, k.set(pal[(i * 5 + 1) % pal.length]))); im.castShadow = im.receiveShadow = true; im.frustumCulled = false; moving.add(im); batch[kind] = [list, im];
+  for (const fleet of fleets.values()) {
+    const { kind, rows } = fleet, geo = GEO[kind], isWheel = kind === 'wheel';
+    const mesh = new THREE.InstancedMesh(geo, isWheel ? paint : enamel, rows.length);
+    mesh.castShadow = true; mesh.receiveShadow = !isWheel;
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, GROUND, rows[0].z));
+    if (!geo.boundingSphere) geo.computeBoundingSphere();
+    const reach = geo.boundingSphere.center.length() + geo.boundingSphere.radius;
+    fleet.mesh = mesh; fleet.pad = 0;
+    const color = new THREE.Color();
+    rows.forEach((row, i) => {
+      const lateral = hypot(row.y - GROUND, row.z - mesh.boundingSphere.center.z);
+      fleet.pad = max(fleet.pad, lateral + reach * max(row.radius, row.width) + 0.01);
+      if (!isWheel) {
+        mesh.setColorAt(i, color.set(row.tint));
+        mesh.setMatrixAt(i, M.compose(V.set(0, row.y, row.z), row.vehicle.dir > 0 ? Q0 : QW, ONE));
+      }
+    });
+    moving.add(mesh);
   }
-  const wheelMesh = new THREE.InstancedMesh(GEO.wheel, paint, wheels.length); wheelMesh.castShadow = true; wheelMesh.frustumCulled = false; moving.add(wheelMesh);
 
   // ---- the helicopters ----
   const heliBody = (body, belly, sign, news) => { const k = kit(uv);
@@ -877,9 +906,21 @@ export function buildSnelweg(scene) {
   const H = {}, T = {}, tF = plan.T.flash, PC = {}, KC = {};
   function frame(t, now = 0) {
     for (const [o, m] of lone) m.position.x = plan.vx(o, t);
-    for (const kind in batch) { const [list, im] = batch[kind]; for (let i = 0; i < list.length; i++) { const o = list[i]; im.setMatrixAt(i, M.compose(V.set(plan.vx(o, t), GROUND, o.z), o.dir > 0 ? Q0 : QW, ONE)); } im.instanceMatrix.needsUpdate = true; }
-    for (let i = 0; i < wheels.length; i++) { const w = wheels[i], x = plan.vx(w[0], t) + w[1]; wheelMesh.setMatrixAt(i, M.compose(V.set(x, GROUND + w[2], w[4]), Q.setFromEuler(E.set(0, 0, -x / w[2])), S.set(w[2], w[2], w[3]))); }
-    wheelMesh.instanceMatrix.needsUpdate = true;
+    for (const { kind, rows, mesh, pad } of fleets.values()) {
+      let lo = Infinity, hi = -Infinity;
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i], x = plan.vx(row.vehicle, t) + row.offset;
+        lo = min(lo, x); hi = max(hi, x);
+        if (kind === 'wheel') {
+          mesh.setMatrixAt(i, M.compose(V.set(x, row.y, row.z), Q.setFromEuler(E.set(0, 0, -x / row.radius)), S.set(row.radius, row.radius, row.width)));
+        } else {
+          mesh.instanceMatrix.array[i * 16 + 12] = x; // Only the translation along the road changes.
+        }
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.boundingSphere.center.x = (lo + hi) * 0.5;
+      mesh.boundingSphere.radius = (hi - lo) * 0.5 + pad;
+    }
     for (let i = 0; i < 2; i++) { const h = plan.heli(i, t, H), o = helis[i]; o.g.visible = h.on; o.g.position.set(h.x, h.y, h.z); o.g.rotation.set(0.05 * sin(now * 1.3 + i), 0, -0.13 + 0.02 * sin(now * 1.7 + i * 2)); o.rotor.rotation.y = now * 38 + i; o.tail.rotation.z = now * 50; }
     const h = plan.heli(0, t, H); ladder.visible = h.on; ladder.position.set(h.x + HELI.hook[0], h.y + HELI.hook[1], h.z + HELI.hook[2]); ladder.rotation.z = -HELI.swing + 0.03 * sin(now * 2.2); ladder.arm.rotation.x = 0.25 + 0.55 * sin(now * 9);
     const l = plan.light(t, T); beam.visible = l.on && h.on; pool.visible = beam.visible && l.y < GROUND + 0.1;
