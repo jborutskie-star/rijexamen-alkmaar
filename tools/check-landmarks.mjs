@@ -24,7 +24,7 @@ function churchOutline() {
 // [min x, min y, min z, max x, max y, max z] the model has to stay inside (null = no limit), and its triangle budget
 const B = (x, y0, y1, z) => [-x, y0, -z, x, y1, z];
 const GROUPS = {
-  josephkerk: { tris: [0, 3500], box: B(11.6, -0.01, 27, 17.1) },
+  josephkerk: { tris: [0, 3500], box: [-11.6, -0.01, -17.1, 11.6, 27, 23.3] },
   groteKerk: { meshes: 5, tris: [6000, 18600], box: [-48, -0.05, -30, 48, 53, 33] },
   molen: { tris: [0, 6400], box: B(13, -0.01, 31, 13) },
   rondvaartboot: { tris: [0, 2500], box: B(4.6, -0.35, 1.0, 1.3) },
@@ -81,6 +81,26 @@ for (const [name, lim] of Object.entries(GROUPS)) {
     if (!Array.isArray(L.groteKerkSolids) || !L.groteKerkSolids.length) bad('groteKerkSolids missing');
     else for (const s of L.groteKerkSolids) if (!inside(s.x, s.z) && dist(s.x, s.z) > 0.3) bad(`groteKerkSolids: centre (${s.x}, ${s.z}) is outside the footprint`);
   }
+}
+// A square canal house previously fell back to a flat deck. Exercise the
+// geometry sent to the tile batch, including the notched bridge corner.
+const { canalFrontages, ridgePlan, buildRidge } = await import('../src/town-roofs.js');
+const { inPoly } = await import('../src/drive.js');
+const city = JSON.parse(readFileSync(new URL('data/alkmaar.json', root)));
+for (const {lot,axis} of canalFrontages) {
+  const house = city.buildings.find(b => inPoly(b.p,...lot));
+  const plan = house && ridgePlan(house.p,house.h,axis);
+  if (!plan) { bad(`canal house at ${lot} has no pitched roof`); continue; }
+  let area=0, tops=0;
+  const horizontalArea=(a,b,c)=>Math.abs((b[0]-a[0])*(c[2]-a[2])-(b[2]-a[2])*(c[0]-a[0]))/2;
+  const trim={tri(){},quad(){}}, tile=new THREE.Color();
+  const roofs={tri(a,b,c){
+    area+=horizontalArea(a,b,c);
+    if(Math.max(a[1],b[1],c[1])-Math.min(a[1],b[1],c[1])<.0001) tops+=horizontalArea(a,b,c);
+  }};
+  buildRidge(plan,{roofs,trim},0,tile,tile,1,0);
+  const p=house.p, footprint=Math.abs(p.reduce((sum,x,i)=>i%2?sum:sum+x*p[(i+3)%p.length]-p[(i+2)%p.length]*p[i+1],0))/2;
+  if (Math.abs(footprint-area)>.001 || tops>.001) bad(`flat or incomplete canal roof at ${lot}`);
 }
 for (const [name, lim] of Object.entries(GEOS)) {
   const g = tryBuild(name, () => L[name]()); if (!g) continue;

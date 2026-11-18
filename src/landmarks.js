@@ -161,8 +161,8 @@ export const groteKerkSolids = [[-36, 0, 8, 33], [-24, 0, 8, 33], [-12, 0, 8, 33
 // round stair towers, the rectory and the chapels; only the central nave rises.
 export function josephkerk() {
   const S = new Skin(), R = new Skin(), K = new Kit(), g = new THREE.Group(), M = mats();
-  const brick = '#a5725d', warm = '#b38163', buff = '#d2ba91', dark = '#645449';
-  const slate = '#636b74', copper = '#83a99c', glass = '#344850';
+  const brick = '#ae9180', warm = '#bba28e', buff = '#dfceb0', dark = '#675d53';
+  const slate = '#68707b', copper = '#99b6ac', glass = '#526368';
   const gable = (z0, z1, side, eave, ridge, colour) => {
     const end = (z, n) => S.poly([[-side,6.68,z],[side,6.68,z],[side,eave,z],[0,ridge,z],[-side,eave,z]],[0,0,n],colour,.66);
     end(z0,-1); end(z1,1);
@@ -173,13 +173,18 @@ export function josephkerk() {
     }
   };
   const window = (x,y,z,angle,w,h) => {
-    const shape = arch(w,h,4);
-    K.at(x,y,z,angle).add(slab(shape,.085),glass)
-      .add(ring(arch(w+.38,h+.33,4).map(([u,v])=>[u,v-.12]),shape,.22),buff)
-      .box(.1,h-.12,.09,dark,0,(h-.12)/2,.14)
-      .box(w-.08,.10,.09,dark,0,h*.42,.14);
+    const inner=arch(w,h,3), outer=arch(w+.36,h+.28,3), pane=new Skin();
+    const pt=(p,depth,dy=0)=>[p[0],p[1]+dy,depth];
+    pane.poly(inner.map(p=>pt(p,.045)),[0,0,1],glass);
+    for(let i=0;i<inner.length;i++) {
+      const j=(i+1)%inner.length;
+      pane.poly([pt(outer[i],.12,-.10),pt(outer[j],.12,-.10),pt(inner[j],.045),pt(inner[i],.045)],[0,0,1],buff);
+    }
+    K.at(x,y,z,angle).skin(pane)
+      .box(.105,h-.13,.08,dark,0,(h-.13)/2,.105)
+      .box(w-.08,.11,.08,dark,0,h*.43,.105);
   };
-  gable(-17,15.7,5.25,14.1,20.3,brick);
+  gable(-17,17.7,5.25,14.1,20.3,brick);
   for (const d of [-1,1]) {
     const x = d * 8.35, inner = d * 5.25;
     S.poly([[x,6.68,-13],[x,6.68,13.8],[x,8.5,13.8],[x,8.5,-13]],[d,0,0],warm,.66);
@@ -199,29 +204,54 @@ export function josephkerk() {
       R.poly([[outer,13.25,z],[inner,13.25,z],[inner,17.65,-7.55],[outer,17.65,-7.55]],[0,1,z+7.55],slate,.48);
     }
     window(outer,7.0,-7.55,d*PI/2,3.05,6.4);
-    const xTower=d*5.85;
-    K.at(xTower,0,14.55).add(Cyl(1.30,1.48,14.9,10),brick,0,7.45,0)
-      .add(Cyl(1.43,1.33,.45,10),buff,0,14.95,0)
-      .add(Cyl(1.1,1.25,1.9,10),warm,0,16.1,0)
-      .add(Cyl(1.33,1.18,.25,10),buff,0,17.14,0)
-      .add(Cone(1.48,6.4,10),copper,0,20.46,0);
+    const xTower=.65+d*4.35, zTower=18.45;
+    K.at(xTower,0,zTower)
+      .add(Cyl(1.45,1.57,1.0,10),'#967f6f',0,.5,0)
+      .add(Cyl(1.3,1.43,13.8,10),brick,0,7.9,0)
+      .add(Cyl(1.43,1.33,.32,10),buff,0,14.94,0)
+      .add(Cyl(1.16,1.27,2.3,10),warm,0,16.25,0)
+      .add(Cyl(1.4,1.20,.30,10),buff,0,17.55,0)
+      .add(Cone(1.38,6.1,10),copper,0,20.75,0)
+      .add(Cone(.075,.52,5),dark,0,24.02,0);
+    for(const level of [5.9,10.6]) K.add(Cyl(1.41,1.43,.18,10),buff,0,level,0);
     for (const n of [-1,0,1]) {
-      const a=n*.62;
-      K.at(xTower+sin(a)*1.20,15.45,14.55+cos(a)*1.20,a)
-        .add(slab(arch(.36,1.12,3),.10),'#3f4240');
+      const angle=n*.78;
+      K.at(xTower+sin(angle)*1.20,15.45,zTower+cos(angle)*1.20,angle)
+        .add(slab(arch(.34,1.28,3),.085),'#494d4b');
     }
-    K.at(0,0,15.73).bar([d*5.18,14.25,0],[0,20.35,0],.20,buff,.24);
+    K.at(0,0,17.72).bar([d*5.18,14.25,0],[0,20.35,0],.20,buff,.24);
+    for (const z of [1.45,7.0,12.65]) {
+      K.at(d*8.44,0,z,d*PI/2).box(.64,6.2,.29,brick,0,3.10,.04)
+        .box(.72,.22,.38,buff,0,6.26,.08).box(.47,1.55,.19,warm,0,7.11,0);
+      window(d*8.39,4.65,z+1.83,d*PI/2,1.18,3.20);
+    }
   }
-  // The front has three lancets, a round traceried window and a recessed portal.
-  for (const x of [-2.0,0,2.0]) window(x,6.97,15.75,0,1.56,4.1);
-  K.at(0,12.95,15.75).add(Cyl(1.58,1.58,.12,16).rotateX(PI/2),glass)
+  // The entrance projects beyond the tower line on the mapped Kennemersingel
+  // facade. Its sandstone door surround, slate porch and tall lancets are
+  // visible together from the mill bastion.
+  const front=17.76;
+  for (const x of [-1.9,0,1.9]) window(x,6.97,front,0,1.48,4.30);
+  const porchZ=22.98, porchX=.70, half=2.14, eave=6.66, peak=8.75;
+  const porchFace=[[-half,eave],[half,eave],[0,peak]];
+  K.at(porchX,0,porchZ).add(slab(porchFace,.06),warm)
+    .add(slab(arch(3.08,5.98,5),.13),'#675348')
+    .add(ring(arch(3.68,6.45,5),arch(3.08,5.98,5),.24),buff)
+    .add(ring(arch(3.04,5.96,5),arch(2.57,5.53,5),.17),'#ab9582')
+    .add(slab(arch(2.53,5.50,5),.15),'#635247')
+    .box(.065,3.7,.06,dark,0,1.85,.19);
+  for(const d of [-1,1]) {
+    const x=porchX+d*half;
+    R.poly([[x,eave,18.0],[x,eave,porchZ],[porchX,peak,porchZ],[porchX,peak,18.0]],[d,1,0],slate,.48);
+    K.at(porchX,0,porchZ+.08).bar([d*half,eave,.03],[0,peak,.03],.18,buff,.23);
+  }
+  K.at(0,12.95,front).add(Cyl(1.58,1.58,.12,16).rotateX(PI/2),glass)
     .add(Tor(1.56,.16,4,18),buff,0,0,.16)
     .add(Tor(.46,.09,4,10),buff,0,0,.20);
   for(let i=0;i<6;i++) {
     const a=i*PI/3;
     K.bar([sin(a)*.48,cos(a)*.48,.18],[sin(a)*1.47,cos(a)*1.47,.18],.12,buff);
   }
-  for(const x of [-1.1,0,1.1]) window(x,16.0,15.75,0,.45,x?1.1:1.65);
+  for(const x of [-1.1,0,1.1]) window(x,16.0,front,0,.45,x?1.1:1.65);
   K.at(0,20.1,-7.55).add(Cyl(.72,.87,1.7,8),'#675d50',0,.45,0)
     .add(Cone(1.05,5.25,8),slate,0,3.87,0).add(Ico(.13),GOLD,0,6.6,0);
   g.add(mesh(S.geo(),M.masonry),mesh(R.geo(),M.roofing),mesh(K.geo(),M.plain));

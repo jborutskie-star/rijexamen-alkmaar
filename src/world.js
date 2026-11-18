@@ -1,6 +1,6 @@
 // The city: real Alkmaar footprints, streets and canals (OpenStreetMap) built as a chunky toy town.
 import * as THREE from 'three';
-import { ridgePlan, buildRidge, boardedShed } from './town-roofs.js';
+import { ridgePlan, buildRidge, boardedShed, canalFrontages } from './town-roofs.js';
 import { streetFinish } from './street-finish.js';
 import * as Street from './street-props.js';
 import { canalReflections, sunOffset } from './atmosphere.js';
@@ -573,6 +573,7 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
   const dim = (c, k) => c.clone().multiplyScalar(k), aoDark = C('#8a8a8a'), AO = 1.7, SK = 1.2, pitched = [], tops = []; // AO: width of the shading at the foot of a wall; SK: metres of roof to one repeat of the tile picture
   const roofSpots = [[...map.pois.Waag,100],[...map.pois['Grote of Sint-Laurenskerk'],120],[...map.pois['Molen van Piet'],90],[...map.pois.Accijnstoren,80]];
   const roofNearby = (x,z) => !layout.clear(x,z,55) || roofSpots.some(([px,pz,r]) => hypot(px-x,pz-z)<r);
+  const canalGables = new Map(canalFrontages.map(front => [hitB(...front.lot),front]));
   for (const b of B) {
     if (b.gone) continue;
     const p = b.p, n = p.length / 2, Rb = rnd(b.i * 7919 + 13), [cx, cz] = b.c, t = tileOf(cx, cz), church = b.k === 'church', big = church && /^Grote/.test(b.n || ''), special = church || b.n === 'Waag' || b.n === 'Accijnstoren';
@@ -582,7 +583,9 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
     if (b.n === 'Waag') { h = 13; wall = C('#b78665'); roof = C('#3f4656'); }
     if (b.n === 'Accijnstoren') { h = 12; wall = C('#f6f1e4'); roof = C('#3f4656'); }
     b.H = b.W = h; // W: top of the wall, H: top of the roof
-    const fittedRoof = !special && n > 4 && n <= 20 && h > 5.5 ? ridgePlan(p, h) : null;
+    const canalGable = canalGables.get(b);
+    if (canalGable?.tile) roof = C(canalGable.tile);
+    const fittedRoof = !special && n > 4 && n <= 20 && h > 5.5 ? ridgePlan(p, h, canalGable?.axis) : null;
     if (fittedRoof) {
       // Keep the existing collision height and fit the eaves below it.
       let originalInset;
@@ -719,7 +722,7 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
       continue;
     }
     if (fittedRoof) {
-      buildRidge(fittedRoof,t,h,roof,wall,SK,roofNearby(cx,cz) ? b.i+1 : 0,tally,(x,z)=>hitB(x,z,b));
+      buildRidge(fittedRoof,t,h,roof,wall,SK,(canalGable || roofNearby(cx,cz)) ? b.i+1 : 0,tally,(x,z)=>hitB(x,z,b));
       continue;
     }
     const P3 = (i, y) => [p[2 * i], y, p[2 * i + 1]], mid = (a, c, y) => [(a[0] + c[0]) / 2, y, (a[2] + c[2]) / 2];
