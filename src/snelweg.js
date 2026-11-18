@@ -491,6 +491,22 @@ export function buildSnelweg(scene) {
   });
   const roadA = new Flat(), roadB = new Flat(), roadC = new Flat(), verge = new Flat();
   const greens = ['#6aa84a', '#73b352', '#62a046', '#7ab85a'], vA = (z) => 1 - (abs(z) - 1.5) / (EDGE - 1.5), vB = (z) => 1 - (z - 1.5) / (WIDE - 1.5);
+  // A broken olive shoulder margin between the asphalt and the better-cut grass.
+  const vergeEdge = (x0, x1, edge0, field0, edge1, field1, color) => {
+    const cut = (x, edge, field) => edge + Math.sign(field - edge)
+      * min(abs(field - edge), 1.55 + 0.4 * sin(x * 0.13) + 0.25 * sin(x * 0.31));
+    for (let x = x0; x < x1; x += 36) {
+      const next = min(x1, x + 36), u = (x - x0) / (x1 - x0), v = (next - x0) / (x1 - x0);
+      const e = lerp(edge0, edge1, u), g = lerp(field0, field1, u);
+      const en = lerp(edge0, edge1, v), gn = lerp(field0, field1, v);
+      const t = cut(x, e, g), tn = cut(next, en, gn), straw = sin(x * 0.031) > 0.2 ? '#819650' : '#8da05e';
+      if (field0 >= edge0 && field1 >= edge1) {
+        verge.quad(x, next, e, t, en, tn, straw); verge.quad(x, next, t, g, tn, gn, color);
+      } else {
+        verge.quad(x, next, g, t, gn, tn, color); verge.quad(x, next, t, e, tn, en, straw);
+      }
+    }
+  };
   const sect = (x) => { // the southern half, cut across at x: where the main road ends and where the ramp lies
     const wide = (x > M0 && x < M1) || (x > E0 && x < E1), edge = wide ? WIDE : EDGE;
     let p = x > XW - 4 && x < RA1 + 60 ? zA(x) : x > RB0 - 10 && x < XE + 4 ? zB(x) : null; if (p !== null && p + RW <= edge + 0.01) p = null;
@@ -503,14 +519,17 @@ export function buildSnelweg(scene) {
     const A = sect(a + 1e-3), Bq = sect(b - 1e-3), g1 = greens[i % 4], g2 = greens[(i + 2) % 4], S1 = CORRIDOR.z1 - Z0, stub = (a === XW - 4 || a === XE - 4);
     if (A.wide) roadB.quad(a, b, 1.5, WIDE, 1.5, WIDE, '#fff', [[a / 12, vB(1.5)], [a / 12, vB(WIDE)], [b / 12, vB(WIDE)], [b / 12, vB(1.5)]]);
     else roadA.quad(a, b, 1.5, EDGE, 1.5, EDGE, '#fff', [[a / 12, 1], [a / 12, 0], [b / 12, 0], [b / 12, 1]]);
-    verge.quad(a, b, A.edge, A.n, Bq.edge, Bq.n, g1);
+    vergeEdge(a, b, A.edge, A.n, Bq.edge, Bq.n, g1);
     const rv = (z, p) => (z - (p - RW)) / (2 * RW);
     roadC.quad(a, b, A.n, A.s, Bq.n, Bq.s, '#fff', [[a / 8, rv(A.n, A.p)], [a / 8, rv(A.s, A.p)], [b / 8, rv(Bq.s, Bq.p)], [b / 8, rv(Bq.n, Bq.p)]]);
-    if (stub) roadC.quad(a, b, A.s, S1, Bq.s, S1, '#fff', [[A.s / 8, 0], [S1 / 8, 0], [S1 / 8, 1], [A.s / 8, 1]]); else verge.quad(a, b, A.s, S1, Bq.s, S1, g2);
+    if (stub) roadC.quad(a, b, A.s, S1, Bq.s, S1, '#fff', [[A.s / 8, 0], [S1 / 8, 0], [S1 / 8, 1], [A.s / 8, 1]]); else vergeEdge(a, b, A.s, S1, Bq.s, S1, g2);
   }
   { const a = CORRIDOR.x0, b = CORRIDOR.x1, N = CORRIDOR.z0 - Z0;
     roadA.quad(a, b, -EDGE, -1.5, -EDGE, -1.5, '#fff', [[a / 12, 0], [a / 12, 1], [b / 12, 1], [b / 12, 0]]);
-    verge.quad(a, b, N, -EDGE, N, -EDGE, greens[1]); verge.quad(a, b, -1.5, 1.5, -1.5, 1.5, '#8a9a6a'); }
+    vergeEdge(a, b, -EDGE, N, -EDGE, N, greens[1]);
+    verge.quad(a, b, -1.5, -0.79, -1.5, -0.79, '#95935e');
+    verge.quad(a, b, -0.79, 0.79, -0.79, 0.79, '#839b51');
+    verge.quad(a, b, 0.79, 1.5, 0.79, 1.5, '#95935e'); }
   const grass = canvasTex(128, 128, (g, w, h) => { g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); const r = rnd(4); for (let i = 0; i < 900; i++) { g.fillStyle = r() < 0.5 ? `rgba(20,70,10,${0.05 + r() * 0.12})` : `rgba(255,255,200,${0.05 + r() * 0.1})`; g.fillRect(r() * w, r() * h, 2 + r() * 3, 2 + r() * 5); } });
   const rampTex = canvasTex(64, 128, (g, w, h) => { g.fillStyle = '#474a51'; g.fillRect(0, 0, w, h); grain(g, w, h, 700, 9); asphaltGrain(g, w, h, 4); g.fillStyle = '#f4f3ea'; g.fillRect(0, 7, w, 4); g.fillRect(0, h - 11, w, 4); });
   [[roadA, asphalt(EDGE - 1.5, false)], [roadB, asphalt(WIDE - 1.5, true)], [roadC, rampTex], [verge, grass]].forEach(([f, map], i) => still.add(f.mesh(mat('#ffffff', { map, bumpMap: map, bumpScale: 0.023, roughness: 0.89, vertexColors: i === 3 }))));
@@ -519,7 +538,14 @@ export function buildSnelweg(scene) {
   const solid = kit(uv), light = kit(uv), steel = '#aeb6bd', concrete = '#c9c5bb';
   for (const g of Y.gantries) {
     const zc = Z0 + (g.z0 + g.z1) / 2, span = g.z1 - g.z0;
-    for (const z of [g.z0, g.z1]) solid.part(box(0.5, 5.4, 0.5), steel, g.x, 2.7, Z0 + z);
+    for (const edge of [g.z0, g.z1]) {
+      const z = Z0 + edge;
+      for (const side of [-1, 1]) {
+        solid.part(box(0.16, 5.36, 0.46).rotateZ(side * 0.036), steel, g.x + side * 0.12, 2.68, z);
+      }
+      solid.part(box(0.54, 0.45, 0.53), '#79868a', g.x, 0.38, z);
+      solid.part(box(0.03, 0.16, 0.23), '#e1b549', g.x - 0.25, 0.53, z);
+    }
     for (const y of [5.29, 6.11]) solid.part(box(0.8, 0.18, span + 1.2), steel, g.x, y, zc);
     const bays = Math.ceil(span / 1.8), step = span / bays;
     for (let n = 0; n < bays; n++) for (const side of [-1, 1]) {
@@ -528,6 +554,14 @@ export function buildSnelweg(scene) {
     }
     for (const z of [g.z0, g.z1]) solid.part(box(0.58, 0.28, 0.58), '#74818b', g.x, 0.14, Z0 + z);
     g.signs.forEach((name, i) => { const z = Z0 + (i ? 14.2 : 5.6); for (const o of [-2.6, 2.6]) solid.part(box(0.2, 3.3, 0.2), steel, g.x - 0.3, 7.8, z + o); solid.part(box(0.16, 3.0, 7.8), '#0f3f8c', g.x - 0.5, 7.9, z).decal(name.replace('2', ''), 7.8, 3.0, g.x - 0.62, 7.9, z, 'x-'); });
+    // The black cabinets hang immediately under the blue boards on the approach to Kooimeer.
+    for (const centre of [5.6, 14.2]) {
+      const z = Z0 + centre;
+      solid.part(box(0.25, 1.07, 7.61), '#313b3e', g.x - 0.42, 5.76, z);
+      solid.part(box(0.31, 0.12, 7.69), '#1b2426', g.x - 0.43, 5.26, z);
+      solid.part(box(0.07, 2.86, 7.73), '#9ca5a7', g.x - 0.38, 7.9, z);
+      for (const height of [6.82, 7.93, 9.04]) solid.part(box(0.11, 0.07, 7.63), '#c7cecc', g.x - 0.30, height, z);
+    }
     for (const l of [L1, L2, L3, SH]) solid.part(box(0.25, 1.0, 1.0), '#16171a', g.x - 0.52, 5.7, Z0 + l).decal('matrix', 0.9, 0.9, g.x - 0.685, 5.7, Z0 + l, 'x-');
   }
   { const f = Y.flits, z = Z0 + f.z; solid.part(box(0.5, 2.1, 0.5), '#8b9388', f.x, 1.05, z).part(box(0.56, 0.3, 0.56), '#ffd21f', f.x, 1.9, z).part(box(0.08, 0.36, 0.34), '#101216', f.x - 0.27, 1.5, z).part(box(0.6, 0.12, 0.6), '#5d655c', f.x, 2.16, z); }
@@ -547,8 +581,35 @@ export function buildSnelweg(scene) {
     } }
   // long runs in 40 m pieces: one 6400 m box, clipped right by a low camera, lost enough depth precision to draw its top edge over the cars in front of it
   const run = (a, b, h, w, color, y, z) => { for (let x = a; x < b - 1e-6; x += 40) { const l = min(40, b - x); light.part(box(l, h, w), color, x + l / 2, y, z); } };
-  for (const z of [-1.1, 1.1, -18.4]) run(X0, X1, 0.32, 0.1, steel, 0.62, Z0 + z);
-  for (const [a, b] of Y.railS) run(a, b, 0.32, 0.1, steel, 0.62, Z0 + 18.4);
+  // Twin folded steel runners read as an open barrier from the Nijenburgerweg overpass.
+  const faces = [], fold = [[0.46, 0.086], [0.49, 0.14], [0.55, 0.148], [0.625, 0.086],
+    [0.70, 0.148], [0.76, 0.14], [0.79, 0.086], [0.79, 0.047]];
+  for (const side of [-1, 1]) for (let i = 1; i < fold.length; i++) {
+    const [y0, z0] = fold[i - 1], [y1, z1] = fold[i];
+    const points = [[0, y0, side * z0], [1, y0, side * z0], [1, y1, side * z1], [0, y1, side * z1]];
+    for (const j of side > 0 ? [0, 1, 2, 0, 2, 3] : [0, 2, 1, 0, 3, 2]) faces.push(...points[j]);
+  }
+  const rail = new THREE.BufferGeometry();
+  rail.setAttribute('position', new THREE.Float32BufferAttribute(faces, 3));
+  rail.computeVertexNormals();
+  const railRuns = [[X0, X1, -1.1], [X0, X1, 1.1], [X0, X1, -18.4], ...Y.railS.map(([a, b]) => [a, b, 18.4])];
+  for (const [a, b, z] of railRuns) {
+    const near = max(a, XW - 160), far = min(b, XE + 160);
+    run(a, min(b, near), 0.32, 0.12, steel, 0.62, Z0 + z);
+    run(max(a, far), b, 0.32, 0.12, steel, 0.62, Z0 + z);
+    // Taper the ends of the outer runners into the grass beside the slip roads.
+    const terminal = (x) => z === 18.4 ? 0.23 + 0.77 * sm(min(x - a, b - x) / 4) : 1;
+    for (let x = near; x < far;) {
+      const next = min(x + 40, far, x < a + 4 ? a + 4 : Infinity, x < b - 4 ? b - 4 : Infinity);
+      const g = rail.clone(), pos = g.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        const dx = pos.getX(i) * (next - x);
+        pos.setXY(i, dx, pos.getY(i) * terminal(x + dx));
+      }
+      if (terminal(x) !== terminal(next)) g.computeVertexNormals();
+      light.part(g, '#afb9bb', x, 0, Z0 + z); x = next;
+    }
+  }
   for (const [a, b, z] of Y.barriers) { run(a, b, 1.5, 0.3, '#3f8f57', 0.75, Z0 + z); run(a, b, 2.1, 0.14, '#bfe6ee', 2.55, Z0 + z); run(a, b, 0.16, 0.36, '#2f6f43', 3.68, Z0 + z); for (let x = a; x <= b; x += 10) light.part(box(0.3, 3.8, 0.44), '#2f6f43', x, 1.9, Z0 + z); }
   const solidMesh = new THREE.Mesh(solid.geo(), paint), lightMesh = new THREE.Mesh(light.geo(), paint); solidMesh.castShadow = solidMesh.receiveShadow = lightMesh.receiveShadow = true; still.add(solidMesh, lightMesh);
   const many = (geo, material, list, shadow, parent = still) => { // [[x, y, z, turn, sx, sy, sz]]
@@ -556,9 +617,31 @@ export function buildSnelweg(scene) {
     list.forEach((o, i) => im.setMatrixAt(i, M.compose(V.set(o[0], o[1], o[2]), Q.setFromEuler(E.set(0, o[3] || 0, 0)), S.set(o[4] ?? 1, o[5] ?? 1, o[6] ?? 1))));
     im.castShadow = shadow; im.receiveShadow = true; parent.add(im); return im;
   };
-  { const posts = []; for (let x = X0 + 6; x < X1; x += 16) { posts.push([x, 0.4, Z0 - 1.1], [x, 0.4, Z0 + 1.1], [x, 0.4, Z0 - 18.4]); if (Y.railS.some(([a, b]) => x > a && x < b)) posts.push([x, 0.4, Z0 + 18.4]); }
-    many(new THREE.CylinderGeometry(0.1, 0.1, 0.8, 4, 1, true), mat('#8d959c'), posts, false);
-    const lamp = kit(uv).part(cyl(0.11, 0.16, 12, 6), steel, 0, 6, 0).part(box(0.14, 0.14, 5.2), steel, 0, 11.9, 0).part(box(0.5, 0.16, 1.1), '#e9eef2', 0, 11.86, 2.25).part(box(0.5, 0.16, 1.1), '#e9eef2', 0, 11.86, -2.25).part(box(0.36, 0.05, 0.9), '#fff6c9', 0, 11.76, 2.25).part(box(0.36, 0.05, 0.9), '#fff6c9', 0, 11.76, -2.25);
+  { const posts = [];
+    for (const [a, b, z] of railRuns) for (let x = a + 2; x < b; x += (x > XW - 120 && x < XE + 150 ? 4 : 16)) {
+      const h = z === 18.4 ? 0.23 + 0.77 * sm(min(x - a, b - x) / 4) : 1;
+      posts.push([x, 0, Z0 + z, 0, 1, h, 1]);
+    }
+    const bracket = kit(uv).part(new THREE.CylinderGeometry(0.077, 0.077, 0.74, 4, 1, true).rotateY(PI / 4), '#68747b', 0, 0.37, 0)
+      .part(new THREE.PlaneGeometry(0.10, 0.265).rotateX(-PI / 2), '#b8bfbd', 0, 0.76, 0);
+    many(bracket.geo(), paint, posts, false);
+    const lamp = kit(uv).part(new THREE.CylinderGeometry(0.095, 0.15, 11.84, 6, 1, true), steel, 0, 5.92, 0);
+    const curve = [[0, 11.76], [0.29, 11.97], [0.72, 12.10], [2.42, 12.12]];
+    for (const side of [-1, 1]) {
+      // An open, continuous section has no hidden caps at the bends.
+      const verts = [], indices = [];
+      for (const [z, y] of curve) for (const [dx, dy] of [[-0.06, -0.07], [-0.06, 0.07], [0.06, 0.07], [0.06, -0.07]]) {
+        verts.push(dx, y + dy, side * z);
+      }
+      for (let i = 0; i < curve.length - 1; i++) for (let j = 0; j < 4; j++) {
+        const a = i * 4 + j, b = i * 4 + (j + 1) % 4;
+        if (side > 0) indices.push(a, a + 4, b, b, a + 4, b + 4);
+        else indices.push(a, b, a + 4, b, b + 4, a + 4);
+      }
+      const arm = new THREE.BufferGeometry(); arm.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3)); arm.setIndex(indices); arm.computeVertexNormals();
+      lamp.part(arm, steel).part(box(0.41, 0.15, 0.71), '#68767b', 0, 12.07, side * 2.44)
+        .part(new THREE.PlaneGeometry(0.33, 0.60).rotateX(PI / 2), '#f9e9b0', 0, 11.99, side * 2.44);
+    }
     many(lamp.geo(), paint, Y.lamps.map((x) => [x, GROUND, Z0]), true);
     const hm = kit(uv).part(box(0.08, 1.3, 0.1), '#e9eef2', 0, 0.65, 0).part(box(0.06, 0.5, 0.5), '#12854a', 0, 1.05, 0).decal('hm', 0.46, 0.46, -0.07, 1.05, 0, 'x-').decal('hm', 0.46, 0.46, 0.07, 1.05, 0, 'x+');
     many(hm.geo(), paint, Y.hecto.map(([x, z]) => [x, GROUND, Z0 + z]), false); }
@@ -574,9 +657,30 @@ export function buildSnelweg(scene) {
     const reed = kit(uv); [[0, 0, 1.9, 0.12, '#9bab55'], [0.12, 0.08, 1.6, -0.15, '#b3b86a'], [-0.1, 0.1, 1.75, 0.2, '#8a9a48'], [0.05, -0.12, 1.45, -0.1, '#a5b45c'], [-0.08, -0.06, 1.3, 0.25, '#b3b86a']].forEach(([x, z, h, lean, c]) => reed.part(new THREE.ConeGeometry(0.045, h, 3).translate(0, h / 2, 0).rotateZ(lean), c, x, 0, z));
     reed.part(cyl(0.045, 0.045, 0.26, 5), '#6b4a2a', -0.02, 1.7, 0).part(cyl(0.04, 0.04, 0.22, 5), '#6b4a2a', 0.27, 1.55, 0.08); // two bulrush heads
     many(reed.geo(), paint, reeds, false);
-    const poplar = kit(uv).part(cyl(0.12, 0.18, 2.6, 5), '#6b4f35', 0, 1.3, 0).part(new THREE.IcosahedronGeometry(1, 0).scale(1.35, 3.4, 1.35), '#3f7f3a', 0, 5.4, 0);
-    for (const [x, z, h, c] of [[-0.46, 0.23, 4.52, '#528d40'], [0.44, -0.17, 5.85, '#61984a']])
-      poplar.part(new THREE.IcosahedronGeometry(1, 0).scale(0.78, 1.95, 0.8), c, x, h, z);
+    // Short, irregular patches of dry and fresh growth sit on the banks behind the steel.
+    const tuft = kit(uv), grassRandom = rnd(481);
+    for (let i = 0; i < 7; i++) {
+      const x = (grassRandom() - 0.5) * 0.94, z = (grassRandom() - 0.5) * 0.42;
+      const h = 0.09 + grassRandom() * 0.26, w = 0.038 + grassRandom() * 0.04;
+      const blade = new THREE.BufferGeometry();
+      const vertices = [x - w, 0, z, x + w, 0, z + w, x + w * 1.8, h, z + w];
+      blade.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3)); blade.computeVertexNormals();
+      tuft.part(blade, ['#868543', '#83934b', '#c3ad68', '#a1aa5e'][i % 4]);
+    }
+    const tufts = [];
+    for (const [a, b, z] of railRuns) for (let x = max(a, XW - 120); x < min(b, XE + 150); x += 2 + grassRandom() * 4) {
+      const bank = abs(z) < 2 ? z * 0.54 : z + Math.sign(z) * 0.52;
+      tufts.push([x, GROUND + 0.012, Z0 + bank + (grassRandom() - 0.5) * 0.42,
+        grassRandom() * PI * 2, 1.3 + grassRandom() * 1.4, 0.75 + grassRandom() * 0.65, 1]);
+    }
+    many(tuft.geo(), paint, tufts, false);
+    const poplar = kit(uv).part(new THREE.CylinderGeometry(0.085, 0.18, 3.72, 6, 1, true), '#6d5741', 0, 1.86, 0);
+    // Break the long poplar line into divided crowns above a visible fork.
+    for (const side of [-1, 1]) poplar.part(new THREE.CylinderGeometry(0.045, 0.10, 1.65, 4, 1, true).rotateZ(side * 0.39), '#73604b', -side * 0.31, 2.92, 0);
+    for (const [x, y, z, w, h, c] of [[0.10, 5.96, 0.14, 1.16, 3.03, '#437d3d'], [-0.52, 4.88, -0.19, 0.95, 2.0, '#548a43'],
+      [0.58, 5.05, -0.26, 0.87, 1.80, '#6a9a4c'], [-0.20, 6.62, 0.39, 0.79, 1.72, '#679449']]) {
+      poplar.part(new THREE.IcosahedronGeometry(1, 0).rotateY(y).scale(w, h, w * 0.91), c, x, y, z);
+    }
     const pm = many(poplar.geo(), paint, trees, true), k = new THREE.Color(); trees.forEach((t, i) => pm.setColorAt(i, k.set(['#ffffff', '#e2f2d6', '#f2ffe8', '#d6ead0'][i % 4])));
     const farm = kit(uv), brick = '#b5523b', trim = '#f2efe6', slate = '#4a4f57';
     for (const [x, z, bx, bz] of Y.farms) { const zc = Z0 + z, gable = new THREE.Shape([new THREE.Vector2(-3.2, 0), new THREE.Vector2(3.2, 0), new THREE.Vector2(0, 2.4)]);
