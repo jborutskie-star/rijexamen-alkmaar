@@ -1,6 +1,7 @@
 // The cast: the lesson car, Nikki, the examiner, cyclists, parked cars, cheese carriers, the crowd,
 // plus tyre smoke, skid marks and confetti. Everything faces local +x, with its right side on +z.
 import * as THREE from 'three';
+import { batchCastSolids } from './cast-solids.js';
 import { loft, duckBill } from './fauna.js';
 import { mat, canvasTex, GROUND, bikeGeo, fuse } from './world.js';
 import { clamp, lerp, smooth } from './drive.js';
@@ -803,6 +804,12 @@ export function buildCast(scene, world, drive, marks) {
     ])));
     g.add(body, feet); scene.add(g); return { g, body, feet, leg, wet: false, h: 0 };
   });
+
+  // Bounds cover the entire performance, including the roof jump and waving banners.
+  batchCastSolids(car.root, 5, [helmet, curtain, backHair]);
+  for (const c of cyclists) batchCastSolids(c.g, 2.4, c.wheels);
+  for (const p of crowd) batchCastSolids(p.g, 2.3);
+  batchCastSolids(carriers, 3);
 
   const V = new THREE.Vector3(); let mood = 'calm', fear = 0, spun = 0, steer = 0, headPhase = 0, talking = false, lurch = 0;
   const setMood = (k, now = 0) => { mood = k; const t = (talking && sin(now * 34) > 0 && moods[k + '!']) || moods[k]; if (ex.faceMat.map !== t) ex.faceMat.map = t; }; // his mouth moves while he talks
