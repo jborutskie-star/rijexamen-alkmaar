@@ -1,5 +1,6 @@
 // The city: real Alkmaar footprints, streets and canals (OpenStreetMap) built as a chunky toy town.
 import * as THREE from 'three';
+import { streetFinish } from './street-finish.js';
 import { canalReflections, sunOffset } from './atmosphere.js';
 import { FACADES, pantiles, recessedBay, bricks } from './facade-detail.js';
 import { inPoly, lerp } from './drive.js';
@@ -45,17 +46,29 @@ class Soup {
     const pts = []; for (let i = 0; i < poly.length; i += 2) pts.push(new THREE.Vector2(poly[i], poly[i + 1]));
     for (const [a, b, c] of THREE.ShapeUtils.triangulateShape(pts, [])) this.tri([pts[a].x, y, pts[a].y], [pts[b].x, y, pts[b].y], [pts[c].x, y, pts[c].y], [0, 1, 0], col);
   }
-  ribbon(line, w, y, col) { // a road: polyline widened to w
+  ribbon(line, w, y, col, repeat = 0) { // a road: polyline widened to w
     const n = line.length / 2, L = [], R = [];
     for (let i = 0; i < n; i++) {
       const a = max(0, i - 1), b = min(n - 1, i + 1);
       let dx = line[2 * b] - line[2 * a], dz = line[2 * b + 1] - line[2 * a + 1]; const l = hypot(dx, dz) || 1; dx /= l; dz /= l;
       L.push([line[2 * i] + dz * w / 2, y, line[2 * i + 1] - dx * w / 2]); R.push([line[2 * i] - dz * w / 2, y, line[2 * i + 1] + dx * w / 2]);
     }
-    for (let i = 0; i + 1 < n; i++) this.quad(L[i], L[i + 1], R[i + 1], R[i], [0, 1, 0], col);
+    let distance = 0;
+    for (let i = 0; i + 1 < n; i++) {
+      const u = distance;
+      distance += Math.hypot(line[2*i+2] - line[2*i], line[2*i+3] - line[2*i+1]);
+      this.quad(L[i], L[i+1], R[i+1], R[i], [0,1,0], col,
+        repeat ? [[u/repeat,0],[distance/repeat,0],[distance/repeat,1],[u/repeat,1]] : undefined);
+    }
     for (const i of [0, n - 1]) { // round caps hide the joints between ways
       const cx = line[2 * i], cz = line[2 * i + 1];
-      for (let k = 0; k < 8; k++) { const a0 = (k / 8) * PI * 2, a1 = ((k + 1) / 8) * PI * 2; this.tri([cx, y, cz], [cx + cos(a0) * w / 2, y, cz + sin(a0) * w / 2], [cx + cos(a1) * w / 2, y, cz + sin(a1) * w / 2], [0, 1, 0], col); }
+      const end = i === 0 ? 1 : n - 2, tx = (line[2*end] - cx) * (i === 0 ? 1 : -1), tz = (line[2*end+1] - cz) * (i === 0 ? 1 : -1);
+      const len = Math.hypot(tx,tz) || 1, u = i === 0 ? 0 : distance;
+      const uv = (dx,dz) => repeat ? [(u + (dx*tx + dz*tz)/len)/repeat, 0.5 + (dz*tx - dx*tz)/(w*len)] : undefined;
+      for (let k = 0; k < 8; k++) {
+        const a = k*PI/4, b = (k+1)*PI/4, dx = cos(a)*w/2, dz = sin(a)*w/2, ex = cos(b)*w/2, ez = sin(b)*w/2;
+        this.tri([cx,y,cz],[cx+dx,y,cz+dz],[cx+ex,y,cz+ez],[0,1,0],col,uv(0,0),uv(dx,dz),uv(ex,ez));
+      }
     }
   }
   geometry() {
@@ -182,14 +195,10 @@ export function buildWorld(scene, map, drive, multiDraw = false) {
   // --- ground: one big paved slab with a subtle klinker pattern. `cut` leaves a hole wherever there is a canal ---
   const cut = { stencilWrite: true, stencilRef: 1, stencilFunc: THREE.NotEqualStencilFunc };
   const grey = (v) => `rgb(${v | 0},${v | 0},${v | 0})`, hash = (i) => ((Math.imul(i + 7, 2654435761) >>> 9) % 1000) / 1000;
-  const pavers = (g, bump) => { // pavement bricks in running bond; a brick that crosses the edge of the picture is the same brick on the other side
-    g.fillStyle = bump ? '#444' : '#b7a183'; g.fillRect(0, 0, 256, 256);
-    for (let y = 0; y < 16; y++) for (let x = -1; x < 8; x++) { const v = hash(((x + 8) % 8) * 16 + y); g.fillStyle = bump ? grey(185 + v * 60) : `hsl(${31 + v * 8},${34 + v * 9}%,${70 + v * 9}%)`; g.fillRect(x * 32 + (y % 2) * 16 + 1.5, y * 16 + 1.5, 29, 13); }
-  };
-  const paving = canvasTex(256, 256, (g) => pavers(g, false)), pavingN = reliefTex(256, 256, (g) => pavers(g, true), 1.6);
+  const footpath = streetFinish('footpath');
   const CITY = [-1090, -730, 860, 760]; // the paved slab stops here; beyond it lies the polder
-  for (const t of [paving, pavingN]) t.repeat.set((CITY[2] - CITY[0]) / 3.2, (CITY[3] - CITY[1]) / 3.2);
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(CITY[2] - CITY[0], CITY[3] - CITY[1], 32, 24), mat('#ffffff', { map: paving, normalMap: pavingN, roughness: 0.86, ...cut }));
+  for (const t of [footpath.map, footpath.normalMap, footpath.roughnessMap]) t.repeat.set((CITY[2] - CITY[0]) / 3.2, (CITY[3] - CITY[1]) / 3.2);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(CITY[2] - CITY[0], CITY[3] - CITY[1], 32, 24), mat('#e6cfae', { ...footpath, ...cut }));
   ground.rotation.x = -PI / 2; ground.position.set((CITY[0] + CITY[2]) / 2, Y0, (CITY[1] + CITY[3]) / 2); ground.receiveShadow = true; ground.renderOrder = -20; scene.add(ground);
   world.city = CITY; world.cut = cut;
 
@@ -224,7 +233,7 @@ export function buildWorld(scene, map, drive, multiDraw = false) {
       quay.wall(ax, az, bx, bz, -1.3, Y0, [nx, 0, nz], clear, [[run, 0], [run + l / 2.56, 0], [run + l / 2.56, 1], [run, 1]]); run = (run + l / 2.56) % 1; // the stones run on round the corner
       shade.quad([ax, -1.175, az], [bx, -1.175, bz], [bx + nx * 1.8, -1.175, bz + nz * 1.8], [ax + nx * 1.8, -1.175, az + nz * 1.8], [0, 1, 0], [dusk, dusk, clear, clear]); // the water darkens towards the quay
     }
-    coping.ribbon([...p, p[0], p[1]], 1.0, Y0, C('#c9c2b4'));
+    coping.ribbon([...p, p[0], p[1]], 1.0, Y0, C('#c9c2b4'), 4.4);
   }
   const seaMesh = sea.mesh(new THREE.MeshStandardMaterial({ vertexColors: true, map: ripple, normalMap: rippleN, normalScale: new THREE.Vector2(0.25, 0.25), roughness: 0.16, metalness: 0.36 }));
   const banks = canalReflections(seaMesh.material, CITY);
@@ -239,30 +248,24 @@ export function buildWorld(scene, map, drive, multiDraw = false) {
   scene.add(seaMesh, quay.mesh(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, map: canvasTex(256, 128, (g) => quayWall(g, false)), normalMap: reliefTex(256, 128, (g) => quayWall(g, true), 2) })), mask);
 
   // --- flat layers: parks, squares, streets. All on the street plane, painted one over the other in this order ---
-  const herring = (g, bump) => { // street klinkers laid in herringbone (keperverband): 8 cells each way, the pattern repeats every 4
-    g.fillStyle = bump ? '#3a3a3a' : '#a2a2a2'; g.fillRect(0, 0, 256, 256);
-    for (let y = -2; y < 9; y++) for (let x = -2; x < 9; x++) {
-      const k = (((x - y) % 4) + 4) % 4; if (k !== 0 && k !== 3) continue;
-      const v = hash(((x + 8) % 8) * 13 + ((y + 8) % 8) * 57); g.fillStyle = bump ? grey(170 + v * 80) : grey(212 + v * 43);
-      g.fillRect(x * 32 + 1.5, y * 32 + 1.5, (k ? 1 : 2) * 32 - 3, (k ? 2 : 1) * 32 - 3);
-    }
-  };
-  const klinker = canvasTex(256, 256, (g) => herring(g, false)), klinkerN = reliefTex(256, 256, (g) => herring(g, true), 1.8);
-  const K = 0.7, flats = { green: new Soup(), ped: new Soup(K), kerb: new Soup(), minor: new Soup(K), main: new Soup(K), cycle: new Soup(K), coping };
+  const cobbles = streetFinish('walk'), carriageway = streetFinish('road'), kerb = streetFinish('kerb');
+  const klinker = cobbles.map, klinkerN = cobbles.normalMap, K = 1 / 2.5;
+  const flats = { green: new Soup(1 / 5), ped: new Soup(K), square: new Soup(1 / 3.4), kerb: new Soup(), minor: new Soup(), main: new Soup(), cycle: new Soup(K), coping };
+  const finishes = { green: streetFinish('grass'), ped: cobbles, square: streetFinish('square'), kerb, minor: carriageway, main: carriageway, cycle: cobbles, coping: kerb };
   const KIND = { pedestrian: '#e2cba6', cycleway: '#cf5a40', service: '#8b8d96', living_street: '#96897f' }, SKIP = /footway|path|steps/;
   for (const g of map.green) { try { flats.green.flat(g, Y0, C('#86cf5c')); } catch {} }
   for (const r of map.roads) {
-    if (r.a) { try { flats.ped.flat(r.p, Y0, C(KIND.pedestrian)); } catch {} continue; }
+    if (r.a) { try { (r.n === 'Waagplein' ? flats.square : flats.ped).flat(r.p, Y0, C(KIND.pedestrian)); } catch {} continue; }
     if (SKIP.test(r.k)) continue;
     const col = C(KIND[r.k] || '#6a6d7c');
     if (r.k === 'pedestrian') flats.ped.ribbon(r.p, r.w, Y0, col);
     else if (r.k === 'cycleway') flats.cycle.ribbon(r.p, r.w, Y0, col);
-    else if (r.k === 'service' || r.k === 'living_street') flats.minor.ribbon(r.p, r.w, Y0, col);
-    else { flats.kerb.ribbon(r.p, r.w + 0.8, Y0, C('#cfc6b6')); flats.main.ribbon(r.p, r.w, Y0, col); }
+    else if (r.k === 'service' || r.k === 'living_street') flats.minor.ribbon(r.p, r.w, Y0, col, r.w);
+    else { flats.kerb.ribbon(r.p, r.w + 0.8, Y0, C('#cfc6b6'), 3.6); flats.main.ribbon(r.p, r.w, Y0, col, r.w); }
   }
   Object.entries(flats).forEach(([k, soup], i) => {
-    const me = soup.mesh(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: soup.wuv ? 0.8 : 0.9, map: soup.wuv ? klinker : null, normalMap: soup.wuv ? klinkerN : null, depthTest: false, depthWrite: false, ...cut }));
-    me.renderOrder = -19 + i; scene.add(me);
+    const me = soup.mesh(new THREE.MeshStandardMaterial({ vertexColors: true, ...finishes[k], depthTest: false, depthWrite: false, ...cut }));
+    me.renderOrder = -19 + i * 0.8; scene.add(me);
   });
   // --- paint and ironwork on the streets the car drives: one more flat layer over the others, cut out of one picture ---
   {

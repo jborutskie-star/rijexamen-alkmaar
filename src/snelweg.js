@@ -1,6 +1,7 @@
 // De snelweg: the A9 south of town. First half of this file is the plan (plain numbers and pure functions of time, runs under node
 // for tools/check-snelweg.mjs); the second half builds the meshes from that plan.
 import * as THREE from 'three';
+import { asphaltGrain } from './street-finish.js';
 import { GROUND, mat, canvasTex } from './world.js';
 
 const { PI, sin, cos, tan, atan2, hypot, min, max, abs, floor, sqrt } = Math;
@@ -470,7 +471,7 @@ export function buildSnelweg(scene) {
     const py = (z) => ((z - 1.5) / span) * h, m = h / span, line = (z, wd) => g.fillRect(0, py(z - wd / 2), w, wd * m), dash = (z, wd, on, every) => { for (let x = 0; x < 12; x += every) g.fillRect((x / 12) * w, py(z - wd / 2), (on / 12) * w, wd * m); };
     g.fillStyle = '#474a51'; g.fillRect(0, 0, w, h); g.fillStyle = '#3f4248'; g.fillRect(0, py(L3 + 1.75), w, h); // the shoulder is a shade darker
     for (const c of wide ? [L1, L2, L3, SH] : [L1, L2, L3]) for (const o of [-0.85, 0.85]) for (const [wd, a] of [[0.9, 0.1], [0.55, 0.12], [0.25, 0.1]]) { g.fillStyle = `rgba(16,16,20,${a})`; g.fillRect(0, py(c + o - wd / 2), w, wd * m); } // where the tyres run
-    grain(g, w, h, 9000, 7); g.fillStyle = '#f4f3ea';
+    grain(g, w, h, 9000, 7); asphaltGrain(g, w, h, span); g.fillStyle = '#f4f3ea';
     line(2.0, 0.22); dash(L1 + 1.75, 0.18, 3, 12); dash(L2 + 1.75, 0.18, 3, 12);
     if (wide) { dash(L3 + 1.75, 0.45, 1.5, 3); line(EDGE, 0.22); } else line(L3 + 1.75, 0.22);
   });
@@ -497,7 +498,7 @@ export function buildSnelweg(scene) {
     roadA.quad(a, b, -EDGE, -1.5, -EDGE, -1.5, '#fff', [[a / 12, 0], [a / 12, 1], [b / 12, 1], [b / 12, 0]]);
     verge.quad(a, b, N, -EDGE, N, -EDGE, greens[1]); verge.quad(a, b, -1.5, 1.5, -1.5, 1.5, '#8a9a6a'); }
   const grass = canvasTex(128, 128, (g, w, h) => { g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); const r = rnd(4); for (let i = 0; i < 900; i++) { g.fillStyle = r() < 0.5 ? `rgba(20,70,10,${0.05 + r() * 0.12})` : `rgba(255,255,200,${0.05 + r() * 0.1})`; g.fillRect(r() * w, r() * h, 2 + r() * 3, 2 + r() * 5); } });
-  const rampTex = canvasTex(64, 128, (g, w, h) => { g.fillStyle = '#474a51'; g.fillRect(0, 0, w, h); grain(g, w, h, 700, 9); g.fillStyle = '#f4f3ea'; g.fillRect(0, 7, w, 4); g.fillRect(0, h - 11, w, 4); });
+  const rampTex = canvasTex(64, 128, (g, w, h) => { g.fillStyle = '#474a51'; g.fillRect(0, 0, w, h); grain(g, w, h, 700, 9); asphaltGrain(g, w, h, 4); g.fillStyle = '#f4f3ea'; g.fillRect(0, 7, w, 4); g.fillRect(0, h - 11, w, 4); });
   [[roadA, asphalt(EDGE - 1.5, false)], [roadB, asphalt(WIDE - 1.5, true)], [roadC, rampTex], [verge, grass]].forEach(([f, map], i) => still.add(f.mesh(mat('#ffffff', { map, bumpMap: map, bumpScale: 0.023, roughness: 0.89, vertexColors: i === 3 }))));
 
   // ---- everything that stands still ----
