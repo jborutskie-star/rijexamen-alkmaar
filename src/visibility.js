@@ -161,6 +161,6 @@ export function cullInstances(scene, sun, watchersInView, facades, trafficInView
     }
     canalInView(eye,sun.castShadow?shadow:null,receivers,facades);
     watchersInView(visible);
-    trafficInView(eye, sun.castShadow ? shadow : null);
+    trafficInView(eye, sun.castShadow ? shadow : null, facades, receivers);
   };
 }

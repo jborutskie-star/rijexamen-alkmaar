@@ -1166,12 +1166,12 @@ export function buildSnelweg(scene, rubber) {
 
   const H = {}, T = {}, tF = plan.T.flash, PC = {}, KC = {};
   let roadTime=0;
-  function trafficInView(eye,shadow) {
+  function trafficInView(eye,shadow,facades,receivers) {
     if (!moving.visible) return;
     for (const car of vehicles.values()) {
       car.bounds.center.x=plan.vx(car.vehicle,roadTime);
-      car.casts=shadow && shadow.intersectsSphere(car.bounds);
-      car.visible=eye.intersectsSphere(car.bounds);
+      car.casts=shadow && shadow.intersectsSphere(car.bounds) && receivers.sphere(car.bounds);
+      car.visible=eye.intersectsSphere(car.bounds) && !facades.hidden(car.bounds);
     }
     for (const fleet of fleets.values()) {
       const {kind,rows,mesh,shadowRows,eyeRows}=fleet;
