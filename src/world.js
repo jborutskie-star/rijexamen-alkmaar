@@ -1,6 +1,10 @@
 // The city: real Alkmaar footprints, streets and canals (OpenStreetMap) built as a chunky toy town.
 import * as THREE from 'three';
 import { ridgePlan, buildRidge, boardedShed, canalFrontages } from './town-roofs.js';
+import { staticTiles } from './static-tiles.js';
+import { packPaintedParts } from './painted-parts.js';
+import { addOutskirts } from './outskirts.js';
+import { facadeVisibility } from './architecture-visibility.js';
 import { streetFinish } from './street-finish.js';
 import * as Street from './street-props.js';
 import { canalReflections, sunOffset } from './atmosphere.js';
@@ -144,7 +148,7 @@ const KERK_A = 0.2523990323078452; // the angle of the Grote Kerk's nave on the 
 const MILL_FACE = -0.36, STAIR = 1.0; // which way the windmill's sails look (rotation.y), and the bearing of the steps up its bastion
 
 export function buildWorld(scene, map, drive, multiDraw, rubber) {
-  const world = { update() {}, lights: [] };
+  const world = { update() {}, lights: [], facades: facadeVisibility() };
   const { layout, m: mk } = drive, M = new THREE.Matrix4(), R = rnd(5);
   const waters = map.water.map((p) => ({ p, bb: bbox(p) }));
   const wet = (x, z) => waters.some((w) => x > w.bb[0] && x < w.bb[2] && z > w.bb[1] && z < w.bb[3] && inPoly(w.p, x, z));
@@ -175,19 +179,19 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
   const tallyGroup = (name, g) => { let n = 0; g.traverse((o) => { if (o.geometry) n += trisOf(o.geometry) * (o.count ?? 1); }); tally(name, 1, n); };
   const mine = (name, geo, list, material = tinted, shadow = true) => { tally(name, list.length, trisOf(geo) * list.length); return inst(geo, material, list, shadow); };
 
-  // Static city fittings can be culled a district at a time. Boats and rotating pieces use the original single batch.
-  const regions = (list, width) => {
-    const cells = new Map();
-    for (const item of list) {
-      const key = Math.floor(item.x / width) + ',' + Math.floor(item.z / width);
-      if (!cells.has(key)) cells.set(key, []);
-      cells.get(key).push(item);
-    }
-    return cells.values();
+  const stillModel = (...args) => {
+    const mesh=mine(...args);
+    mesh.userData.fixedInstances=true;
+    return mesh;
   };
+  const canalModel = (...args) => {
+    const mesh=mine(...args);
+    mesh.userData.movingCanalInstances=true;
+    return mesh;
+  };
+
   const streetInstances = (geo, material, list, shadow = true) => {
-    const cells = list.length < 100 ? [list] : regions(list, 360);
-    for (const cell of cells) inst(geo, material, cell, shadow).userData.fixedInstances = true;
+    if (list.length) inst(geo, material, list, shadow).userData.fixedInstances = true;
   };
   const roofInstances = (name, geo, list, material = tinted, shadow = true) => {
     tally(name, list.length, trisOf(geo) * list.length);
@@ -203,6 +207,7 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(CITY[2] - CITY[0], CITY[3] - CITY[1], 32, 24), mat('#e6cfae', { ...footpath, ...cut }));
   rubber.surface(ground.material); ground.rotation.x = -PI / 2; ground.position.set((CITY[0] + CITY[2]) / 2, Y0, (CITY[1] + CITY[3]) / 2); ground.receiveShadow = true; ground.renderOrder = -20; scene.add(ground);
   world.city = CITY; world.cut = cut;
+  addOutskirts(scene, cut, world.facades);
 
   // --- canals: the water lies 1.2 m below the street, between brick quay walls ---
   const quayWall = (g, bump) => { // 2.56 m of quay, street level at the top: a stone coping, brick courses, and the dark band the water leaves
@@ -344,10 +349,12 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
       g.fillRect(x - 5, 53, 10, 5);
     }
   };
-  const decks = new Soup(), brickS = new Soup(), pave = new Soup(K), ironS = new Soup(), UP = [0, 1, 0], DOWN = [0, -1, 0], pillars = [[], []];
+  const bridgeParts = [], UP = [0, 1, 0], DOWN = [0, -1, 0], pillars = [[], []];
   const BC = { cap: C('#e6e0d2'), band: C('#d6cfc0'), kerb: C('#b3afa7'), walk: C('#cfc6b6'), brick: C('#a5513a'), ring: [C('#e3dccb'), C('#c4bba8')], key: C('#f4efe3'), iron: C('#1f5a3c') };
-  const bq = (a, b, c, d, want, col) => { const l = hypot(want[0], want[2]) || 1, ux = want[2] / l, uz = -want[0] / l; brickS.quad(a, b, c, d, want, col, [a, b, c, d].map((p) => [(p[0] * ux + p[2] * uz) / 1.28, p[1] / 1.28])); }; // brick, courses level; the picture is 1.28 m square
   const span = (P, w, col, rail, fence) => { // P: [x, top, z] down the middle; w: width of the roadway; rail: height of the parapet (0 = none); fence: an iron railing on a kerb instead of a parapet
+    const decks=new Soup(), brickS=new Soup(), pave=new Soup(K), ironS=new Soup();
+    bridgeParts.push([decks,brickS,pave,ironS]);
+    const bq = (a, b, c, d, want, col) => { const l = hypot(want[0], want[2]) || 1, ux = want[2] / l, uz = -want[0] / l; brickS.quad(a, b, c, d, want, col, [a, b, c, d].map((p) => [(p[0] * ux + p[2] * uz) / 1.28, p[1] / 1.28])); }; // brick, courses level; the picture is 1.28 m square
     const W = w + 1.4, n = P.length, KB = 0.16, CT = 0.1, dist = [0]; // KB: the kerb under a railing; CT: the coping
     for (let i = 1; i < n; i++) dist.push(dist[i - 1] + hypot(P[i][0] - P[i - 1][0], P[i][2] - P[i - 1][2]));
     const X = (i, o, dy = 0) => { const a = P[max(0, i - 1)], b = P[min(n - 1, i + 1)], l = hypot(b[0] - a[0], b[2] - a[2]) || 1; return [P[i][0] - ((b[2] - a[2]) / l) * o, P[i][1] + dy, P[i][2] + ((b[0] - a[0]) / l) * o]; };
@@ -424,10 +431,17 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
   }
   {
     const bm = (o) => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, ...o }), rp = canvasTex(256, 128, railPic);
-    scene.add(decks.mesh(rubber.surface(bm()), 'cast'), brickS.mesh(bm({ map: canvasTex(128, 128, (g) => brickPic(g, false)), normalMap: reliefTex(128, 128, (g) => brickPic(g, true), 1.6) }), 'cast'), pave.mesh(bm({ roughness: 0.8, map: klinker, normalMap: klinkerN }), 'cast'), ironS.mesh(bm({ roughness: 0.6, map: rp, alphaTest: 0.5, side: THREE.DoubleSide }), 'cast'));
-    tally('bridges (all fixed ones)', 1, [decks, brickS, pave, ironS].reduce((t, s) => t + s.p.length / 9, 0));
+    const materials = [rubber.surface(bm()), bm({map:canvasTex(128,128,g=>brickPic(g,false)),normalMap:reliefTex(128,128,g=>brickPic(g,true),1.6)}),
+      bm({roughness:.8,map:klinker,normalMap:klinkerN}), bm({roughness:.6,map:rp,alphaTest:.5,side:THREE.DoubleSide})];
+    for (const [i,material] of materials.entries()) {
+      const parts=bridgeParts.map(group=>group[i]).filter(part=>part.p.length);
+      const mesh=staticTiles(parts.map(part=>part.geometry()),material,world.facades);
+      mesh.castShadow=mesh.receiveShadow=true;
+      scene.add(mesh);
+    }
+    tally('bridges (all fixed ones)',1,bridgeParts.flat().reduce((sum,part)=>sum+part.p.length/9,0));
     const post = (H) => fuse([Box(0.42, H + 0.06, 0.26), '#d6cfc0', 0, (H - 0.06) / 2, 0], [Box(0.48, 0.07, 0.32), '#e6e0d2', 0, H + 0.035, 0]); // H: from the deck to under the cap
-    if (pillars[0].length) mine('bridge end posts', post(0.76), pillars[0]); if (pillars[1].length) mine('footbridge end posts', post(1.1), pillars[1]);
+    if (pillars[0].length) stillModel('bridge end posts', post(0.76), pillars[0]); if (pillars[1].length) stillModel('footbridge end posts', post(1.1), pillars[1]);
   }
 
   // --- buildings, split into tiles so only what is on screen is drawn ---
@@ -458,7 +472,7 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
   const flatMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: canvasTex(256, 256, (g) => gravel(g, false)), normalMap: reliefTex(256, 256, (g) => gravel(g, true), 1.2), roughness: 0.95 });
   // the ground goes darker towards the foot of every wall. Painted on by multiplying, straight after the streets, so it lies on whatever paving is there
   const aoMat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, fog: false, depthTest: false, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.DstColorFactor, blendDst: THREE.ZeroFactor, ...cut });
-  const TILE = 200, tiles = new Map();
+  const TILE = multiDraw ? 80 : 200, tiles = new Map();
   const tileOf = (x, z) => { const k = floor(x / TILE) + ':' + floor(z / TILE); if (!tiles.has(k)) tiles.set(k, { a: new Soup(), b: new Soup(), shop: new Soup(), waag: new Soup(), church: new Soup(), trim: new Soup(), flat: new Soup(1 / 3), roofs: new Soup(), ao: new Soup() }); return tiles.get(k); };
   const CELL = 60, cells = new Map(), extra = []; // lookup grid for "is this point inside a building"
   const B = map.buildings.map((b, i) => { let p = b.p; if (area(p) > 0) { const q = []; for (let k = p.length - 2; k >= 0; k -= 2) q.push(p[k], p[k + 1]); p = q; } return { ...b, p, i, bb: bbox(p), c: centroid(p), H: b.h }; });
@@ -609,6 +623,7 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
       const free = !hitB(mx + nx * 0.45, mz + nz * 0.45, b); side.push(free ? [nx, nz] : null); // free: nothing is built against this wall
       if (free) t.ao.quad([ax, Y0, az], [bx, Y0, bz], [bx + nx * AO, Y0, bz + nz * AO], [ax + nx * AO, Y0, az + nz * AO], UP, [aoDark, aoDark, white, white]);
       if (big || smallShed) continue;
+      if (free && !special) world.facades.wall(ax,az,bx,bz,nx,nz,h);
       if (inWater) t.a.wall(ax, az, bx, bz, -1.6, 0, want, C('#8a5a48')); // standing in a canal: the wall goes on down to the water
       if (joseph) {
         // Small survey edges mark returns on buttresses, not additional window bays.
@@ -769,14 +784,7 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
       if (key === 'ao') mesh.renderOrder = -10;
       scene.add(mesh);
     };
-    if (multiDraw) {
-      const vertices = sections.reduce((sum, soup) => sum + soup.p.length / 3, 0);
-      const batch = new THREE.BatchedMesh(sections.length, vertices, 0, material);
-      for (const section of sections) batch.addInstance(batch.addGeometry(section.geometry()));
-      add(batch);
-    } else {
-      for (const section of sections) add(new THREE.Mesh(section.geometry(), material));
-    }
+    add(staticTiles(sections.map(section => section.geometry()),material,world.facades));
   }
 
   streetInstances(Box(1, 1, 1), mat('#ffffff'), relief, false); streetInstances(Box(1, 1, 1), mat('#ffffff'), crowns);
@@ -853,6 +861,9 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
 
   // --- clouds: flat-bottomed cumulus heaped up in the middle and lit from the sun's side; far banks of them stand along the horizon ---
   const puff = [], heap = [], cumulus = (x, y, z, w, tall) => {
+    // Leave a gap between the low town layer and the high cumulus along the southern flight.
+    // Wind still carries the banks past the street cameras throughout the film.
+    if (z > 45 && z < 1900 && y < 305) { y = 355 + y * .30; w *= .76; }
     const n = 5 + Math.floor(R() * 3), r0 = (w / n) * 0.95, turn = R() * Math.PI, cs = Math.cos(turn), sn = Math.sin(turn);
     const put = (to, u, v, h, r) => to.push({ x: x + u * cs - v * sn, y: y + h, z: z + u * sn + v * cs, sx: r, sy: r * 0.72, sz: r * 0.9, a: R() * 6 });
     for (let k = 0; k < n; k++) { // the base: undersides cut off near one level (never exactly the same one), which is what makes it read as a cumulus
@@ -894,9 +905,11 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
   });
   const clouds = new THREE.Group(); scene.add(clouds);
   for (const [geo, list] of [[ball(true), puff], [ball(false), heap]]) {
-    for (const bank of regions(list, 850)) {
-      const im = inst(geo, cloudMat, bank, false); im.receiveShadow = false; clouds.add(im);
-    }
+    const im = inst(geo,cloudMat,list,false);
+    im.receiveShadow=false;
+    im.userData.fixedInstances=true;
+    im.userData.driftingClouds=true;
+    clouds.add(im);
   }
 
   // --- landmarks ---
@@ -1151,7 +1164,7 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
         }
         was = w;
       }
-      mine('drawbridge abutments', fuse([Box(0.9, 1.0, 6.7), '#a5513a', 0, -0.6, 0], [Box(1.0, 0.14, 6.8), '#d6cfc0', 0, -0.07, 0]), ab); // origin on top of the cap
+      stillModel('drawbridge abutments', fuse([Box(0.9, 1.0, 6.7), '#a5513a', 0, -0.6, 0], [Box(1.0, 0.14, 6.8), '#d6cfc0', 0, -0.07, 0]), ab); // origin on top of the cap
     }
     // fixed far half of the bridge
     const far = mk.bridgeS - mk.bridgeN - 1.5, fx0 = r.s1 - r.s0 + 2.2;
@@ -1166,7 +1179,7 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
       const plate = new THREE.Mesh(new THREE.PlaneGeometry(1.38,.22), mat('#ffffff',{map:bridgeName,roughness:.8}));
       plate.rotation.y=sign<0?PI:0; plate.position.set(len*.48,-.15,sign*2.925); lf.add(plate);
     }
-    scene.add(g);
+    packPaintedParts(lf); packPaintedParts(g); scene.add(g);
     // half barriers with flashing lights
     const lamps = [];
     const barrier = (s, side) => {
@@ -1175,7 +1188,7 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
       for (let k = 0; k < 6; k++) b.add(box(0.14, 0.14, 0.44, k % 2 ? '#f6f1e4' : '#e9503a', 0, 1.05, side * (2.9 - 0.22 - k * 0.44)));
       b.add(box(0.2, 2.6, 0.2, '#30343c', 0.5, 1.3, side * 3.5), box(0.25, 0.9, 1.5, '#30343c', 0.5, 2.6, side * 3.5));
       for (const dz of [-0.4, 0.4]) { const l = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 8), new THREE.MeshStandardMaterial({ color: '#400', emissive: '#ff2010', emissiveIntensity: 0 })); l.position.set(0.36, 2.6, side * 3.5 + dz); b.add(l); lamps.push(l); }
-      scene.add(b);
+      packPaintedParts(b); scene.add(b);
     };
     barrier(mk.bridgeN - 9, 1); barrier(mk.bridgeS + 6, -1);
     world.lamps = lamps;
@@ -1226,7 +1239,7 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
     if (sq) for (let k = -9; k <= 9; k++) { const row = []; for (let j = -5; j <= 5; j++) { const [x, z] = at(du + j * 1.56, dv + k * 3.3); if (free(x, z, 0.86) && used.every((q) => hypot(q.x - x, q.z - z) > q.r + 1.3)) row.push({ x, z, j }); } rowsOf.push({ row, k }); }
     const stacks = rowsOf.sort((a, b) => b.row.length - a.row.length || Math.abs(a.k) - Math.abs(b.k)).slice(0, 4).flatMap((r) => r.row.sort((a, b) => Math.abs(a.j) - Math.abs(b.j)).slice(0, 9));
     for (const o of stacks) { used.push({ ...o, r: 0.86 }); world.solid(o.x, o.z, 0.86, 1); }
-    mine('cheese stacks', LM.cheeseStackGeo(), stacks.map((o) => ({ x: o.x, z: o.z, a: 0.55 })));
+    stillModel('cheese stacks', LM.cheeseStackGeo(), stacks.map((o) => ({ x: o.x, z: o.z, a: 0.55 })));
     if (scale) mine('cheese scale', LM.scaleGeo(), [{ x: scale.x, z: scale.z, a: 0.55 }]);
     if (stalls[0]) mine('herring cart', LM.haringkarGeo(), [{ x: stalls[0].x, z: stalls[0].z, a: face(stalls[0]) }]);
     if (stalls[1]) mine('flower stall', LM.bloemenkraamGeo(), [{ x: stalls[1].x, z: stalls[1].z, a: face(stalls[1]) }]);
@@ -1238,7 +1251,7 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
       if (hitB(wall.x, wall.z) && [[0, 0], ...Array.from({ length: 8 }, (_, k) => [cos(k * PI / 4) * 1.45, sin(k * PI / 4) * 1.45])].every(([i, j]) => !hitB(o.x + i, o.z + j) && !wet(o.x + i, o.z + j) && carGap(o.x + i, o.z + j) > 2.9)
         && bridgeGap(o.x, o.z) > 3 && folk.every((q) => hypot(q.x - o.x, q.z - o.z) > 2.2) && !extra.some((q) => hypot(q.x - o.x, q.z - o.z) < q.r + 1.8) && treeGap(o.x, o.z) > 2.6 && !map.roads.some((r) => !r.a && !SKIP.test(r.k) && segGap(Array.from({ length: r.p.length / 2 }, (_, k) => [r.p[2 * k], r.p[2 * k + 1]]), o.x, o.z) < r.w / 2 + 1.5)) { racks.push({ x: o.x, z: o.z, a: a + (side > 0 ? 0 : PI) }); world.solid(o.x, o.z, 1.5, 1.2); }
     }
-    mine('bicycle racks', LM.fietsenrekGeo(), racks); audit.market.rack = racks.map((o) => [round(o.x), round(o.z)]);
+    stillModel('bicycle racks', LM.fietsenrekGeo(), racks); audit.market.rack = racks.map((o) => [round(o.x), round(o.z)]);
   }
 
   // --- trees (real positions, minus any that would stand in the car's line). One that would grow into a wall, a lamppost or a parasol is a smaller tree, or no tree ---
@@ -1330,7 +1343,7 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
       }
       found.sort((p, q) => p.g - q.g);
       for (const l of found) if (lanes.length < 2 && l.g < 160 && lanes.every((o) => hypot(o.ax - l.ax, o.az - l.az) > 90)) { l.P = [[l.ax, l.az], [l.ax + l.ux * l.len, l.az + l.uz * l.len]]; lanes.push(l); }
-      if (lanes.length) { const g = LM.rondvaartboot().children[0]; cruisers.im = mine('tour boats', g.geometry, lanes.map((l) => ({ x: l.ax, y: WATER, z: l.az, a: l.a })), g.material); cruisers.im.frustumCulled = false; cruisers.push(...lanes); }
+      if (lanes.length) { const g = LM.rondvaartboot().children[0]; cruisers.im = canalModel('tour boats', g.geometry, lanes.map((l) => ({ x: l.ax, y: WATER, z: l.az, a: l.a })), g.material); cruisers.im.frustumCulled = false; cruisers.push(...lanes); }
     }
     const offLanes = (x, z, d) => lanes.every((l) => segGap(l.P, x, z) > d && hypot(l.P[0][0] - x, l.P[0][1] - z) > d + 3.4 && hypot(l.P[1][0] - x, l.P[1][1] - z) > d + 3.4);
 
@@ -1367,9 +1380,9 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
       const f = d * (o.L / 2 + 0.55), x = o.qx + o.ux * f + o.nx * 0.34, z = o.qz + o.uz * f + o.nz * 0.34;
       if (ring(x, z, 0.26, 6).every(([i, j]) => inWater(i, j)) && !wet(x - o.nx * 0.7, z - o.nz * 0.7) && bridgeGap(x, z) > 2 && carGap(x, z) > 2.9 && duckGap(x, z) > 2.7 && moored.every((m) => m === o || hypot(m.x - x, m.z - z) > m.L / 2 + 0.5) && props.every((p) => hypot(p.x - x, p.z - z) > 0.8) && offLanes(x, z, 2)) posts.push({ x, y: WATER, z, a: frac(posts.length, 3) * 6 });
     }
-    mine('mooring posts', LM.mooringPostGeo(), posts);
+    stillModel('mooring posts', LM.mooringPostGeo(), posts);
     const lit = lampSpots.filter((o, i) => routeGap(o.x, o.z) < (i % 4 < 2 ? 120 : 45) && carGap(o.x, o.z) > 3 && !hitB(o.x, o.z) && props.every((p) => hypot(p.x - o.x, p.z - o.z) > 1) && (() => { for (let j = 0; j < trees.length; j += 2) if (hypot(trees[j] - o.x, trees[j + 1] - o.z) < 3.6) return false; return true; })());
-    mine('bridge lamps', LM.bridgeLampGeo(), lit.sort((a, b) => routeGap(a.x, a.z) - routeGap(b.x, b.z)).filter((o, i, A) => A.slice(0, i).every((q) => hypot(q.x - o.x, q.z - o.z) > 4.5)).slice(0, 18));
+    stillModel('bridge lamps', LM.bridgeLampGeo(), lit.sort((a, b) => routeGap(a.x, a.z) - routeGap(b.x, b.z)).filter((o, i, A) => A.slice(0, i).every((q) => hypot(q.x - o.x, q.z - o.z) > 4.5)).slice(0, 18));
 
     // ducks and swans paddle slow circles; lilies lie by the quay (pads just awash, tops 2 cm up); reeds stand along the green banks
     const spare = cand.filter((o) => o.g < 70 && bank(o)).sort((a, b) => (a.h >>> 5) - (b.h >>> 5)), ducks = [], swans = [], lilies = [], reeds = [];
@@ -1396,8 +1409,8 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
         }
       }
     });
-    if (ducks.length) ducks.im = mine('ducks', LM.duckGeo(), ducks); if (swans.length) swans.im = mine('swans', LM.swanGeo(), swans);
-    mine('lily patches', LM.lilyGeo(), lilies, tinted, false); mine('reed clumps', LM.reedGeo(), reeds);
+    if (ducks.length) ducks.im = canalModel('ducks', LM.duckGeo(), ducks); if (swans.length) swans.im = canalModel('swans', LM.swanGeo(), swans);
+    stillModel('lily patches', LM.lilyGeo(), lilies, tinted, false); stillModel('reed clumps', LM.reedGeo(), reeds);
 
     // gulls wheel over the wider water, above the roofs round them
     const air = [];
@@ -1406,7 +1419,7 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
       if (gulls.length >= 8 || !inWater(x, z) || routeGap(x, z) < R + 8 || gulls.some((q) => hypot(q.x - x, q.z - z) < 30) || hypot(x - map.pois['Molen van Piet'][0], z - map.pois['Molen van Piet'][1]) < 45 || !ring(x, z, R, 14).every(([i, j]) => { const b = hitB(i, j); return !b || (b.H ?? 40) < y - 4; })) continue;
       gulls.push({ x, z, R, y, dir: (o.h >>> 4) & 1 ? 1 : -1, ph: frac(o.h, 33) * 6, w: 4.2 / R }); air.push({ x, y, z });
     }
-    if (air.length) { gulls.im = mine('gulls', LM.gullGeo(), air, tinted, false); gulls.im.frustumCulled = false; }
+    if (air.length) { gulls.im = canalModel('gulls', LM.gullGeo(), air, tinted, false); gulls.im.frustumCulled = false; }
 
     // on the quay walls near the route: here and there an iron ladder down to the water, and mooring rings
     const iron = '#30343a', ladders = [], rings = [];
@@ -1415,8 +1428,8 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
       if (!wet(x + o.nx * 0.5, z + o.nz * 0.5) || wet(x - o.nx * 0.4, z - o.nz * 0.4) || bridgeGap(x, z) < 1.2 || posts.some((p) => hypot(p.x - x, p.z - z) < 0.9)) continue;
       if ((o.h >>> 17) % 5 === 0 && ladders.length < 16) ladders.push({ x, y: 0, z, a }); else if ((o.h >>> 17) % 5 < 3 && rings.length < 36) rings.push({ x, y: 0, z, a });
     }
-    mine('quay ladders', fuse([Box(0.05, 1.26, 0.05), iron, -0.19, -0.69, 0.07], [Box(0.05, 1.26, 0.05), iron, 0.19, -0.69, 0.07], ...[-1.12, -0.86, -0.6, -0.34].map((y) => [Box(0.38, 0.04, 0.04), iron, 0, y, 0.07]), [Box(0.05, 0.05, 0.07), iron, -0.19, -0.14, 0.035], [Box(0.05, 0.05, 0.07), iron, 0.19, -0.14, 0.035]), ladders, tinted, false);
-    mine('mooring rings', fuse([new THREE.TorusGeometry(0.1, 0.022, 5, 10), iron, 0, -0.5, 0.028], [Box(0.07, 0.08, 0.05), iron, 0, -0.38, 0.025]), rings, tinted, false);
+    stillModel('quay ladders', fuse([Box(0.05, 1.26, 0.05), iron, -0.19, -0.69, 0.07], [Box(0.05, 1.26, 0.05), iron, 0.19, -0.69, 0.07], ...[-1.12, -0.86, -0.6, -0.34].map((y) => [Box(0.38, 0.04, 0.04), iron, 0, y, 0.07]), [Box(0.05, 0.05, 0.07), iron, -0.19, -0.14, 0.035], [Box(0.05, 0.05, 0.07), iron, 0.19, -0.14, 0.035]), ladders, tinted, false);
+    stillModel('mooring rings', fuse([new THREE.TorusGeometry(0.1, 0.022, 5, 10), iron, 0, -0.5, 0.028], [Box(0.07, 0.08, 0.05), iron, 0, -0.38, 0.025]), rings, tinted, false);
 
     // Fill four otherwise empty moorings after all original boats and water life have been placed.
     const additions = [], waterFittings = [...posts, ...lilies, ...reeds];
@@ -1428,7 +1441,7 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
           [...ladders, ...rings].some(q => hypot(q.x-o.x, q.z-o.z) < o.L / 2 + 0.75)) continue;
       additions.push(o); moor(o);
     }
-    TYPES.forEach(([name, make], i) => { if (!lists[i].length) return; const g = make().children[0]; afloat.push({ im: mine(name, g.geometry, lists[i], g.material), list: lists[i] }); });
+    TYPES.forEach(([name, make], i) => { if (!lists[i].length) return; const g = make().children[0]; afloat.push({ im: canalModel(name, g.geometry, lists[i], g.material), list: lists[i] }); });
 
     // The short pale guardrails return around bridge landings. Retain access beside boats,
     // rings and ladders on the open quays of Luttik Oudorp and Verdronkenoord.
@@ -1454,7 +1467,7 @@ export function buildWorld(scene, map, drive, multiDraw, rubber) {
           [Cyl(.045,.065,.84,8),ivory,x,.51,0], [Cyl(.081,.065,.07,8),ivory,x,.93,0]);
       }
       for (const y of [.45,.86]) rail.push([Cyl(.029,.029,4,8).rotateZ(PI/2),ivory,0,y,0]);
-      const mesh = mine('quay landing rails',fuse(...rail),landings);
+      const mesh = stillModel('quay landing rails',fuse(...rail),landings);
       mesh.name = 'Quay parapets';
     }
   }

@@ -1,5 +1,7 @@
 // The set pieces: the roadworks and plank ramp on the Langestraat, the fireworks stall on the Zoutstraat,
 // and everything that goes bang. Where things stand comes from drive.js, so tools/check.mjs tests the same layout.
+import { packPaintedParts } from './painted-parts.js';
+import { batchCastSolids } from './cast-solids.js';
 import * as THREE from 'three';
 import { mat, canvasTex, reliefTex, fuse as fuseGeometry, GROUND } from './world.js';
 import { clamp, smooth } from './drive.js';
@@ -25,7 +27,7 @@ function sparks(scene, n) {
   const particles = Array.from({length:n},()=>({life:0}));
   const pose = new THREE.Object3D(), velocity = new THREE.Vector3(), up = new THREE.Vector3(0,1,0);
   let next = 0, active = 0;
-  mesh.frustumCulled = false; mesh.count = 0; scene.add(mesh);
+  mesh.frustumCulled = false; mesh.visible = false; mesh.count = 0; scene.add(mesh);
   return {
     emit(x,y,z,vx,vy,vz,life,size,col,g=6) {
       if (particles[next].life===0) active++;
@@ -49,10 +51,15 @@ function sparks(scene, n) {
         pose.quaternion.setFromUnitVectors(up,velocity.normalize()); pose.updateMatrix();
         mesh.setMatrixAt(count,pose.matrix); mesh.setColorAt(count++,color.set(p.col));
       }
-      mesh.count=count; mesh.instanceMatrix.needsUpdate=true;
-      if (count) mesh.instanceColor.needsUpdate=true;
+      mesh.count=count;
+      mesh.visible=count>0;
+      if (count) for (const attribute of [mesh.instanceMatrix,mesh.instanceColor]) {
+        attribute.clearUpdateRanges();
+        attribute.addUpdateRange(0,count*attribute.itemSize);
+        attribute.needsUpdate=true;
+      }
     },
-    clear() { for (const p of particles) p.life=0; active=mesh.count=0; },
+    clear() { for (const p of particles) p.life=0; active=mesh.count=0; mesh.visible=false; },
   };
 }
 
@@ -60,11 +67,11 @@ function sparks(scene, n) {
 function debris(scene, world, n) {
   const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mat('#ffffff', { roughness: 0.85 }), n), D = new THREE.Object3D(), C = new THREE.Color();
   const P = Array.from({ length: n }, () => ({ on: false })), WOOD = ['#b5834f', '#8a5a3a', '#2a2522', '#e0202a', '#f4f1e6', '#3a3330'];
-  const hide = () => { mesh.count = 0; D.scale.setScalar(0); D.updateMatrix(); P.forEach((p, i) => { p.on = false; mesh.setMatrixAt(i, D.matrix); }); mesh.instanceMatrix.needsUpdate = true; };
+  const hide = () => { mesh.count = 0; mesh.visible = false; for (const p of P) p.on = false; };
   P.forEach((_, i) => mesh.setColorAt(i, C.set(WOOD[i % WOOD.length]))); hide(); mesh.castShadow = true; mesh.frustumCulled = false; scene.add(mesh);
   return {
     clear: hide,
-    burst(x, z, ax, az) { mesh.count = n; // ax, az: the way to the open street; most of it flies that way
+    burst(x, z, ax, az) { mesh.visible = true; mesh.count = n; // ax, az: the way to the open street; most of it flies that way
       P.forEach((p, i) => {
         const a = random() * 2 * PI, v = 2 + random() * 6, plank = i % 3;
         Object.assign(p, { on: true, x: x + cos(a) * 0.5, y: GROUND + 0.6 + random() * 1.2, z: z + sin(a) * 0.5, vx: cos(a) * v + ax * 3, vy: 5 + random() * 8, vz: sin(a) * v + az * 3,
@@ -72,6 +79,7 @@ function debris(scene, world, n) {
       });
     },
     update(dt) {
+      if (!mesh.count) return;
       P.forEach((p, i) => {
         if (!p.on) return; const floor = GROUND + p.sy / 2 + 0.005;
         if (p.vy !== 0 || p.y > floor) {
@@ -225,8 +233,12 @@ export function buildStunts(scene, world, drive) {
     else paddleUV.setXY(i,.5+Math.sign(side)*paddlePos.getX(i)/.274,.5+paddlePos.getY(i)/.274);
   }
   const paddleMaterial=mat('#ffffff',{map:paddlePrint,roughness:.45});
-  const workers = [];
+  const workers = [], repeated = new Map();
   for (const o of layout.works) {
+    if (repeated.has(o.kind)) {
+      repeated.get(o.kind).positions.push(o);
+      continue;
+    }
     const g = put(o, hd);
     if (o.kind === 'fence') g.add(b(0.05, 0.2, 0.86, '#ffffff', 0, 0.9, 0, { map: redWhite }), b(0.05, 0.2, 0.86, '#ffffff', 0, 0.52, 0, { map: redWhite }), b(0.07, 1.0, 0.07, '#8f949e', 0.02, 0.5, -0.36), b(0.07, 1.0, 0.07, '#8f949e', 0.02, 0.5, 0.36), b(0.5, 0.07, 0.14, '#f7c400', 0.02, 0.035, -0.36), b(0.5, 0.07, 0.14, '#f7c400', 0.02, 0.035, 0.36));
     else if (o.kind === 'cone') {
@@ -247,6 +259,7 @@ export function buildStunts(scene, world, drive) {
       const disc = new THREE.Mesh(paddleGeometry,paddleMaterial);
       disc.position.set(.064,-.481,.072); disc.rotation.z = -2.55;
       p.armR.add(b(.045,.13,.045,'#334047',.053,-.435,0),disc);
+      batchCastSolids(p.g, 2.7);
       p.g.position.y = 0.55; g.rotation.y = -(hd - side * PI / 2); g.add(p.g); workers.push({ p, o, face: hd - side * PI / 2 }); // facing the street
     } else if (o.kind === 'digger') {
       const arm = new THREE.Group(); arm.position.set(0.3, 0.95, 0.28); arm.add(bm([0, 0, 0], [0.4, 1.1, 0], 0.14, '#f7c400'), bm([0.4, 1.1, 0], [0.75, 0.5, 0], 0.11, '#f7c400'), b(0.3, 0.3, 0.42, '#2b2e36', 0.78, 0.36, 0));
@@ -265,7 +278,32 @@ export function buildStunts(scene, world, drive) {
       const board = new THREE.Mesh(new THREE.PlaneGeometry(0.84, 0.84), new THREE.MeshStandardMaterial({ map: tex(256, 256, (c) => { c.fillStyle = '#f7c400'; c.fillRect(0, 0, 256, 256); c.strokeStyle = '#14161c'; c.lineWidth = 12; c.strokeRect(10, 10, 236, 236); c.fillStyle = '#14161c'; c.textAlign = 'center'; c.font = `400 44px ${FONT}`; c.fillText('WERK IN', 128, 96); c.font = `400 34px ${FONT}`; c.fillText('UITVOERING', 128, 146); c.font = `400 30px ${FONT}`; c.fillText('langzaam!', 128, 206); }) }));
       board.rotation.y = -PI / 2; board.position.set(-0.012, 1.55, 0); g.add(board, b(0.04, 0.88, 0.88, '#b99300', 0.02, 1.55, 0), b(0.06, 1.15, 0.06, '#8f949e', 0.03, 0.575, -0.3), b(0.06, 1.15, 0.06, '#8f949e', 0.03, 0.575, 0.3));
     }
+    if (o.kind === 'fence' || o.kind === 'cone') {
+      repeated.set(o.kind, {model:g, positions:[o]});
+      scene.remove(g);
+    }
   }
+  // The ten construction fences and eight cones use identical hardware. Keep
+  // each finish and its shadow settings, and submit all copies together.
+  const pose = new THREE.Object3D(), instance = new THREE.Matrix4();
+  for (const {model, positions} of repeated.values()) {
+    packPaintedParts(model);
+    pose.rotation.copy(model.rotation);
+    for (const part of model.children) {
+      part.updateMatrix();
+      const copies = new THREE.InstancedMesh(part.geometry,part.material,positions.length);
+      copies.castShadow = part.castShadow;
+      copies.receiveShadow = part.receiveShadow;
+      copies.userData.fixedInstances = true;
+      positions.forEach((o,i) => {
+        pose.position.set(o.x,GROUND,o.z);
+        pose.updateMatrix();
+        copies.setMatrixAt(i,instance.multiplyMatrices(pose.matrix,part.matrix));
+      });
+      scene.add(copies);
+    }
+  }
+  packPaintedParts(rampG);
 
   // ---- the fireworks stall on the Zoutstraat ----
   const B_S = B.s, bh = drive.centre(B_S).h, ax = sin(bh), az = -cos(bh), E = { x: B.x + ax * 0.8, z: B.z + az * 0.8 }; // (ax, az): from the stall towards the middle of the street
@@ -280,7 +318,10 @@ export function buildStunts(scene, world, drive) {
     body.position.y = 0.18; tip.position.y = 0.43; r.add(body, tip, b(0.012, 0.3, 0.012, '#8a5a3a', 0.05, -0.1, 0));
     if (i === 6) { r.scale.setScalar(2.4); r.position.set(0.55, 1.05, 0.05); r.rotation.z = -0.3; } else { r.position.set(-0.72 + i * 0.13, 1.1, 0.02 + (i % 2) * 0.14); r.rotation.z = (i - 2.5) * 0.06; }
     stall.add(r);
+    for (const part of [...r.children]) stall.attach(part);
+    stall.remove(r);
   }
+  packPaintedParts(stall);
   const scorch = new THREE.Mesh(new THREE.CircleGeometry(2.6, 28), new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, map: tex(128, 128, (c) => { const g = c.createRadialGradient(64, 64, 6, 64, 64, 64); g.addColorStop(0, 'rgba(12,10,9,.85)'); g.addColorStop(0.6, 'rgba(12,10,9,.5)'); g.addColorStop(1, 'rgba(12,10,9,0)'); c.fillStyle = g; c.fillRect(0, 0, 128, 128); }) }));
   scorch.rotation.x = -PI / 2; scorch.position.set(0, 0.03, -0.5);
   const black = '#1b1918'; wreck.add(scorch, b(1.7, 0.22, 0.7, black, 0.1, 0.11, 0.1), b(0.6, 0.4, 0.5, black, -0.6, 0.2, 0.2), bm([-0.95, 0, 0.5], [-0.6, 1.5, 0.3], 0.07, black), bm([0.95, 0, 0.5], [1.1, 1.1, 0.4], 0.07, black), bm([0.95, 0, -0.5], [0.2, 0.5, -0.3], 0.07, black));

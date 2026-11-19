@@ -1,5 +1,6 @@
 // The director: loads the city, runs the exam on a clock, points the camera, shows the captions.
 import * as THREE from 'three';
+import './daylight-shaders.js';
 import { makeDrive, clamp, lerp, smooth } from './drive.js';
 import { buildWorld, canvasTex, inPoly, GROUND } from './world.js';
 import { buildCast } from './actors.js';
@@ -33,10 +34,13 @@ scene.background = morning.sky;
 scene.fog = new THREE.Fog('#cfe8fb', 260, 5600); // thin haze: the polder and the horizon stay in view from the rooftops
 scene.add(new THREE.HemisphereLight('#e2efff', '#bf9776', 1.36)); // less fill than sun, so shapes keep a lit and a shaded side
 const sun = new THREE.DirectionalLight('#fff1d7', 3.05); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.radius = 2.1; sun.shadow.bias = -0.00045; sun.shadow.normalBias = 0.06;
-Object.assign(sun.shadow.camera, { left: -80, right: 80, top: 80, bottom: -80, near: 10, far: 460 }); scene.add(sun, sun.target);
+Object.assign(sun.shadow.camera, { left: -80, right: 80, top: 80, bottom: -80, near: 10, far: 460 });
+sun.shadow.camera.updateProjectionMatrix();
+scene.add(sun, sun.target);
 const cam = new THREE.PerspectiveCamera(55, 1, 0.45, 7000);
 const rubber = tyreMarks();
-const world = buildWorld(scene, map, drive, renderer.extensions.has('WEBGL_multi_draw'), rubber), cast = buildCast(scene, world, drive, rubber), stunts = buildStunts(scene, world, drive), snel = buildSnelweg(scene, rubber), polder = buildPolder(scene, { rect: world.city });
+const multiDraw = renderer.extensions.has('WEBGL_multi_draw');
+const world = buildWorld(scene, map, drive, multiDraw, rubber), cast = buildCast(scene, world, drive, rubber), stunts = buildStunts(scene, world, drive), snel = buildSnelweg(scene, rubber), polder = buildPolder(scene, { rect: world.city, facades: world.facades });
 { // the signpost at the fork after the Sint Annabrug. She reads it her own way
   const w = layout.wegwijzer, arrow = (g, x, y, a) => { g.save(); g.translate(x, y); g.rotate(a); g.beginPath(); for (const [px, py] of [[28, 0], [-2, -26], [-2, -11], [-28, -11], [-28, 11], [-2, 11], [-2, 26]]) g.lineTo(px, py); g.fill(); g.restore(); };
   const face = canvasTex(600, 300, (g) => {
@@ -47,6 +51,7 @@ const world = buildWorld(scene, map, drive, renderer.extensions.has('WEBGL_multi
   const g = new THREE.Group(), pole = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 3.2, 10), edge); board.position.y = 2.6; pole.position.set(0, 1.6, -0.09);
   g.add(board, pole); g.position.set(w.x, GROUND, w.z); const hd = drive.place(w.s, 0).h; g.rotation.y = Math.atan2(-cos(hd), -sin(hd)); board.castShadow = pole.castShadow = true; scene.add(g); // it faces the traffic coming off the bridge
 }
+
 
 // Only glossy finishes need the extra sky lookup. Three shares one prefiltered probe between them.
 scene.traverse((object) => {
@@ -283,7 +288,16 @@ let phase = 'title', T = 0, prevT = 0, simT = 0, lastS = -1, st = drive.stateAt(
 const still = (s) => ({ ...s, v: 0, slide: 0, beta: 0 });
 const crossed = (t) => prevT < t && T >= t;
 const hud = (on) => { for (const id of ['street', 'speed', 'form']) $(id).hidden = !on; };
-const speedo = (v, limit) => { const kmh = Math.round(v * 3.6), el = $('speed'); el.firstElementChild.textContent = kmh; el.lastElementChild.textContent = limit; el.classList.toggle('over', kmh > limit); };
+const speedDisplay = $('speed');
+const speedDigits = speedDisplay.firstElementChild.firstChild;
+const limitDigits = speedDisplay.lastElementChild.firstChild;
+function speedo(v, limit) {
+  const kmh = Math.round(v * 3.6);
+  const speed = String(kmh), posted = String(limit);
+  if (speedDigits.data !== speed) speedDigits.data = speed;
+  if (limitDigits.data !== posted) limitDigits.data = posted;
+  speedDisplay.classList.toggle('over', kmh > limit);
+}
 const events = {
   bell: audio.fx.bell, whoosh: audio.fx.whoosh, drumroll: audio.fx.drumroll,
   thud: () => { audio.fx.thud(); shake = 0.5; say('Examinator: "Grond. Lieve, stilstaande grond."', 3); },
@@ -339,7 +353,7 @@ function step(dt) {
     const name = streetAt(st.s); if (name !== shownStreet) { shownStreet = name; $('street').textContent = name; $('street').hidden = !name; }
     if (fly && !fly.out && fly.t >= MID) { phase = 'snelweg'; A9.t = MID - FLY; cue(0); shownStreet = 'A9'; $('street').textContent = 'A9'; $('street').hidden = false; } // high over the polder: from here on it is the motorway's clock
     lastS = st.s;
-    if (simT >= drive.duration) { phase = 'outro'; T = prevT = 0; st = drive.stateAt(L); cast.frame(still(st), simT, 0, now); audio.quiet(); audio.stop('chase', 1.4); $('speed').firstElementChild.textContent = 0; $('speed').classList.remove('over'); }
+    if (simT >= drive.duration) { phase = 'outro'; T = prevT = 0; st = drive.stateAt(L); cast.frame(still(st), simT, 0, now); audio.quiet(); audio.stop('chase', 1.4); speedo(0, 30); }
   } else if (phase === 'snelweg') { // the A9: the town's own clock (simT) stands still while this one runs
     let was = A9.t; const ts = snel.timeScale(Math.max(0, was)), hit = (t) => was < t && A9.t >= t;
     if (pic > 0) { pic -= dt; if (pic <= 0) { pic = 0; photo(false); A9.t = was = A9.hold; audio.fx.whoosh(); } } // back to where the film was, on to the next shot
@@ -366,7 +380,7 @@ function step(dt) {
   }
 }
 
-cullInstances(scene, sun, cast.watchersInView);
+cullInstances(scene, sun, cast.watchersInView, world.facades, snel.trafficInView);
 // Safari may finish laying out its controls after the window's rotation event.
 // Match the actual canvas box for both the drawing buffer and the lens.
 const resize = ({width, height}) => {
@@ -393,8 +407,14 @@ renderer.setAnimationLoop((t) => {
 });
 
 const go = async () => { $('go').disabled = true; try { await audio.start(); } catch (e) { console.warn('continuing without sound', e); } begin(); };
-$('go').textContent = 'Start het examen'; $('go').disabled = false; $('go').onclick = go; $('again').onclick = begin;
+$('go').onclick = go; $('again').onclick = begin;
 
 // Camera check, the partner of tools/check.mjs: plays the whole film without drawing it and counts the frames where
 // the camera is inside a building or cannot see the car. Run exam.audit() in the browser console; {} means clean.
 window.exam = { hold: false, dbg: { world, renderer, get qualityTier() { return tier; }, drive, cam, SHOTS, snel, polder, A9, audio, tooClose, hidden, P, cast, stunts, carPt, get st() { return st; } }, ff(secs) { for (let i = 0; i < secs * 30; i++) step(1 / 30); renderer.render(scene, cam); return `${phase} T=${T.toFixed(1)} s=${st.s.toFixed(0)} shot=${shotKey}`; }, audit() { begin(); const bad = {}; this.where = {}; /* exam.where: the first spot each problem was seen */ for (let i = 0; i < 9000 && $('end').hidden; i++) { const ph = phase; step(1 / 30); const k = `${phase} ${shotKey}`; if (tooClose(cam.position)) { bad[k + ' inside'] = (bad[k + ' inside'] || 0) + 1; this.where[k] ??= [cam.position.x, cam.position.y, cam.position.z, st.s, fly?.t].map((v) => +(v ?? -1).toFixed(2)); } else if (phase !== 'intro' && ph === phase /* on a cut the picture is still the old scene */ && shotKey !== 'fly' && hidden(cam.position, carPt(st, 0, 1, 0))) bad[k + ' blocked'] = (bad[k + ' blocked'] || 0) + 1; for (const h of cast.poke()) bad[`${phase} clipboard in ${h}`] = (bad[`${phase} clipboard in ${h}`] || 0) + 1; } return bad; } };
+
+// Prepare the materials behind later cuts while the opening screen is up.
+try { await renderer.compileAsync(scene, cam); }
+catch (error) { console.warn('Material warm-up deferred to playback', error); }
+$('go').textContent = 'Start het examen';
+$('go').disabled = false;

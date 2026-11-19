@@ -1,6 +1,9 @@
-// Fixed furnishings can extend kilometres past the shot. Keep geometry required by either
-// the film camera or the shadow camera, with the same instance order in both passes.
+// Street furnishings extend kilometres beyond each shot. Compact independent camera
+// and sunlight instance buffers so hidden props can cast shadows without a color draw.
 import * as THREE from 'three';
+import { movingCanalInstances } from './canal-visibility.js';
+import { shadowReceivers } from './shadow-receivers.js';
+import { indexGeometry } from './index-geometry.js';
 
 const allPlanes = 0b111111;
 const outside = -1;
@@ -33,10 +36,41 @@ function dirtyRows(attribute, first, last) {
   attribute.needsUpdate = true;
 }
 
-export function cullInstances(scene, sun, watchersInView) {
-  const batches = [], eye = new THREE.Frustum(), projection = new THREE.Matrix4();
+function makePass(mesh) {
+  return {
+    mesh, ids: new Int32Array(mesh.count), previous: new Int32Array(mesh.count).fill(-1),
+  };
+}
+
+function updatePass(pass, count, source, colors) {
+  const {mesh, ids, previous} = pass;
+  mesh.count = count;
+  mesh.visible = count > 0;
+  let first = -1, last = -1;
+  for (let i = 0; i < count; i++) {
+    const id = ids[i];
+    if (id === previous[i]) continue;
+    previous[i] = id;
+    if (first < 0) first = i;
+    last = i;
+    mesh.instanceMatrix.array.set(source.subarray(id * 16, id * 16 + 16), i * 16);
+    if (colors) mesh.instanceColor.array.set(colors.subarray(id * 3, id * 3 + 3), i * 3);
+  }
+  if (first >= 0) {
+    dirtyRows(mesh.instanceMatrix, first, last);
+    if (colors) dirtyRows(mesh.instanceColor, first, last);
+  }
+}
+
+export function cullInstances(scene, sun, watchersInView, facades, trafficInView) {
+  const batches = [], eye = new THREE.Frustum(), cloudEye = new THREE.Frustum(), projection = new THREE.Matrix4();
   scene.updateMatrixWorld(true);
+  const indexed=new Set();
   scene.traverse((mesh) => {
+    if(mesh.isMesh && !mesh.isBatchedMesh && !indexed.has(mesh.geometry)) {
+      indexGeometry(mesh.geometry);
+      indexed.add(mesh.geometry);
+    }
     if (!mesh.userData.fixedInstances || mesh.count < 8) return;
     const source = mesh.instanceMatrix.array.slice(), colors = mesh.instanceColor?.array.slice();
     mesh.geometry.computeBoundingSphere();
@@ -51,48 +85,82 @@ export function cullInstances(scene, sun, watchersInView) {
       if (!cells.has(key)) cells.set(key, { sphere: s.clone(), items: [] });
       const cell = cells.get(key); cell.sphere.union(s); cell.items.push(i);
     }
-    batches.push({ mesh, source, colors, envelope, bounds, cells: [...cells.values()],
-      visibleIds: new Int32Array(mesh.count).fill(-1) });
+    const batch = { eyePass: makePass(mesh), source, colors, envelope, bounds, cells: [...cells.values()] };
+    if (mesh.castShadow) {
+      const caster = new THREE.InstancedMesh(mesh.geometry, mesh.material, mesh.count);
+      caster.matrixAutoUpdate = false;
+      caster.matrix.copy(mesh.matrix);
+      caster.castShadow = true;
+      const shadowFrustum = sun.shadow.getFrustum();
+      caster.intersectsFrustum = frustum => frustum === shadowFrustum;
+      mesh.castShadow = false;
+      batch.shadowPass = makePass(caster);
+    }
+    batches.push(batch);
   });
-  const shadow = sun.shadow.getFrustum();
-  const visible = (s, casts) => eye.intersectsSphere(s) ||
-    (casts && sun.castShadow && shadow.intersectsSphere(s));
+  for (const { eyePass, shadowPass } of batches) {
+    if (shadowPass) eyePass.mesh.parent.add(shadowPass.mesh);
+  }
+  const shadow = sun.shadow.getFrustum(), receivers=shadowReceivers();
+  sun.shadow.camera.userData.receivers=receivers;
+  const projected = new THREE.Sphere();
+  scene.traverse(mesh => {
+    if (!mesh.isMesh || !mesh.frustumCulled) return;
+    const intersects = mesh.intersectsFrustum;
+    mesh.intersectsFrustum = function(frustum) {
+      if (!intersects.call(this,frustum)) return false;
+      // A pass-specific instance batch can hold poses all over the city while
+      // its geometry is only the local template. Its individual casters have
+      // already been tested. Skins and batch tiles also own their own bounds.
+      if(frustum===shadow && (this.isInstancedMesh || this.isSkinnedMesh || this.isBatchedMesh)) return true;
+      const sphere=this.boundingSphere || this.geometry.boundingSphere;
+      if(!sphere) return true;
+      projected.copy(sphere).applyMatrix4(this.matrixWorld);
+      return frustum===shadow ? receivers.sphere(projected) : !facades.hidden(projected);
+    };
+  });
+  const canalInView = movingCanalInstances(scene,shadow);
+  const visible = (s, casts) => (eye.intersectsSphere(s) && !facades.hidden(s)) ||
+    (casts && sun.castShadow && shadow.intersectsSphere(s) && receivers.sphere(s));
 
   scene.onBeforeRender = (renderer, scene, camera) => {
     eye.setFromProjectionMatrix(projection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
       camera.coordinateSystem, camera.reversedDepth);
-    if (sun.castShadow) sun.shadow.updateMatrices(sun);
-    for (const { mesh, source, colors, envelope, bounds, cells, visibleIds } of batches) {
-      let count = 0, first = -1, last = -1;
-      const cameraMask = clipSphere(envelope, eye, allPlanes);
-      const shadowMask = sun.castShadow && mesh.castShadow ? clipSphere(envelope, shadow, allPlanes) : outside;
+    facades.update(camera);
+    if (sun.castShadow) { sun.shadow.updateMatrices(sun); receivers.update(camera,sun); }
+    for (const batch of batches) {
+      const { eyePass, shadowPass, source, colors, envelope, bounds, cells } = batch;
+      const mesh = eyePass.mesh;
+      let eyeCount = 0, shadowCount = 0;
+      // The wind translates the whole cloud layer. Test its original local spheres
+      // against the current lens so far clouds can share two draws for the whole map.
+      let view=eye;
+      if (mesh.userData.driftingClouds) {
+        view=cloudEye.copy(eye);
+        for (const plane of view.planes) plane.constant+=plane.normal.x*mesh.parent.position.x;
+      }
+      const cameraMask = clipSphere(envelope, view, allPlanes);
+      const shadowMask = sun.castShadow && shadowPass ? clipSphere(envelope, shadow, allPlanes) : outside;
       if (cameraMask !== outside || shadowMask !== outside) {
         for (const cell of cells) {
-          const cellEye = clipSphere(cell.sphere, eye, cameraMask);
-          const cellShadow = clipSphere(cell.sphere, shadow, shadowMask);
+          let cellEye = clipSphere(cell.sphere, view, cameraMask);
+          if (cellEye !== outside && view===eye && facades.hidden(cell.sphere)) cellEye = outside;
+          const cellShadow = shadowMask!==outside && receivers.sphere(cell.sphere) ? clipSphere(cell.sphere,shadow,shadowMask) : outside;
           if (cellEye === outside && cellShadow === outside) continue;
-          const inside = cellEye === 0 || cellShadow === 0;
           for (const id of cell.items) {
-            if (!inside && clipSphere(bounds[id], eye, cellEye) === outside &&
-                clipSphere(bounds[id], shadow, cellShadow) === outside) continue;
-            if (visibleIds[count] !== id) {
-              visibleIds[count] = id;
-              if (first === -1) first = count;
-              last = count;
-              mesh.instanceMatrix.array.set(source.subarray(id * 16, id * 16 + 16), count * 16);
-              if (colors) mesh.instanceColor.array.set(colors.subarray(id * 3, id * 3 + 3), count * 3);
+            const sphere = bounds[id];
+            if (clipSphere(sphere, shadow, cellShadow) !== outside && receivers.sphere(sphere)) shadowPass.ids[shadowCount++] = id;
+            if (clipSphere(sphere, view, cellEye) !== outside && (view !== eye || !facades.hidden(sphere))) {
+              eyePass.ids[eyeCount++] = id;
             }
-            count++;
           }
         }
       }
-      mesh.count = count;
-      mesh.visible = count > 0;
-      if (first !== -1) {
-        dirtyRows(mesh.instanceMatrix, first, last);
-        if (colors) dirtyRows(mesh.instanceColor, first, last);
-      }
+      updatePass(eyePass, eyeCount, source, colors);
+      if (shadowPass) updatePass(shadowPass, shadowCount, source, null);
     }
+    canalInView(eye,sun.castShadow?shadow:null,receivers,facades);
     watchersInView(visible);
+    trafficInView(eye, sun.castShadow ? shadow : null);
   };
 }

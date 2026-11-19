@@ -9302,6 +9302,8 @@ function WebGLShadowMap( renderer, objects, capabilities ) {
 					} else {
 
 						shadow.map = new WebGLRenderTarget( _shadowMapSize.x, _shadowMapSize.y );
+						// Directional PCF reads the native depth texture alone. No color tile needs a store.
+						shadow.map.depthOnly = this.type === PCFShadowMap;
 						shadow.map.depthTexture = new DepthTexture( _shadowMapSize.x, _shadowMapSize.y, UnsignedIntType );
 
 					}
@@ -9387,7 +9389,7 @@ function WebGLShadowMap( renderer, objects, capabilities ) {
 					if ( face === 0 ) {
 
 						renderer.setRenderTarget( shadow.map );
-						renderer.clear();
+						renderer.clear( ! shadow.map.depthOnly, true, false );
 
 					}
 
@@ -10184,7 +10186,16 @@ function WebGLState( gl, extensions ) {
 
 			const textures = renderTarget.textures;
 
-			if ( drawBuffers.length !== textures.length || drawBuffers[ 0 ] !== gl.COLOR_ATTACHMENT0 ) {
+			if ( renderTarget.depthOnly ) {
+
+				if ( drawBuffers[ 0 ] !== gl.NONE ) {
+
+					drawBuffers[ 0 ] = gl.NONE;
+					needsUpdate = true;
+
+				}
+
+			} else if ( drawBuffers.length !== textures.length || drawBuffers[ 0 ] !== gl.COLOR_ATTACHMENT0 ) {
 
 				for ( let i = 0, il = textures.length; i < il; i ++ ) {
 
@@ -17743,6 +17754,9 @@ class WebGLRenderer {
 
 			}
 
+			// Camera and shadow submissions must share this frame's instance-buffer upload stamp.
+			this.info.render.frame ++;
+
 			projectObject( scene, camera, 0, _this.sortObjects );
 
 			currentRenderList.finish();
@@ -17763,7 +17777,6 @@ class WebGLRenderer {
 
 			//
 
-			this.info.render.frame ++;
 
 			if ( this.info.autoReset === true ) this.info.reset();
 

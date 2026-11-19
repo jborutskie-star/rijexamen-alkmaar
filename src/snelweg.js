@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { waterWaves } from './atmosphere.js';
 import { asphaltGrain } from './street-finish.js';
+import { staticTiles } from './static-tiles.js';
 import { GROUND, mat, canvasTex } from './world.js';
 
 const { PI, sin, cos, tan, atan2, hypot, min, max, abs, floor, sqrt } = Math;
@@ -629,8 +630,15 @@ export function buildSnelweg(scene, rubber) {
   });
 
   // ---- everything that stands still ----
-  const solid = kit(uv), light = kit(uv), steel = '#aeb6bd', concrete = '#c9c5bb';
+  const structures=[], railSections=new Map(), steel = '#aeb6bd', concrete = '#c9c5bb';
+  const structure = () => { const parts=kit(uv); structures.push(parts); return parts; };
+  const railSection = x => {
+    const id=floor(x/120);
+    if(!railSections.has(id)) railSections.set(id,kit(uv));
+    return railSections.get(id);
+  };
   for (const g of Y.gantries) {
+    const solid=structure();
     const zc = Z0 + (g.z0 + g.z1) / 2, span = g.z1 - g.z0;
     for (const edge of [g.z0, g.z1]) {
       const z = Z0 + edge;
@@ -658,8 +666,8 @@ export function buildSnelweg(scene, rubber) {
     }
     for (const l of [L1, L2, L3, SH]) solid.part(box(0.25, 1.0, 1.0), '#16171a', g.x - 0.52, 5.7, Z0 + l).decal('matrix', 0.9, 0.9, g.x - 0.685, 5.7, Z0 + l, 'x-');
   }
-  { const f = Y.flits, z = Z0 + f.z; solid.part(box(0.5, 2.1, 0.5), '#8b9388', f.x, 1.05, z).part(box(0.56, 0.3, 0.56), '#ffd21f', f.x, 1.9, z).part(box(0.08, 0.36, 0.34), '#101216', f.x - 0.27, 1.5, z).part(box(0.6, 0.12, 0.6), '#5d655c', f.x, 2.16, z); }
-  { const v = Y.viaduct, x = v.x, zc = Z0 + (v.z0 + v.z1) / 2, len = v.z1 - v.z0, road = '#474a51';
+  { const solid=structure(), f = Y.flits, z = Z0 + f.z; solid.part(box(0.5, 2.1, 0.5), '#8b9388', f.x, 1.05, z).part(box(0.56, 0.3, 0.56), '#ffd21f', f.x, 1.9, z).part(box(0.08, 0.36, 0.34), '#101216', f.x - 0.27, 1.5, z).part(box(0.6, 0.12, 0.6), '#5d655c', f.x, 2.16, z); }
+  { const solid=structure(), v = Y.viaduct, x = v.x, zc = Z0 + (v.z0 + v.z1) / 2, len = v.z1 - v.z0, road = '#474a51';
     solid.part(box(12, 1.2, len), concrete, x, 5.9, zc).part(box(8.6, 0.06, len), road, x, 6.53, zc).part(box(11.4, 0.5, len - 0.4), '#a9a59b', x, 5.12, zc);
     for (const s of [-1, 1]) solid.part(box(0.3, 1.1, len), '#3f79c4', x + s * 5.85, 7.05, zc).part(box(0.4, 0.12, len), '#e9eef2', x + s * 5.85, 7.66, zc);
     for (const z of v.piers) solid.part(box(1.2, 4.9, 1.2), concrete, x, 2.45, Z0 + z).part(box(9, 0.5, 1.6), concrete, x, 4.65, Z0 + z);
@@ -674,7 +682,7 @@ export function buildSnelweg(scene, rubber) {
       solid.part(fix(top, () => [0, 1, 0]), road).part(fix(side, (i) => (i < 9 ? [-1, 0.5, 0] : i < 18 ? [1, 0.5, 0] : [0, 0, -dir])), '#5f9d45');
     } }
   // long runs in 40 m pieces: one 6400 m box, clipped right by a low camera, lost enough depth precision to draw its top edge over the cars in front of it
-  const run = (a, b, h, w, color, y, z) => { for (let x = a; x < b - 1e-6; x += 40) { const l = min(40, b - x); light.part(box(l, h, w), color, x + l / 2, y, z); } };
+  const run = (a, b, h, w, color, y, z) => { for (let x = a; x < b - 1e-6; x += 40) { const l = min(40, b - x); railSection(x).part(box(l, h, w), color, x + l / 2, y, z); } };
   // Twin folded steel runners read as an open barrier from the Nijenburgerweg overpass.
   const faces = [], fold = [[0.46, 0.086], [0.49, 0.14], [0.55, 0.148], [0.625, 0.086],
     [0.70, 0.148], [0.76, 0.14], [0.79, 0.086], [0.79, 0.047]];
@@ -701,11 +709,14 @@ export function buildSnelweg(scene, rubber) {
         pos.setXY(i, dx, pos.getY(i) * terminal(x + dx));
       }
       if (terminal(x) !== terminal(next)) g.computeVertexNormals();
-      light.part(g, '#afb9bb', x, 0, Z0 + z); x = next;
+      railSection(x).part(g, '#afb9bb', x, 0, Z0 + z); x = next;
     }
   }
-  for (const [a, b, z] of Y.barriers) { run(a, b, 1.5, 0.3, '#3f8f57', 0.75, Z0 + z); run(a, b, 2.1, 0.14, '#bfe6ee', 2.55, Z0 + z); run(a, b, 0.16, 0.36, '#2f6f43', 3.68, Z0 + z); for (let x = a; x <= b; x += 10) light.part(box(0.3, 3.8, 0.44), '#2f6f43', x, 1.9, Z0 + z); }
-  const solidMesh = new THREE.Mesh(solid.geo(), paint), lightMesh = new THREE.Mesh(light.geo(), paint); solidMesh.castShadow = solidMesh.receiveShadow = lightMesh.receiveShadow = true; still.add(solidMesh, lightMesh);
+  for (const [a, b, z] of Y.barriers) { run(a, b, 1.5, 0.3, '#3f8f57', 0.75, Z0 + z); run(a, b, 2.1, 0.14, '#bfe6ee', 2.55, Z0 + z); run(a, b, 0.16, 0.36, '#2f6f43', 3.68, Z0 + z); for (let x = a; x <= b; x += 10) railSection(x).part(box(0.3, 3.8, 0.44), '#2f6f43', x, 1.9, Z0 + z); }
+  const solidMesh=staticTiles(structures.map(parts=>parts.geo()),paint.clone());
+  const lightMesh=staticTiles([...railSections.values()].map(parts=>parts.geo()),paint.clone());
+  solidMesh.castShadow=solidMesh.receiveShadow=lightMesh.receiveShadow=true;
+  still.add(solidMesh,lightMesh);
   const many = (geo, material, list, shadow, parent = still) => { // [[x, y, z, turn, sx, sy, sz]]
     const im = new THREE.InstancedMesh(geo, material, list.length);
     list.forEach((o, i) => im.setMatrixAt(i, M.compose(V.set(o[0], o[1], o[2]), Q.setFromEuler(E.set(0, o[3] || 0, 0)), S.set(o[4] ?? 1, o[5] ?? 1, o[6] ?? 1))));
@@ -924,11 +935,14 @@ export function buildSnelweg(scene, rubber) {
   const lone = [], fleets = new Map();
   const truckStyles = ['truck','vis','wafel'];
   const palettes = { car: carTints, caravan: ['#ffffff', '#ffe9c4'] }, nextTint = { car: 0, truck: 0, caravan: 0 };
-  // Vehicles in one direction and stretch stay close enough to share a draw in both the camera and shadow passes.
+  const vehicles = new Map();
   function addTraffic(kind, vehicle, offset, y, z, radius, width, tint) {
-    const key = kind + '/' + vehicle.dir + '/' + floor(vehicle.x0 / 700);
-    if (!fleets.has(key)) fleets.set(key, { kind, rows: [] });
-    fleets.get(key).rows.push({ vehicle, offset, y, z, radius, width, tint });
+    if (!vehicles.has(vehicle)) {
+      const bounds = new THREE.Sphere(new THREE.Vector3(0,GROUND,vehicle.z),0);
+      vehicles.set(vehicle,{vehicle,bounds,visible:false,casts:false});
+    }
+    if (!fleets.has(kind)) fleets.set(kind,{kind,rows:[]});
+    fleets.get(kind).rows.push({car:vehicles.get(vehicle),offset,y,z,radius,width,tint});
   }
   for (const o of plan.traffic) {
     const special = { 'tulip truck': 'tulp', 'cheese truck': 'kaas', 'tour bus': 'bus', tractor: 'tractor', 'blade transport': 'blade', transporter: 'transporter' }[o.name];
@@ -949,19 +963,27 @@ export function buildSnelweg(scene, rubber) {
     const mesh = new THREE.InstancedMesh(geo, isWheel ? paint : kind==='car' ? carEnamel : enamel, rows.length);
     mesh.castShadow = true; mesh.receiveShadow = !isWheel;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, GROUND, rows[0].z));
+    // Each moving vehicle has a conservative shared bound for its body and
+    // wheels. The camera and sun can then draw their own compact subsets.
+    mesh.frustumCulled = false;
     if (!geo.boundingSphere) geo.computeBoundingSphere();
     const reach = geo.boundingSphere.center.length() + geo.boundingSphere.radius;
-    fleet.mesh = mesh; fleet.pad = 0;
-    const color = new THREE.Color();
-    rows.forEach((row, i) => {
-      const lateral = hypot(row.y - GROUND, row.z - mesh.boundingSphere.center.z);
-      fleet.pad = max(fleet.pad, lateral + reach * max(row.radius, row.width) + 0.01);
+    fleet.mesh = mesh;
+    fleet.eyeRows = new Int32Array(rows.length);
+    fleet.shadowRows = new Int32Array(rows.length);
+    rows.forEach((row,i) => {
+      const {car,offset,y,z,radius,width} = row;
+      const extent=hypot(offset,y-GROUND,z-car.vehicle.z)+reach*max(radius,width);
+      car.bounds.radius=max(car.bounds.radius,extent+.01);
       if (!isWheel) {
-        mesh.setColorAt(i, color.set(row.tint));
-        mesh.setMatrixAt(i, M.compose(V.set(0, row.y, row.z), row.vehicle.dir > 0 ? Q0 : QW, ONE));
+        row.color=new THREE.Color(row.tint);
+        mesh.setColorAt(i,row.color);
+        row.matrix=M.compose(V.set(0,y,z),car.vehicle.dir>0 ? Q0 : QW,ONE).clone();
       }
     });
+    if (mesh.instanceColor) mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    mesh.onBeforeShadow=()=>{mesh.count=fleet.shadowCount};
+    mesh.onAfterShadow=()=>{mesh.count=fleet.total};
     moving.add(mesh);
   }
 
@@ -1143,24 +1165,48 @@ export function buildSnelweg(scene, rubber) {
   airplane.rotation.set(-.10,1.34,.035); moving.add(airplane);
 
   const H = {}, T = {}, tF = plan.T.flash, PC = {}, KC = {};
-  function frame(t, now = 0) {
-    airplane.position.set(-965+4.1*t,49+.10*t,Z0+82-17*t);
-    for (const [o, m] of lone) m.position.x = plan.vx(o, t);
-    for (const { kind, rows, mesh, pad } of fleets.values()) {
-      let lo = Infinity, hi = -Infinity;
-      for (let i = 0; i < rows.length; i++) {
-        const row = rows[i], x = plan.vx(row.vehicle, t) + row.offset;
-        lo = min(lo, x); hi = max(hi, x);
-        if (kind === 'wheel') {
-          mesh.setMatrixAt(i, M.compose(V.set(x, row.y, row.z), Q.setFromEuler(E.set(0, 0, -x / row.radius)), S.set(row.radius, row.radius, row.width)));
+  let roadTime=0;
+  function trafficInView(eye,shadow) {
+    if (!moving.visible) return;
+    for (const car of vehicles.values()) {
+      car.bounds.center.x=plan.vx(car.vehicle,roadTime);
+      car.casts=shadow && shadow.intersectsSphere(car.bounds);
+      car.visible=eye.intersectsSphere(car.bounds);
+    }
+    for (const fleet of fleets.values()) {
+      const {kind,rows,mesh,shadowRows,eyeRows}=fleet;
+      let shadows=0,eyes=0;
+      for(let i=0;i<rows.length;i++) {
+        if(rows[i].car.casts) shadowRows[shadows++]=i;
+        else if(rows[i].car.visible) eyeRows[eyes++]=i;
+      }
+      fleet.shadowCount=shadows;
+      fleet.total=mesh.count=shadows+eyes;
+      mesh.visible=mesh.count>0;
+      if (!mesh.visible) continue;
+      for(let i=0;i<mesh.count;i++) {
+        const row=rows[i<shadows ? shadowRows[i] : eyeRows[i-shadows]];
+        const x=row.car.bounds.center.x+row.offset;
+        if(kind==='wheel') {
+          mesh.setMatrixAt(i,M.compose(V.set(x,row.y,row.z),Q.setFromEuler(E.set(0,0,-x/row.radius)),S.set(row.radius,row.radius,row.width)));
         } else {
-          mesh.instanceMatrix.array[i * 16 + 12] = x; // Only the translation along the road changes.
+          row.matrix.elements[12]=x;
+          mesh.setMatrixAt(i,row.matrix);
+          mesh.setColorAt(i,row.color);
         }
       }
-      mesh.instanceMatrix.needsUpdate = true;
-      mesh.boundingSphere.center.x = (lo + hi) * 0.5;
-      mesh.boundingSphere.radius = (hi - lo) * 0.5 + pad;
+      for(const attribute of [mesh.instanceMatrix,mesh.instanceColor]) {
+        if(!attribute) continue;
+        attribute.clearUpdateRanges();
+        attribute.addUpdateRange(0,mesh.count*attribute.itemSize);
+        attribute.needsUpdate=true;
+      }
     }
+  }
+  function frame(t, now = 0) {
+    roadTime=t;
+    airplane.position.set(-965+4.1*t,49+.10*t,Z0+82-17*t);
+    for (const [o, m] of lone) m.position.x = plan.vx(o, t);
     for (let i = 0; i < 2; i++) { const h = plan.heli(i, t, H), o = helis[i]; o.g.visible = h.on; o.g.position.set(h.x, h.y, h.z); o.g.rotation.set(0.05 * sin(now * 1.3 + i), 0, -0.13 + 0.02 * sin(now * 1.7 + i * 2)); o.rotor.rotation.y = now * 38 + i; o.tail.rotation.z = now * 50; }
     const h = plan.heli(0, t, H); ladder.visible = h.on; ladder.position.set(h.x + HELI.hook[0], h.y + HELI.hook[1], h.z + HELI.hook[2]); ladder.rotation.z = -HELI.swing + 0.03 * sin(now * 2.2); ladder.arm.rotation.x = 0.25 + 0.55 * sin(now * 9);
     const l = plan.light(t, T); beam.visible = l.on && h.on; pool.visible = beam.visible && l.y < GROUND + 0.1;
@@ -1171,5 +1217,5 @@ export function buildSnelweg(scene, rubber) {
     for (let i = 0; i < goudas.length; i++) { const c = plan.cheese(i, t, KC), m = goudas[i]; m.visible = c.on; m.position.set(c.x, GROUND + c.y, c.z); m.rotation.set(c.lean, -c.yaw, -c.roll); }
   }
   frame(0, 0);
-  return { ...plan, plan, frame, show: (on) => { moving.visible = on; }, still, moving };
+  return { ...plan, plan, frame, trafficInView, show: (on) => { moving.visible = on; }, still, moving };
 }

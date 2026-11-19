@@ -1,7 +1,9 @@
 // De polder: North Holland all round the town, out to the dunes and the sea. Flat fields, ditches, tulips, cows, mills.
 // The ground is one patchwork of rectangles that never overlap (so nothing can flicker); the town and the motorway each keep their own hole.
 import * as THREE from 'three';
+import { staticTiles } from './static-tiles.js';
 import { loft } from './fauna.js';
+import { polderYards } from './polder-yards.js';
 import { GROUND, mat, canvasTex, fuse } from './world.js';
 import { CORRIDOR, Z0, countryWater, getPlan } from './snelweg.js';
 
@@ -12,7 +14,7 @@ const Box = (w, h, d) => new THREE.BoxGeometry(w, h, d), Cyl = (a, b, h, s = 8) 
 const gable = (w, h, len) => { const a = w / 2, l = len / 2, g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute([-a, 0, l, a, 0, l, 0, h, l, a, 0, -l, -a, 0, -l, 0, h, -l, a, 0, l, a, 0, -l, 0, h, -l, a, 0, l, 0, h, -l, 0, h, l, -a, 0, -l, -a, 0, l, 0, h, l, -a, 0, -l, 0, h, l, 0, h, -l], 3)); g.computeVertexNormals(); return g; };
 
-export function buildPolder(scene, { rect = [-1090, -730, 860, 760] } = {}) {
+export function buildPolder(scene, { rect = [-1090, -730, 860, 760], facades } = {}) {
   const [RX0, RZ0, RX1, RZ1] = rect, R = rnd(21), EXT = 6600, DUNE = -4250, SEA = -4780;
   const { XW, XV, XE } = getPlan().layout;
   const roads = [[XW, CORRIDOR.z1, EXT], [XV, RZ1, CORRIDOR.z0], [XV, CORRIDOR.z1, EXT], [XE, CORRIDOR.z1, EXT]]; // straight polder roads: x, from z, to z
@@ -35,7 +37,7 @@ export function buildPolder(scene, { rect = [-1090, -730, 860, 760] } = {}) {
       }
     }
   };
-  const greens = ['#7cc152', '#6db247', '#8acb5a', '#62a640', '#93cf66', '#74b84e', '#58a23f'];
+  const greens = ['#82966e', '#728b64', '#98a67c', '#70856a', '#a5ad81', '#819567', '#667d5e'];
   const fixedZ = [RZ0, RZ1, CORRIDOR.z0, CORRIDOR.z1, EXT];
   for (let z = -EXT; z < EXT - 1;) {
     const nearZ = z > -2700 && z < 4300; let z1 = z + (nearZ ? 230 + R() * 190 : 600 + R() * 500), hard = false;
@@ -52,28 +54,47 @@ export function buildPolder(scene, { rect = [-1090, -730, 860, 760] } = {}) {
       if (roads.some(([rx, a, b]) => x0 === rx - 4 && z0 >= a && z1 <= b)) { quad(land, x0, z0, x1, z1, '#6c7078', (px, pz) => [px / 9, pz / 9]); cells.push({ x0, z0, x1, z1, kind: 'road' }); continue; }
       const slot = !cut && nearX && R() < 0.32 ? 3 : 0, a = x1 - slot, b = z1 - ditch, k = R(), far = abs(zm - Z0) > 1300 || abs(x0) > 2800;
       const kind = k < (far ? (nearX ? 0.1 : 0.05) : 0.3) ? 'tulip' : k < 0.42 ? 'crop' : k < 0.47 ? 'soil' : 'grass';
-      if (kind === 'tulip') { const along = a - x0 > b - z0, o = R(); quad(bulbs, x0, z0, a, b, '#ffffff', along ? (px, pz) => [pz / 96 + o, px / 40] : (px, pz) => [px / 96 + o, pz / 40]); }
-      else { const t = R() < 0.5; quad(land, x0, z0, a, b, kind === 'crop' ? (R() < 0.5 ? '#e4d84c' : '#cfe27c') : kind === 'soil' ? '#a08058' : greens[floor(R() * greens.length)], t ? (px, pz) => [px / 64, pz / 64] : (px, pz) => [pz / 64, px / 64]); }
+      if (kind === 'tulip') { const flowers = ['#ae7e6d','#b19c73','#9f8a98','#a9a287','#979870','#af8b78','#83946b'];
+        const bed = flowers[Math.abs(Math.floor(x0 * .9 + z0 * 1.2)) % flowers.length]; const along = a - x0 > b - z0, o = R(); quad(bulbs, x0, z0, a, b, bed, along ? (px, pz) => [pz / 96 + o, px / 40] : (px, pz) => [px / 96 + o, pz / 40]); }
+      else { const t = R() < 0.5; quad(land, x0, z0, a, b, kind === 'crop' ? (R() < 0.5 ? '#aea778' : '#9eac81') : kind === 'soil' ? '#9a876d' : greens[floor(R() * greens.length)], t ? (px, pz) => [px / 64, pz / 64] : (px, pz) => [pz / 64, px / 64]); }
       cells.push({ x0, z0, x1: a, z1: b, kind, near: nearX });
-      if (slot) quad(wet, a, z0, x1, b, '#4f93d6', (px, pz) => [0, 0]);
+      if (slot) quad(wet, a, z0, x1, b, '#4e7169', (px, pz) => [0, 0]);
     }
     if (ditch) { // a ditch stops at the edge of the town and runs under the polder roads, never across them
       const holes = (inTown ? [[RX0, RX1]] : []).concat(roads.filter(([, a, b]) => z0 >= a && z1 <= b).map(([x]) => [x - 4, x + 4])).sort((p, q) => p[0] - q[0]);
-      let x = DUNE; for (const [h0, h1] of [...holes, [EXT, EXT]]) { if (h0 > x) quad(wet, x, z1 - ditch, h0, z1, '#4f93d6', () => [0, 0]); x = Math.max(x, h1); }
+      let x = DUNE; for (const [h0, h1] of [...holes, [EXT, EXT]]) { if (h0 > x) quad(wet, x, z1 - ditch, h0, z1, '#4e7169', () => [0, 0]); x = Math.max(x, h1); }
     }
   }
   quad(land, SEA, -EXT, DUNE, EXT, '#ecdcab', (px, pz) => [px / 64, pz / 64]); quad(wet, -EXT, -EXT, SEA, EXT, '#3f7fc4', () => [0, 0]);
   const fieldTex = canvasTex(256, 256, (g, w, h) => { g.fillStyle = '#f6f6f2'; g.fillRect(0, 0, w, h); const r = rnd(5); for (let y = 0; y < h; y += 16) { g.fillStyle = `rgba(0,40,0,${(y / 16) % 2 ? 0.07 : 0.02})`; g.fillRect(0, y, w, 16); g.fillStyle = 'rgba(0,30,0,.1)'; g.fillRect(0, y, w, 1.5); g.fillStyle = 'rgba(255,250,208,.16)'; g.fillRect(0, y + 2, w, 1.7); } for (let i = 0; i < 2600; i++) { g.fillStyle = r() < 0.5 ? `rgba(0,50,0,${0.03 + r() * 0.08})` : `rgba(255,255,210,${0.04 + r() * 0.1})`; g.fillRect(r() * w, r() * h, 2 + r() * 4, 1 + r() * 3); } });
-  const tulipTex = canvasTex(256, 64, (g, w, h) => { g.fillStyle = '#3f8f3a'; g.fillRect(0, 0, w, h); const r = rnd(8), cols = ['#e8222e', '#ffd21f', '#ff6fae', '#8d3fc4', '#fbfbf2', '#ff8a1e'], bw = w / cols.length;
-    cols.forEach((c, i) => { g.fillStyle = c; g.fillRect(i * bw + 3, 0, bw - 6, h); for (let x = 5; x < bw - 6; x += 5) { g.fillStyle = 'rgba(0,60,0,.22)'; g.fillRect(i * bw + 3 + x, 0, 1.2, h);
-        for (let y = (x % 3) * 3; y < h; y += 9) {
-          g.fillStyle = 'rgba(255,247,204,.48)'; g.fillRect(i * bw + 1 + x, y, 2, 2.5);
-          g.fillStyle = 'rgba(35,65,23,.32)'; g.fillRect(i * bw + 3 + x, y + 2, 1.5, 2.8);
-        } } }); for (let i = 0; i < 500; i++) { g.fillStyle = r() < 0.5 ? 'rgba(255,255,255,.12)' : 'rgba(0,70,0,.14)'; g.fillRect(r() * w, r() * h, 2, 2 + r() * 3); } });
-  const flat = (tiles, material) => { for (const o of tiles.values()) { const g = new THREE.BufferGeometry(), n = new Float32Array(o.p.length); for (let i = 1; i < n.length; i += 3) n[i] = 1;
+  // Each commercial field grows one cultivar. The headlands, tractors' paired
+  // wheel tracks and the narrow gaps between beds read in progressively closer views.
+  const tulipTex = canvasTex(256, 64, (g,w,h) => {
+    const r = rnd(8); g.fillStyle = '#eef0de'; g.fillRect(0,0,w,h);
+    for (let x=0; x<w; x+=5) {
+      g.fillStyle = 'rgba(42,62,43,.24)'; g.fillRect(x,0,1.3,h);
+      g.fillStyle = 'rgba(255,244,193,.20)'; g.fillRect(x+1.4,0,1.1,h);
+      for (let y=r()*3; y<h; y+=4+r()*4) { g.fillStyle='rgba(255,244,226,.21)'; g.fillRect(x+2,y,2.4,1.2); }
+    }
+    for (const x of [53,58,184,189]) { g.fillStyle='rgba(65,68,48,.22)'; g.fillRect(x,0,1.4,h); }
+  });
+  const flat = (tiles, material) => {
+    const sections=Array.from(tiles.values(),o=>{
+    const g = new THREE.BufferGeometry(), n = new Float32Array(o.p.length); for (let i = 1; i < n.length; i += 3) n[i] = 1;
     g.setAttribute('position', new THREE.Float32BufferAttribute(o.p, 3)); g.setAttribute('normal', new THREE.BufferAttribute(n, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(o.c, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(o.u, 2));
-    const m = new THREE.Mesh(g, material); m.receiveShadow = true; group.add(m); } };
-  flat(land, mat('#ffffff', { map: fieldTex, bumpMap: fieldTex, bumpScale: 0.15, vertexColors: true, roughness: 0.95 })); flat(bulbs, mat('#ffffff', { map: tulipTex, bumpMap: tulipTex, bumpScale: 0.12, roughness: 0.87 })); flat(wet, countryWater());
+    return g;
+    });
+    // Several mapped city canals continue into the countryside beyond the
+    // old paving bounds. Respect their depth and stencil on this ground too.
+    material.stencilWrite = true;
+    material.stencilRef = 1;
+    material.stencilFunc = THREE.NotEqualStencilFunc;
+    const mesh=staticTiles(sections,material,facades);
+    mesh.receiveShadow=true;
+    mesh.renderOrder=-22;
+    group.add(mesh);
+  };
+  flat(land, mat('#ffffff', { map: fieldTex, bumpMap: fieldTex, bumpScale: 0.15, vertexColors: true, roughness: 0.95 })); flat(bulbs, mat('#ffffff', { map: tulipTex, vertexColors: true, bumpMap: tulipTex, bumpScale: 0.12, roughness: 0.87 })); flat(wet, countryWater());
 
   // ---- the dunes along the coast: one lumpy ridge, its feet below the ground so the join is a clean line ----
   { const nx = 8, nz = 132, g = new THREE.PlaneGeometry(1, 1, nx, nz).rotateX(-PI / 2), P = g.attributes.position;
@@ -90,15 +111,8 @@ export function buildPolder(scene, { rect = [-1090, -730, 860, 760] } = {}) {
     list.forEach((o, i) => { im.setMatrixAt(i, M.compose(V.set(o.x, o.y ?? GROUND, o.z), Q.setFromEuler(E.set(0, -(o.a || 0), 0)), S.set(o.sx ?? o.s ?? 1, o.sy ?? o.s ?? 1, o.sz ?? o.sx ?? o.s ?? 1))); if (o.c) im.setColorAt(i, K.set(o.c)); });
     group.add(im); return im;
   };
-  // Keep distant herds and tree belts outside the camera frustum out of the draw entirely.
-  const regional = (geo, list, width = 2100) => {
-    const cells = new Map();
-    for (const o of list) {
-      const id = floor(o.x / width) + ',' + floor(o.z / width);
-      if (!cells.has(id)) cells.set(id, []);
-      cells.get(id).push(o);
-    }
-    for (const batch of cells.values()) inst(geo, batch).userData.fixedInstances = true;
+  const regional = (geometry, items) => {
+    if (items.length) inst(geometry, items).userData.fixedInstances = true;
   };
   const free = (x, z, m = 8) => !(x > RX0 - m && x < RX1 + m && z > RZ0 - m && z < RZ1 + m) && !(z > CORRIDOR.z0 - m && z < CORRIDOR.z1 + m) && x > DUNE + 30 && abs(x) < EXT - 50 && abs(z) < EXT - 50
     && roads.every(([rx, a, b]) => abs(x - rx) > m + 4 || z < a - m || z > b + m) && !(abs(x - XV) < 26 && abs(z - Z0) < 260);
@@ -108,12 +122,14 @@ export function buildPolder(scene, { rect = [-1090, -730, 860, 760] } = {}) {
   const grassy = (c) => c.kind === 'grass' && c.x1 - c.x0 > 40 && c.z1 - c.z0 > 60, close = (c) => c.near && (abs((c.z0 + c.z1) / 2 - Z0) < 1100 && abs(c.x0) < 2300 || (c.x0 > RX0 - 700 && c.x1 < RX1 + 700 && c.z0 > RZ0 - 700 && c.z1 < RZ1 + 700));
 
   // trees: one shape, stretched tall for poplars and squat for the belt round the town
-  const trees = [], leaf = ['#5fae45', '#4f9c3b', '#6fbb4f', '#458f35', '#7cc45a'];
+  const trees = [], leaf = ['#648749', '#547d4c', '#789456', '#53774b', '#859958'];
   const tree = (x, z, poplar, m = 3) => { if (!dry(x, z, m)) return; const s = 0.85 + R() * 0.4; trees.push(poplar ? { x, z, sx: 1.5 * s, sy: 4.6 * s, c: leaf[floor(R() * 3)] } : { x, z, sx: (2.7 + R()) * s, sy: (2.2 + R() * 0.6) * s, c: leaf[floor(R() * 5)] }); };
   const belt = (x, z) => { const s = 0.85 + R() * 0.4; trees.push({ x, z, sx: (2.9 + R()) * s, sy: (2.3 + R() * 0.6) * s, c: leaf[floor(R() * 5)] }); };
-  for (const [off, start] of [[7, 0], [15.5, 5.5]]) { // two staggered rows hugging the town, so its edge never shows
-    for (let x = RX0 - off + start; x <= RX1 + off; x += 11) { belt(x + R() * 3, RZ0 - off - R() * 2); if (abs(x - XV) > 9) belt(x + R() * 3, RZ1 + off + R() * 2); }
-    for (let z = RZ0 - off + start; z <= RZ1 + off; z += 11) { belt(RX0 - off - R() * 2, z + R() * 3); belt(RX1 + off + R() * 2, z + R() * 3); }
+  // Broken shelterbelts follow ditch and lane alignments. A belt on the four
+  // edges of the city mesh would draw an artificial rectangular boundary.
+  for (const [x,z,dx,dz,n] of [[-825,742,.86,.50,16],[-1090,160,.20,-.98,17],[838,-390,-.50,-.86,22],
+    [430,-740,-.99,.14,24],[-440,-768,-.94,.34,15],[832,674,.76,-.65,18]]) {
+    for (let i=0;i<n;i++) { if (i%9===4) continue; belt(x+dx*i*12+R()*3,z+dz*i*12+R()*3); }
   }
   for (const [rx, a, b] of roads) for (let z = max(a, Z0 - 1500) + 12; z < min(b, Z0 + 1700); z += 17) for (const s of [-1, 1]) tree(rx + s * 8.5, z, true, 0); // avenues of poplars along the polder roads
   for (const c of cells) if (c.near && c.kind !== 'road' && R() < 0.07) { const n = 6 + floor(R() * 16); for (let i = 0; i < n; i++) tree(c.x0 + 4 + i * 13, c.z1 - 4, true); } // tree rows along the ditches
@@ -128,6 +144,8 @@ export function buildPolder(scene, { rect = [-1090, -730, 860, 760] } = {}) {
   for (const c of pick((c) => grassy(c) && close(c) && !farms.some((f) => f.x > c.x0 && f.x < c.x1 && f.z > c.z0 && f.z < c.z1), 30, 6)) { const n = 5 + floor(R() * 5), cx = c.x0 + 12 + R() * (c.x1 - c.x0 - 24), cz = c.z0 + 12 + R() * (c.z1 - c.z0 - 24);
     for (let i = 0; i < n; i++) { const x = cx + (R() - 0.5) * 34, z = cz + (R() - 0.5) * 40; if (x > c.x0 + 4 && x < c.x1 - 4 && z > c.z0 + 4 && z < c.z1 - 4 && free(x, z, 5)) cows.push({ x, z, a: R() * 6.3, s: 1.25 + R() * 0.2 }); } }
   for (const c of pick((c) => grassy(c) && c.near, 16, 9)) { const cx = (c.x0 + c.x1) / 2, cz = (c.z0 + c.z1) / 2; for (let i = 0; i < 9; i++) { const x = cx + (R() - 0.5) * (c.x1 - c.x0 - 12), z = cz + (R() - 0.5) * min(60, c.z1 - c.z0 - 12); if (free(x, z, 5)) sheep.push({ x, z, a: R() * 6.3, s: 1.2 + R() * 0.3 }); } }
+
+  polderYards(group,{cells,roadX:XV,free,trees,farms,cows,sheep,facades});
 
   // A five-sided crown with staggered rings gives both the low orchard trees and stretched poplars a stepped canopy.
   const rings = [[0, 1.05], [0.7, 1.26], [0.98, 1.82], [0.79, 2.38], [0, 3.0]];
@@ -158,13 +176,13 @@ export function buildPolder(scene, { rect = [-1090, -730, 860, 760] } = {}) {
     const byRoad = abs(t.x)<1500 && min(abs(t.z-CORRIDOR.z0),abs(t.z-CORRIDOR.z1))<34;
     (closeToFlight || byRoad || yard.some(([x,z])=>abs(t.x-x)<.01&&abs(t.z-z)<.01) ? groves : distantTrees).push(t);
   }
-  regional(treeGeo, distantTrees, 850);
+  regional(treeGeo, distantTrees);
   const canopy = [[treeGeo,'#ffffff']];
   for(const [x,y,z,s,col] of [[-.39,1.74,.27,.54,'#dae2bd'],[.36,1.79,-.28,.55,'#f1efc9'],[.22,2.12,.31,.51,'#edf1d8'],[-.23,2.40,-.12,.39,'#faf5dc']])
     canopy.push([new THREE.IcosahedronGeometry(1,0).scale(s,.52,s),col,x,y,z]);
   for (const side of [-1,1]) canopy.push([Cyl(.057,.086,.75,5).rotateZ(side*.58),'#846948',-side*.19,1.13,.02]);
   const groveGeo=fuse(...canopy); groveGeo.attributes.color.array.set(treeGeo.attributes.color.array);
-  regional(groveGeo,groves,850);
+  regional(groveGeo,groves);
   // Build the cream and black coat on one continuous skin. The other parts sample a white texel.
   const coat = canvasTex(512,256,(ctx,w,h)=>{
     ctx.fillStyle='#fffdf4'; ctx.fillRect(0,0,w,h);

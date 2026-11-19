@@ -472,6 +472,38 @@ function toyCar(world, color) {
   return g;
 }
 
+// Parked cars repeat the same wheel and glazing. Group identical finishes across
+// the street, keeping the painted body of each color on its own texture.
+function parkCars(scene, world, spaces) {
+  const palette = ['#e0202a', '#1f5fd0', '#f7c400', '#3fbf6a', '#7a4fd0'];
+  const models = new Map(), batches = new Map(), pose = new THREE.Object3D();
+  spaces.forEach((space, i) => {
+    const color = pick(palette, i);
+    if (!models.has(color)) {
+      const car = toyCar(world, color), parts = [];
+      car.updateMatrixWorld(true);
+      car.traverse(part => { if (part.isMesh) parts.push(part); });
+      models.set(color, parts);
+    }
+    pose.position.set(space.x, GROUND, space.z);
+    pose.rotation.y = -space.h + (i % 2 ? PI : 0);
+    pose.updateMatrix();
+    models.get(color).forEach((part, slot) => {
+      const key = slot === 0 ? color : part.geometry === wheelGeo ? 'wheels' : slot;
+      if (!batches.has(key)) batches.set(key, { part, instances: [] });
+      batches.get(key).instances.push(new THREE.Matrix4().multiplyMatrices(pose.matrix, part.matrixWorld));
+    });
+  });
+  for (const {part, instances} of batches.values()) {
+    const mesh = new THREE.InstancedMesh(part.geometry, part.material, instances.length);
+    mesh.castShadow = part.castShadow;
+    mesh.receiveShadow = part.receiveShadow;
+    mesh.userData.fixedInstances = true;
+    instances.forEach((matrix, i) => mesh.setMatrixAt(i, matrix));
+    scene.add(mesh);
+  }
+}
+
 // ---------- particles ----------
 let puffMap;
 export function smokeTexture() {
@@ -514,9 +546,11 @@ export function puffs(scene, n, color = '#f6f6f2') {
   const P = Array.from({ length: n }, () => ({ life: 0 })), M = new THREE.Matrix4(), scale = new THREE.Vector3();
   mesh.count = 0; mesh.frustumCulled = false; scene.add(mesh);
   let next = 0;
+  mesh.visible = false;
   return {
-    emit(x, y, z, size = 1, vx = 0, vz = 0) { Object.assign(P[next], { x, y, z, vx: vx + (random() - 0.5) * 1.6, vy: 0.7 + random(), vz: vz + (random() - 0.5) * 1.6, age: 0, life: 0.9 + random() * 0.8, size: size * (0.6 + random() * 0.7) }); next = (next + 1) % n; },
+    emit(x, y, z, size = 1, vx = 0, vz = 0) { mesh.visible = true; Object.assign(P[next], { x, y, z, vx: vx + (random() - 0.5) * 1.6, vy: 0.7 + random(), vz: vz + (random() - 0.5) * 1.6, age: 0, life: 0.9 + random() * 0.8, size: size * (0.6 + random() * 0.7) }); next = (next + 1) % n; },
     update(dt) {
+      if (!mesh.visible) return;
       let active = 0;
       P.forEach((p, i) => {
         if (p.life <= 0) return;
@@ -525,9 +559,15 @@ export function puffs(scene, n, color = '#f6f6f2') {
         const k = p.age / p.life, s = p.size * Math.min(1, 0.3 + k * 2.4) * (1 - ramp(k, 0.5, 1));
         mesh.setMatrixAt(active++, M.makeRotationZ(i * 2.4).scale(scale.setScalar(s)).setPosition(p.x, p.y, p.z));
       });
-      mesh.count = active; mesh.instanceMatrix.needsUpdate = true;
+      mesh.count = active;
+      mesh.visible = active > 0;
+      if (active) {
+        mesh.instanceMatrix.clearUpdateRanges();
+        mesh.instanceMatrix.addUpdateRange(0, active * 16);
+        mesh.instanceMatrix.needsUpdate = true;
+      }
     },
-    clear() { for (const p of P) p.life = 0; mesh.count = 0; },
+    clear() { for (const p of P) p.life = 0; mesh.count = 0; mesh.visible = false; },
   };
 }
 function confetti(scene, n) {
@@ -536,8 +576,9 @@ function confetti(scene, n) {
   mesh.count = 0; for (let i = 0; i < n; i++) mesh.setColorAt(i, new THREE.Color(pick(COL, i)));
   mesh.frustumCulled = false; scene.add(mesh);
   return {
-    burst(x, y, z, spread = 5) { mesh.count = n; P.forEach((p) => Object.assign(p, { on: true, x: x + (random() - 0.5) * 2, y: y + random(), z: z + (random() - 0.5) * 2, vx: (random() - 0.5) * spread, vy: 4 + random() * 6, vz: (random() - 0.5) * spread, a: random() * 6, b: random() * 6, w: 3 + random() * 8 })); },
+    burst(x, y, z, spread = 5) { mesh.visible = true; mesh.count = n; P.forEach((p) => Object.assign(p, { on: true, x: x + (random() - 0.5) * 2, y: y + random(), z: z + (random() - 0.5) * 2, vx: (random() - 0.5) * spread, vy: 4 + random() * 6, vz: (random() - 0.5) * spread, a: random() * 6, b: random() * 6, w: 3 + random() * 8 })); },
     update(dt, t) {
+      if (!mesh.count) return;
       P.forEach((p, i) => {
         if (!p.on) return;
         if (p.y > GROUND + 0.03) { p.vy = Math.max(-1.6, p.vy - 9 * dt); p.x += (p.vx + sin(t * 2 + p.a) * 0.8) * dt; p.y += p.vy * dt; p.z += p.vz * dt; p.vx *= 1 - dt; p.vz *= 1 - dt; p.a += p.w * dt; p.b += p.w * 0.7 * dt; }
@@ -546,7 +587,7 @@ function confetti(scene, n) {
       });
       mesh.instanceMatrix.needsUpdate = true;
     },
-    clear() { mesh.count = 0; for (const p of P) p.on = false; },
+    clear() { mesh.count = 0; mesh.visible = false; for (const p of P) p.on = false; },
   };
 }
 
@@ -684,7 +725,7 @@ export function buildCast(scene, world, drive, marks) {
   });
 
   // parked cars and the crowd by the Accijnstoren
-  layout.parked.forEach((pc, i) => { const g = toyCar(world, pick(['#e0202a', '#1f5fd0', '#f7c400', '#3fbf6a', '#7a4fd0'], i)); g.position.set(pc.x, GROUND, pc.z); g.rotation.y = -pc.h + (i % 2 ? PI : 0); scene.add(g); });
+  parkCars(scene, world, layout.parked);
   const signTex = (word) => tex(256, 128, (g) => { g.fillStyle = '#fff'; g.fillRect(0, 0, 256, 128); g.fillStyle = '#ff6a13'; g.font = `400 60px ${FONT}`; g.textAlign = 'center'; g.fillText('HUP', 128, 58); g.fillStyle = '#14213d'; g.fillText(word, 128, 116); });
   const signs = { before: signTex('KANJER!'), after: signTex('NIKKI!') }, signMat = new THREE.MeshStandardMaterial({ map: signs.before, side: THREE.DoubleSide }); // her name only goes up at the reveal
   const crowd = layout.crowd.map((c, i) => {
